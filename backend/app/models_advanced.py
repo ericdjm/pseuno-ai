@@ -96,7 +96,7 @@ class AdvancedGenerateRequest(BaseModel):
     Vibe-first generation request with orthogonal controls
     """
     # Core vibe
-    vibe_intent: VibeIntent
+    vibe_intent: Optional[VibeIntent] = None
     mode: GenerationMode = "custom"
     
     # Orthogonal layers
@@ -120,6 +120,17 @@ class AdvancedGenerateRequest(BaseModel):
     # Legacy compatibility
     time_range: str = Field(default="medium_term", pattern="^(short_term|medium_term|long_term)$")
     extra_notes: Optional[str] = None
+
+    # Agent context inputs (dynamic per request)
+    user_prompt: Optional[str] = Field(
+        default=None,
+        max_length=500,
+        description="Minimal user text about the song they want"
+    )
+    selected_artists: list[str] = Field(default_factory=list, description="User-selected artists to influence style")
+    excluded_artists: list[str] = Field(default_factory=list, description="Artists to exclude from influence")
+    selected_genres: list[str] = Field(default_factory=list, description="User-selected genres to emphasize")
+    custom_vibes: list[str] = Field(default_factory=list, description="User-selected vibes/moods")
     
     # Output preferences
     separate_artifacts: bool = Field(

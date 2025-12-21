@@ -4,6 +4,7 @@ Configuration management
 
 import os
 import secrets
+from typing import Optional
 from pydantic_settings import BaseSettings
 from pydantic import Field, validator
 from functools import lru_cache
@@ -32,6 +33,25 @@ class Settings(BaseSettings):
     
     # Request timeouts
     http_timeout: int = 30
+
+    # OpenAI / LangChain settings
+    openai_api_key: Optional[str] = Field(default=None, description="OpenAI API key")
+    openai_model: str = Field(default="gpt-4.1", description="OpenAI model for song agent")
+    openai_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    song_agent_prompt: str = Field(
+        default=(
+            "You are a song generation agent. Use ONLY the context inside BEGIN_CONTEXT/END_CONTEXT. "
+            "Use all provided context sections when relevant. Generate:\n"
+            "1) concept_title (<= 50 chars)\n"
+            "2) suno_prompt (<= 700 chars, machine-facing, include style, mood, instrumentation, vocals, "
+            "tempo feel, and structure hints)\n"
+            "3) lyrics (<= 1800 chars, include [Verse], [Chorus], [Bridge], [Outro] tags)\n"
+            "Use selected artists/genres/vibes as influence but do NOT mention artist names. "
+            "Avoid any names in banned_references. Respect generation_controls if present. "
+            "Return JSON only, matching the requested schema exactly."
+        ),
+        description="System prompt for the song agent"
+    )
     
     @validator("secret_key")
     def validate_secret_key(cls, v, values):

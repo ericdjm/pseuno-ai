@@ -8,7 +8,9 @@ from app.models_advanced import (
     AdvancedGenerateRequest,
     AdvancedGenerateResponse,
 )
-from app.services.advanced_prompt_builder import AdvancedPromptBuilder, MODE_PRESETS
+from app.services.advanced_prompt_builder import MODE_PRESETS
+from app.services.agent_prompt_builder import AgentPromptBuilder
+from app.config import get_settings
 from app.utils import get_authenticated_client, fetch_and_parse_spotify_data
 
 router = APIRouter()
@@ -45,12 +47,13 @@ async def generate_advanced(request: Request, body: AdvancedGenerateRequest):
     client = get_authenticated_client(request)
     
     # Fetch and parse Spotify data for taste profile (uses parallel API calls)
-    _, _, taste_profile = await fetch_and_parse_spotify_data(
+    top_artists, _, taste_profile = await fetch_and_parse_spotify_data(
         client, body.time_range
     )
     
-    # Generate using advanced builder
-    builder = AdvancedPromptBuilder(taste_profile)
-    result = builder.generate(body)
+    # Generate using LangChain agent
+    settings = get_settings()
+    builder = AgentPromptBuilder(settings)
+    result = await builder.generate(body, taste_profile, top_artists)
     
     return AdvancedGenerateResponse(**result)
