@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 
 from app.routes import auth, spotify, generate, generate_advanced
 from app.services.session_store import session_store
+from app.config import validate_settings
 
 load_dotenv()
 
@@ -20,9 +21,12 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler"""
     # Startup
     print("🎵 Pseuno AI starting up...")
+    validate_settings()  # Validate configuration on startup
+    session_store.start_cleanup_task()  # Start session cleanup
     yield
     # Shutdown
     print("🎵 Pseuno AI shutting down...")
+    session_store.stop_cleanup_task()
     session_store.clear_all()
 
 app = FastAPI(
@@ -33,52 +37,86 @@ app = FastAPI(
 )
 
 # CORS Configuration
-FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://127.0.0.1:5173")
+from app.config import get_settings
 
-# Allow both 127.0.0.1 and localhost for development
-allowed_origins = [FRONTEND_ORIGIN]
-if "127.0.0.1" in FRONTEND_ORIGIN:
-    allowed_origins.append(FRONTEND_ORIGIN.replace("127.0.0.1", "localhost"))
-elif "localhost" in FRONTEND_ORIGIN:
-    allowed_origins.append(FRONTEND_ORIGIN.replace("localhost", "127.0.0.1"))
+settings = get_settings()
+
+# In development, allow both 127.0.0.1 and localhost
+# In production, use exact origin only
+allowed_origins = [settings.frontend_origin]
+if settings.debug:
+    if "127.0.0.1" in settings.frontend_origin:
+        allowed_origins.append(settings.frontend_origin.replace("127.0.0.1", "localhost"))
+    elif "localhost" in settings.frontend_origin:
+        allowed_origins.append(settings.frontend_origin.replace("localhost", "127.0.0.1"))
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
+    allow_headers=["Content-Type", "Authorization"],
+    max_age=3600,  # Cache preflight requests for 1 hour
 )
 
-# Rate limiting middleware (simple in-memory counter)
-rate_limit_store: dict[str, dict] = {}
-RATE_LIMIT_REQUESTS = 100
-RATE_LIMIT_WINDOW = 60  # seconds
+# Rate limiting middleware with automatic cleanup
+import time
+from collections import OrderedDict
+
+class RateLimiter:
+    """Rate limiter with LRU cleanup to prevent memory leaks"""
+    def __init__(self, max_size: int = 10000):
+        self.store: OrderedDict[str, dict] = OrderedDict()
+        self.max_size = max_size
+    
+    def check_rate_limit(self, key: str, limit: int, window: int) -> bool:
+        """Check if rate limit exceeded. Returns True if limit exceeded."""
+        current_time = time.time()
+        
+        # Cleanup old entries if store is too large
+        if len(self.store) > self.max_size:
+            # Remove oldest 20% entries
+            for _ in range(self.max_size // 5):
+                self.store.popitem(last=False)
+        
+        if key not in self.store:
+            self.store[key] = {"count": 1, "window_start": current_time}
+            return False
+        
+        rate_data = self.store[key]
+        
+        # Reset window if expired
+        if current_time - rate_data["window_start"] > window:
+            rate_data["count"] = 1
+            rate_data["window_start"] = current_time
+            return False
+        
+        rate_data["count"] += 1
+        
+        # Move to end (LRU)
+        self.store.move_to_end(key)
+        
+        return rate_data["count"] > limit
+
+rate_limiter = RateLimiter()
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
-    """Simple rate limiting per session"""
-    import time
+    """Rate limiting per session/IP with memory leak prevention"""
+    # Use session_id if available, fallback to IP
+    session_id = request.cookies.get("session_id")
+    client_ip = request.client.host if request.client else "unknown"
+    rate_key = session_id if session_id else f"ip:{client_ip}"
     
-    session_id = request.cookies.get("session_id", request.client.host if request.client else "unknown")
-    current_time = time.time()
-    
-    if session_id not in rate_limit_store:
-        rate_limit_store[session_id] = {"count": 0, "window_start": current_time}
-    
-    session_rate = rate_limit_store[session_id]
-    
-    # Reset window if expired
-    if current_time - session_rate["window_start"] > RATE_LIMIT_WINDOW:
-        session_rate["count"] = 0
-        session_rate["window_start"] = current_time
-    
-    session_rate["count"] += 1
-    
-    if session_rate["count"] > RATE_LIMIT_REQUESTS:
+    if rate_limiter.check_rate_limit(
+        rate_key,
+        settings.rate_limit_requests,
+        settings.rate_limit_window
+    ):
         return JSONResponse(
             status_code=429,
-            content={"detail": "Too many requests. Please slow down."}
+            content={"detail": "Too many requests. Please slow down."},
+            headers={"Retry-After": str(settings.rate_limit_window)}
         )
     
     response = await call_next(request)

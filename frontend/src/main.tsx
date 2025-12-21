@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { ChakraProvider, extendTheme } from '@chakra-ui/react'
 import App from './App'
+import ErrorBoundary from './components/ErrorBoundary'
 
 // Custom theme with Spotify-inspired colors
 const theme = extendTheme({
@@ -62,8 +63,10 @@ const theme = extendTheme({
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <ChakraProvider theme={theme}>
-      <App />
-    </ChakraProvider>
+    <ErrorBoundary>
+      <ChakraProvider theme={theme}>
+        <App />
+      </ChakraProvider>
+    </ErrorBoundary>
   </React.StrictMode>,
 )

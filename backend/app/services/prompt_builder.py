@@ -8,6 +8,16 @@ from typing import Optional, Dict, Any
 
 from app.models import TasteProfile
 
+# Length limits for Suno AI
+MAX_PROMPT_LENGTH = 700
+MAX_LYRICS_LENGTH = 1800
+
+# Title generation limits
+MAX_TITLE_LENGTH = 50
+
+# Template safety limits
+MAX_TEMPLATE_FILL_ITERATIONS = 100
+
 
 # Genre presets with style characteristics
 GENRE_PRESETS = {
@@ -305,9 +315,9 @@ class PromptBuilder:
         
         prompt = ". ".join(parts)
         
-        # Ensure under 700 chars
-        if len(prompt) > 700:
-            prompt = prompt[:697] + "..."
+        # Ensure under limit
+        if len(prompt) > MAX_PROMPT_LENGTH:
+            prompt = prompt[:MAX_PROMPT_LENGTH - 3] + "..."
         
         return prompt
     
@@ -374,19 +384,41 @@ class PromptBuilder:
 [Chorus]
 {chorus}"""
         
-        # Ensure under 1800 chars
-        if len(lyrics) > 1800:
-            lyrics = lyrics[:1797] + "..."
+        # Ensure under limit (smarter truncation at section boundary)
+        if len(lyrics) > MAX_LYRICS_LENGTH:
+            # Try removing last chorus first
+            truncated = lyrics.rsplit("\n\n[Chorus]\n", 1)[0]
+            if len(truncated) <= MAX_LYRICS_LENGTH:
+                lyrics = truncated
+            else:
+                # Last resort: hard truncate
+                lyrics = lyrics[:MAX_LYRICS_LENGTH - 3] + "..."
         
         return lyrics
     
     def _fill_template(self, template: str) -> str:
-        """Fill a template string with random options"""
+        """Fill a template string with random options (safe from infinite loops)"""
         result = template
+        iterations = 0
+        
         for key, options in TEMPLATE_FILLS.items():
             placeholder = "{" + key + "}"
-            while placeholder in result:
-                result = result.replace(placeholder, random.choice(options), 1)
+            # Process all instances of this placeholder
+            while placeholder in result and iterations < MAX_TEMPLATE_FILL_ITERATIONS:
+                # Choose option that doesn't contain the same placeholder
+                safe_options = [opt for opt in options if placeholder not in opt]
+                if not safe_options:
+                    # Fallback to first option if all contain placeholder (shouldn't happen)
+                    replacement = options[0].replace(placeholder, "thing")
+                else:
+                    replacement = random.choice(safe_options)
+                result = result.replace(placeholder, replacement, 1)
+                iterations += 1
+            
+            if iterations >= MAX_TEMPLATE_FILL_ITERATIONS:
+                print(f"⚠️  Template filling hit iteration limit for key: {key}")
+                break
+        
         return result
     
     def _generate_title(
@@ -430,4 +462,4 @@ class PromptBuilder:
             if words:
                 title = f"{random.choice(words).capitalize()} {title}"
         
-        return title[:50]  # Limit length
+        return title[:MAX_TITLE_LENGTH]  # Limit length

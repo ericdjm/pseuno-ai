@@ -4,22 +4,28 @@ In production, use Redis or a database
 """
 
 import time
+import asyncio
 from typing import Optional
 from threading import Lock
 
 
 class SessionStore:
-    """Thread-safe in-memory session storage"""
+    """Thread-safe in-memory session storage with TTL and automatic cleanup"""
     
-    def __init__(self):
+    def __init__(self, session_ttl: int = 86400):
         self._sessions: dict[str, dict] = {}
         self._lock = Lock()
+        self._session_ttl = session_ttl  # 24 hours default
+        self._cleanup_task: Optional[asyncio.Task] = None
+        self._cleanup_running = False
     
     def create_session(self, session_id: str) -> dict:
         """Create a new session"""
         with self._lock:
             self._sessions[session_id] = {
                 "created_at": time.time(),
+                "last_accessed": time.time(),
+                "expires_at": time.time() + self._session_ttl,
                 "access_token": None,
                 "refresh_token": None,
                 "token_expires_at": None,
@@ -30,9 +36,17 @@ class SessionStore:
             return self._sessions[session_id]
     
     def get_session(self, session_id: str) -> Optional[dict]:
-        """Get session by ID"""
+        """Get session by ID, return None if expired"""
         with self._lock:
-            return self._sessions.get(session_id)
+            session = self._sessions.get(session_id)
+            if session:
+                # Check if session expired
+                if time.time() > session["expires_at"]:
+                    del self._sessions[session_id]
+                    return None
+                # Update last accessed time
+                session["last_accessed"] = time.time()
+            return session
     
     def delete_session(self, session_id: str) -> bool:
         """Delete a session"""
@@ -105,10 +119,53 @@ class SessionStore:
                 return True
             return time.time() >= session["token_expires_at"]
     
+    def cleanup_expired_sessions(self):
+        """Remove expired sessions"""
+        with self._lock:
+            current_time = time.time()
+            expired = [
+                sid for sid, session in self._sessions.items()
+                if current_time > session["expires_at"]
+            ]
+            for sid in expired:
+                del self._sessions[sid]
+            if expired:
+                print(f"🧹 Cleaned up {len(expired)} expired sessions")
+            return len(expired)
+    
+    async def _cleanup_loop(self):
+        """Background task to cleanup expired sessions"""
+        while self._cleanup_running:
+            try:
+                await asyncio.sleep(300)  # Run every 5 minutes
+                self.cleanup_expired_sessions()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"⚠️  Session cleanup error: {e}")
+    
+    def start_cleanup_task(self):
+        """Start the background cleanup task"""
+        if not self._cleanup_running:
+            self._cleanup_running = True
+            self._cleanup_task = asyncio.create_task(self._cleanup_loop())
+            print("✓ Session cleanup task started")
+    
+    def stop_cleanup_task(self):
+        """Stop the background cleanup task"""
+        if self._cleanup_running:
+            self._cleanup_running = False
+            if self._cleanup_task:
+                self._cleanup_task.cancel()
+            print("✓ Session cleanup task stopped")
+    
     def clear_all(self):
         """Clear all sessions (for shutdown)"""
         with self._lock:
+            count = len(self._sessions)
             self._sessions.clear()
+            if count > 0:
+                print(f"🧹 Cleared {count} sessions on shutdown")
 
 
 # Global session store instance

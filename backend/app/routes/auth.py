@@ -74,14 +74,14 @@ async def spotify_login(response: Response):
     
     auth_url = f"{SPOTIFY_AUTH_URL}?{urlencode(params)}"
     
-    # Set session cookie
+    # Set session cookie with environment-dependent security settings
     response.set_cookie(
         key="session_id",
         value=session_id,
         httponly=True,
-        secure=False,  # Set to True in production with HTTPS
-        samesite="lax",
-        max_age=3600 * 24  # 24 hours
+        secure=settings.session_cookie_secure,  # True in production
+        samesite=settings.session_cookie_samesite,
+        max_age=settings.session_max_age
     )
     
     return {"auth_url": auth_url}
@@ -120,8 +120,11 @@ async def spotify_callback(
     code_verifier = pkce_data.get("code_verifier")
     
     # Exchange code for tokens
+    settings = get_settings()
+    timeout = httpx.Timeout(settings.http_timeout)
+    
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             token_response = await client.post(
                 SPOTIFY_TOKEN_URL,
                 data={
@@ -135,7 +138,8 @@ async def spotify_callback(
             )
             
             if token_response.status_code != 200:
-                error_detail = token_response.json().get("error_description", "Token exchange failed")
+                error_detail = token_response.json().get("error_description", "token_exchange_failed")
+                print(f"⚠️  Token exchange failed: {error_detail}")
                 return RedirectResponse(url=f"{frontend_url}?error={error_detail}")
             
             tokens = token_response.json()
@@ -165,8 +169,15 @@ async def spotify_callback(
             # Clear PKCE data
             session_store.clear_pkce_data(session_id)
             
+    except httpx.TimeoutException:
+        print("⚠️  Spotify API request timed out during OAuth callback")
+        return RedirectResponse(url=f"{frontend_url}?error=request_timeout")
     except httpx.RequestError as e:
+        print(f"⚠️  OAuth callback request failed: {str(e)}")
         return RedirectResponse(url=f"{frontend_url}?error=request_failed")
+    except Exception as e:
+        print(f"⚠️  Unexpected error during OAuth callback: {str(e)}")
+        return RedirectResponse(url=f"{frontend_url}?error=unknown_error")
     
     return RedirectResponse(url=f"{frontend_url}?success=true")
 
