@@ -324,6 +324,7 @@ function App() {
                   onGenerate={handleAdvancedGenerate}
                   isLoading={generating}
                   setIsLoading={setGenerating}
+                  profile={profile}
                 />
               )}
             </Box>

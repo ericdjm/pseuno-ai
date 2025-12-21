@@ -66,6 +66,7 @@ export interface GenerateResponse {
 export interface VibeIntent {
   primary_feeling: string;
   sensory_goals?: string[];
+  context?: string;
 }
 
 export interface VocalControls {
@@ -111,7 +112,7 @@ export interface ContrastIteration {
 }
 
 export interface AdvancedGenerateRequest {
-  vibe_intent: VibeIntent;
+  vibe_intent?: VibeIntent;
   mode?: string;
   vocals?: VocalControls;
   rhythm?: RhythmControls;
@@ -122,6 +123,13 @@ export interface AdvancedGenerateRequest {
   contrast?: ContrastIteration;
   lyric_density?: string;
   separate_artifacts?: boolean;
+  time_range?: TimeRange;
+  extra_notes?: string;
+  user_prompt?: string;
+  selected_artists?: string[];
+  excluded_artists?: string[];
+  selected_genres?: string[];
+  custom_vibes?: string[];
 }
 
 export interface AdvancedGenerateResponse {
@@ -131,12 +139,15 @@ export interface AdvancedGenerateResponse {
   lyrics: string;
   vibe_signature: {
     primary_feeling: string;
+    sensory_goals: string[];
+    mode: string;
     intensity_vector: {
       vocal: number;
       rhythmic: number;
       textural: number;
     };
-    control_fingerprint: string[];
+    rule_breaking_active: boolean;
+    iteration_mode: boolean;
   };
   control_layers_used: {
     vocals: boolean;
@@ -148,11 +159,12 @@ export interface AdvancedGenerateResponse {
     contrast_iteration: boolean;
     taste_profile: boolean;
   };
-  debug_info: {
+  debug_info?: {
     mode: string;
     lyric_density: string;
-    prompt_length: number;
-    lyrics_length: number;
+    taste_influence?: string;
+    agent_model?: string;
+    context_hash?: string;
   };
 }
 
@@ -283,8 +295,10 @@ export async function getAvailableModes(): Promise<string[]> {
   const response = await fetch(`${API_BASE}/generate/modes`, {
     credentials: 'include',
   });
-  const data = await handleResponse<{ modes: string[] }>(response);
-  return data.modes;
+  const data = await handleResponse<{
+    modes: Record<string, { description: string; vibe_keywords: string[] }>;
+  }>(response);
+  return Object.keys(data.modes || {});
 }
 
 /**

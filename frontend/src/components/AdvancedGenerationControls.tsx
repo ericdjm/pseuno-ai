@@ -16,6 +16,7 @@ import {
   SliderFilledTrack,
   SliderThumb,
   Switch,
+  Textarea,
   FormControl,
   FormLabel,
   Badge,
@@ -26,21 +27,39 @@ import {
 } from '@chakra-ui/react';
 import { AddIcon, DeleteIcon } from '@chakra-ui/icons';
 import { useState } from 'react';
-import { generateAdvanced, getAvailableModes, AdvancedGenerateRequest } from '../api';
+import {
+  generateAdvanced,
+  getAvailableModes,
+  AdvancedGenerateRequest,
+  SpotifyProfileResponse,
+} from '../api';
 
 interface AdvancedGenerationControlsProps {
   onGenerate: (result: any) => void;
   isLoading: boolean;
   setIsLoading: (loading: boolean) => void;
+  profile?: SpotifyProfileResponse | null;
 }
 
 export default function AdvancedGenerationControls({
   onGenerate,
   isLoading,
   setIsLoading,
+  profile,
 }: AdvancedGenerationControlsProps) {
   const toast = useToast();
   
+  // Context inputs
+  const [userPrompt, setUserPrompt] = useState('');
+  const [selectedArtists, setSelectedArtists] = useState<string[]>([]);
+  const [excludedArtists, setExcludedArtists] = useState<string[]>([]);
+  const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
+  const [customVibes, setCustomVibes] = useState<string[]>([]);
+  const [newSelectedArtist, setNewSelectedArtist] = useState('');
+  const [newExcludedArtist, setNewExcludedArtist] = useState('');
+  const [newSelectedGenre, setNewSelectedGenre] = useState('');
+  const [newCustomVibe, setNewCustomVibe] = useState('');
+
   // Vibe Intent
   const [primaryFeeling, setPrimaryFeeling] = useState('');
   const [sensoryGoals, setSensoryGoals] = useState<string[]>([]);
@@ -99,9 +118,21 @@ export default function AdvancedGenerationControls({
     getAvailableModes().then(modes => setAvailableModes(modes));
   });
 
-  const addToList = (list: string[], setList: (items: string[]) => void, item: string, setItem: (val: string) => void) => {
-    if (item.trim()) {
-      setList([...list, item.trim()]);
+  const addToList = (
+    list: string[],
+    setList: (items: string[]) => void,
+    item: string,
+    setItem?: (val: string) => void
+  ) => {
+    const trimmed = item.trim();
+    if (!trimmed) {
+      return;
+    }
+    const exists = list.some((entry) => entry.toLowerCase() === trimmed.toLowerCase());
+    if (!exists) {
+      setList([...list, trimmed]);
+    }
+    if (setItem) {
       setItem('');
     }
   };
@@ -111,10 +142,10 @@ export default function AdvancedGenerationControls({
   };
 
   const handleGenerate = async () => {
-    if (!primaryFeeling.trim()) {
+    if (!primaryFeeling.trim() && !userPrompt.trim()) {
       toast({
-        title: 'Missing primary feeling',
-        description: 'Please enter a primary feeling for your vibe intent',
+        title: 'Missing input',
+        description: 'Enter a user prompt or a primary feeling to guide generation',
         status: 'error',
         duration: 3000,
       });
@@ -124,10 +155,12 @@ export default function AdvancedGenerationControls({
     setIsLoading(true);
     try {
       const request: AdvancedGenerateRequest = {
-        vibe_intent: {
-          primary_feeling: primaryFeeling,
-          sensory_goals: sensoryGoals.length > 0 ? sensoryGoals : undefined,
-        },
+        vibe_intent: primaryFeeling.trim()
+          ? {
+              primary_feeling: primaryFeeling.trim(),
+              sensory_goals: sensoryGoals.length > 0 ? sensoryGoals : undefined,
+            }
+          : undefined,
         mode: selectedMode || undefined,
         vocals: vocalIntensity || vocalRange || vocalExperimental.length > 0
           ? {
@@ -179,6 +212,11 @@ export default function AdvancedGenerationControls({
             }
           : undefined,
         lyric_density: lyricDensity || undefined,
+        user_prompt: userPrompt.trim() || undefined,
+        selected_artists: selectedArtists.length > 0 ? selectedArtists : undefined,
+        excluded_artists: excludedArtists.length > 0 ? excludedArtists : undefined,
+        selected_genres: selectedGenres.length > 0 ? selectedGenres : undefined,
+        custom_vibes: customVibes.length > 0 ? customVibes : undefined,
       };
 
       const result = await generateAdvanced(request);
@@ -206,6 +244,7 @@ export default function AdvancedGenerationControls({
     <Box>
       <Tabs colorScheme="green" variant="enclosed">
         <TabList>
+          <Tab>Context</Tab>
           <Tab>Vibe Intent</Tab>
           <Tab>Controls</Tab>
           <Tab>Structure</Tab>
@@ -214,11 +253,256 @@ export default function AdvancedGenerationControls({
         </TabList>
 
         <TabPanels>
+          {/* Context Tab */}
+          <TabPanel>
+            <VStack spacing={6} align="stretch">
+              <FormControl>
+                <FormLabel>User Prompt</FormLabel>
+                <Textarea
+                  placeholder="Describe the song you want in a few words..."
+                  value={userPrompt}
+                  onChange={(e) => setUserPrompt(e.target.value)}
+                />
+                <Text fontSize="sm" color="gray.500" mt={1}>
+                  This can be minimal. The agent uses it as the main intent.
+                </Text>
+              </FormControl>
+
+              <Box>
+                <Text fontWeight="bold" mb={2}>Selected Artists</Text>
+                <HStack>
+                  <Input
+                    placeholder="Add an artist"
+                    value={newSelectedArtist}
+                    onChange={(e) => setNewSelectedArtist(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        addToList(selectedArtists, setSelectedArtists, newSelectedArtist, setNewSelectedArtist);
+                      }
+                    }}
+                  />
+                  <IconButton
+                    aria-label="Add selected artist"
+                    icon={<AddIcon />}
+                    onClick={() => addToList(selectedArtists, setSelectedArtists, newSelectedArtist, setNewSelectedArtist)}
+                  />
+                </HStack>
+                <Wrap mt={2}>
+                  {selectedArtists.map((artist, i) => (
+                    <WrapItem key={`${artist}-${i}`}>
+                      <Badge colorScheme="green" display="flex" alignItems="center" gap={1}>
+                        {artist}
+                        <IconButton
+                          aria-label="Remove"
+                          icon={<DeleteIcon />}
+                          size="xs"
+                          variant="ghost"
+                          onClick={() => removeFromList(selectedArtists, setSelectedArtists, i)}
+                        />
+                      </Badge>
+                    </WrapItem>
+                  ))}
+                </Wrap>
+                {profile?.top_artists?.length ? (
+                  <>
+                    <Text fontSize="sm" color="gray.500" mt={3}>
+                      Quick add from your top artists
+                    </Text>
+                    <Wrap mt={1}>
+                      {profile.top_artists.slice(0, 10).map((artist) => (
+                        <WrapItem key={`select-${artist.name}`}>
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            onClick={() => addToList(selectedArtists, setSelectedArtists, artist.name)}
+                          >
+                            + {artist.name}
+                          </Button>
+                        </WrapItem>
+                      ))}
+                    </Wrap>
+                  </>
+                ) : null}
+              </Box>
+
+              <Box>
+                <Text fontWeight="bold" mb={2}>Excluded Artists</Text>
+                <HStack>
+                  <Input
+                    placeholder="Exclude an artist"
+                    value={newExcludedArtist}
+                    onChange={(e) => setNewExcludedArtist(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        addToList(excludedArtists, setExcludedArtists, newExcludedArtist, setNewExcludedArtist);
+                      }
+                    }}
+                  />
+                  <IconButton
+                    aria-label="Add excluded artist"
+                    icon={<AddIcon />}
+                    onClick={() => addToList(excludedArtists, setExcludedArtists, newExcludedArtist, setNewExcludedArtist)}
+                  />
+                </HStack>
+                <Wrap mt={2}>
+                  {excludedArtists.map((artist, i) => (
+                    <WrapItem key={`${artist}-${i}`}>
+                      <Badge colorScheme="red" display="flex" alignItems="center" gap={1}>
+                        {artist}
+                        <IconButton
+                          aria-label="Remove"
+                          icon={<DeleteIcon />}
+                          size="xs"
+                          variant="ghost"
+                          onClick={() => removeFromList(excludedArtists, setExcludedArtists, i)}
+                        />
+                      </Badge>
+                    </WrapItem>
+                  ))}
+                </Wrap>
+                {profile?.top_artists?.length ? (
+                  <>
+                    <Text fontSize="sm" color="gray.500" mt={3}>
+                      Quick exclude from your top artists
+                    </Text>
+                    <Wrap mt={1}>
+                      {profile.top_artists.slice(0, 10).map((artist) => (
+                        <WrapItem key={`exclude-${artist.name}`}>
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            onClick={() => addToList(excludedArtists, setExcludedArtists, artist.name)}
+                          >
+                            - {artist.name}
+                          </Button>
+                        </WrapItem>
+                      ))}
+                    </Wrap>
+                  </>
+                ) : null}
+              </Box>
+
+              <Box>
+                <Text fontWeight="bold" mb={2}>Selected Genres</Text>
+                <HStack>
+                  <Input
+                    placeholder="Add a genre"
+                    value={newSelectedGenre}
+                    onChange={(e) => setNewSelectedGenre(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        addToList(selectedGenres, setSelectedGenres, newSelectedGenre, setNewSelectedGenre);
+                      }
+                    }}
+                  />
+                  <IconButton
+                    aria-label="Add selected genre"
+                    icon={<AddIcon />}
+                    onClick={() => addToList(selectedGenres, setSelectedGenres, newSelectedGenre, setNewSelectedGenre)}
+                  />
+                </HStack>
+                <Wrap mt={2}>
+                  {selectedGenres.map((genre, i) => (
+                    <WrapItem key={`${genre}-${i}`}>
+                      <Badge colorScheme="purple" display="flex" alignItems="center" gap={1}>
+                        {genre}
+                        <IconButton
+                          aria-label="Remove"
+                          icon={<DeleteIcon />}
+                          size="xs"
+                          variant="ghost"
+                          onClick={() => removeFromList(selectedGenres, setSelectedGenres, i)}
+                        />
+                      </Badge>
+                    </WrapItem>
+                  ))}
+                </Wrap>
+                {profile?.taste_profile?.top_genres?.length ? (
+                  <>
+                    <Text fontSize="sm" color="gray.500" mt={3}>
+                      Quick add from your top genres
+                    </Text>
+                    <Wrap mt={1}>
+                      {profile.taste_profile.top_genres.slice(0, 10).map((genre) => (
+                        <WrapItem key={`genre-${genre}`}>
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            onClick={() => addToList(selectedGenres, setSelectedGenres, genre)}
+                          >
+                            + {genre}
+                          </Button>
+                        </WrapItem>
+                      ))}
+                    </Wrap>
+                  </>
+                ) : null}
+              </Box>
+
+              <Box>
+                <Text fontWeight="bold" mb={2}>Custom Vibes</Text>
+                <HStack>
+                  <Input
+                    placeholder="Add a vibe (e.g., dreamy, anxious)"
+                    value={newCustomVibe}
+                    onChange={(e) => setNewCustomVibe(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        addToList(customVibes, setCustomVibes, newCustomVibe, setNewCustomVibe);
+                      }
+                    }}
+                  />
+                  <IconButton
+                    aria-label="Add custom vibe"
+                    icon={<AddIcon />}
+                    onClick={() => addToList(customVibes, setCustomVibes, newCustomVibe, setNewCustomVibe)}
+                  />
+                </HStack>
+                <Wrap mt={2}>
+                  {customVibes.map((vibe, i) => (
+                    <WrapItem key={`${vibe}-${i}`}>
+                      <Badge colorScheme="cyan" display="flex" alignItems="center" gap={1}>
+                        {vibe}
+                        <IconButton
+                          aria-label="Remove"
+                          icon={<DeleteIcon />}
+                          size="xs"
+                          variant="ghost"
+                          onClick={() => removeFromList(customVibes, setCustomVibes, i)}
+                        />
+                      </Badge>
+                    </WrapItem>
+                  ))}
+                </Wrap>
+                {profile?.taste_profile?.mood_tags?.length ? (
+                  <>
+                    <Text fontSize="sm" color="gray.500" mt={3}>
+                      Quick add from your mood tags
+                    </Text>
+                    <Wrap mt={1}>
+                      {profile.taste_profile.mood_tags.map((mood) => (
+                        <WrapItem key={`mood-${mood}`}>
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            onClick={() => addToList(customVibes, setCustomVibes, mood)}
+                          >
+                            + {mood}
+                          </Button>
+                        </WrapItem>
+                      ))}
+                    </Wrap>
+                  </>
+                ) : null}
+              </Box>
+            </VStack>
+          </TabPanel>
+
           {/* Vibe Intent Tab */}
           <TabPanel>
             <VStack spacing={4} align="stretch">
-              <FormControl isRequired>
-                <FormLabel>Primary Feeling</FormLabel>
+              <FormControl>
+                <FormLabel>Primary Feeling (Optional)</FormLabel>
                 <Input
                   placeholder="e.g., chills, focus, rage, peace, chaos"
                   value={primaryFeeling}

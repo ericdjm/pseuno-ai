@@ -46,6 +46,11 @@ export default function AdvancedResultsDisplay({ result }: AdvancedResultsDispla
     return 'green';
   };
 
+  const promptLength = result.suno_prompt.length;
+  const lyricsLength = result.lyrics.length;
+  const modeLabel = result.debug_info?.mode || result.vibe_signature.mode || 'custom';
+  const lyricDensity = result.debug_info?.lyric_density || 'auto';
+
   return (
     <VStack spacing={6} align="stretch">
       {/* Title and ID */}
@@ -60,7 +65,7 @@ export default function AdvancedResultsDisplay({ result }: AdvancedResultsDispla
             </Text>
           </VStack>
           <Badge colorScheme="purple" fontSize="md" px={3} py={1}>
-            {result.debug_info.mode}
+            {modeLabel}
           </Badge>
         </HStack>
       </Box>
@@ -101,13 +106,38 @@ export default function AdvancedResultsDisplay({ result }: AdvancedResultsDispla
           </Box>
 
           <Box>
-            <Text fontSize="sm" fontWeight="semibold" mb={2}>Control Fingerprint</Text>
+            <Text fontSize="sm" fontWeight="semibold" mb={2}>Sensory Goals</Text>
+            {result.vibe_signature.sensory_goals.length > 0 ? (
+              <Wrap>
+                {result.vibe_signature.sensory_goals.map((goal, i) => (
+                  <WrapItem key={i}>
+                    <Badge colorScheme="cyan">{goal}</Badge>
+                  </WrapItem>
+                ))}
+              </Wrap>
+            ) : (
+              <Text fontSize="sm" color="gray.500">None provided</Text>
+            )}
+          </Box>
+
+          <Box>
+            <Text fontSize="sm" fontWeight="semibold" mb={2}>Flags</Text>
             <Wrap>
-              {result.vibe_signature.control_fingerprint.map((control, i) => (
-                <WrapItem key={i}>
-                  <Badge colorScheme="cyan">{control}</Badge>
+              {result.vibe_signature.rule_breaking_active && (
+                <WrapItem>
+                  <Badge colorScheme="red">rule breaking</Badge>
                 </WrapItem>
-              ))}
+              )}
+              {result.vibe_signature.iteration_mode && (
+                <WrapItem>
+                  <Badge colorScheme="yellow">contrast iteration</Badge>
+                </WrapItem>
+              )}
+              {!result.vibe_signature.rule_breaking_active && !result.vibe_signature.iteration_mode && (
+                <WrapItem>
+                  <Badge colorScheme="gray">none</Badge>
+                </WrapItem>
+              )}
             </Wrap>
           </Box>
         </VStack>
@@ -137,7 +167,7 @@ export default function AdvancedResultsDisplay({ result }: AdvancedResultsDispla
           <Text fontWeight="bold">Suno Prompt</Text>
           <HStack>
             <Text fontSize="sm" color="gray.500">
-              {result.debug_info.prompt_length} chars
+              {promptLength} chars
             </Text>
             <Button
               size="sm"
@@ -168,11 +198,11 @@ export default function AdvancedResultsDisplay({ result }: AdvancedResultsDispla
         <HStack justify="space-between" mb={2}>
           <HStack>
             <Text fontWeight="bold">Lyrics</Text>
-            <Badge colorScheme="blue">{result.debug_info.lyric_density}</Badge>
+            <Badge colorScheme="blue">{lyricDensity}</Badge>
           </HStack>
           <HStack>
             <Text fontSize="sm" color="gray.500">
-              {result.debug_info.lyrics_length} chars
+              {lyricsLength} chars
             </Text>
             <Button
               size="sm"
