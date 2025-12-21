@@ -26,8 +26,6 @@ import { FaSpotify } from 'react-icons/fa';
 import * as api from './api';
 import { usePersistedSettings } from './hooks';
 import { TasteDisplay } from './components/TasteDisplay';
-import { GenerationControls } from './components/GenerationControls';
-import { ResultsDisplay } from './components/ResultsDisplay';
 import { PrivacyNote } from './components/PrivacyNote';
 import AdvancedGenerationControls from './components/AdvancedGenerationControls';
 import AdvancedResultsDisplay from './components/AdvancedResultsDisplay';
@@ -46,28 +44,8 @@ function App() {
   const [profileError, setProfileError] = useState<string | null>(null);
 
   // Generation state
-  const [result, setResult] = useState<api.GenerateResponse | null>(null);
-  const [generating, setGenerating] = useState(false);
-
-  // Advanced generation state
   const [advancedResult, setAdvancedResult] = useState<api.AdvancedGenerateResponse | null>(null);
-  const [generationMode, setGenerationMode] = useState<'basic' | 'advanced'>('basic');
-
-  // Theme input
-  const [theme, setTheme] = useState('');
-
-  // Check for shared result in URL
-  useEffect(() => {
-    const shared = api.parseShareUrl();
-    if (shared) {
-      setResult(shared);
-      toast({
-        title: 'Shared result loaded',
-        status: 'info',
-        duration: 3000,
-      });
-    }
-  }, [toast]);
+  const [generating, setGenerating] = useState(false);
 
   // Check for OAuth callback
   useEffect(() => {
@@ -151,49 +129,12 @@ function App() {
     await api.logout();
     setAuthStatus({ authenticated: false });
     setProfile(null);
-    setResult(null);
     setAdvancedResult(null);
     toast({
       title: 'Logged out',
       status: 'info',
       duration: 2000,
     });
-  };
-
-  const handleGenerate = async () => {
-    if (!profile) return;
-
-    setGenerating(true);
-    try {
-      const response = await api.generate({
-        time_range: settings.timeRange,
-        theme: theme || undefined,
-        energy: settings.energy,
-        rhythm_complexity: settings.rhythmComplexity,
-        darkness: settings.darkness,
-        preset: settings.preset || undefined,
-      });
-      setResult(response);
-      toast({
-        title: 'Generated successfully!',
-        status: 'success',
-        duration: 2000,
-      });
-    } catch (e) {
-      const error = e as api.ApiError;
-      toast({
-        title: 'Generation failed',
-        description: error.detail || 'Please try again',
-        status: 'error',
-      });
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  const handleGenerateVariation = async () => {
-    // Just call generate again - the random elements will create variation
-    await handleGenerate();
   };
 
   const handleAdvancedGenerate = (result: api.AdvancedGenerateResponse) => {
@@ -292,53 +233,16 @@ function App() {
 
             {/* Generation Controls */}
             <Box>
-              <HStack mb={4}>
-                <Button
-                  variant={generationMode === 'basic' ? 'solid' : 'outline'}
-                  colorScheme="green"
-                  onClick={() => setGenerationMode('basic')}
-                >
-                  Basic Mode
-                </Button>
-                <Button
-                  variant={generationMode === 'advanced' ? 'solid' : 'outline'}
-                  colorScheme="purple"
-                  onClick={() => setGenerationMode('advanced')}
-                >
-                  Advanced (Vibe-First)
-                </Button>
-              </HStack>
-
-              {generationMode === 'basic' ? (
-                <GenerationControls
-                  settings={settings}
-                  onSettingsChange={updateSettings}
-                  theme={theme}
-                  onThemeChange={setTheme}
-                  onGenerate={handleGenerate}
-                  generating={generating}
-                  disabled={!profile || profileLoading}
-                />
-              ) : (
-                <AdvancedGenerationControls
-                  onGenerate={handleAdvancedGenerate}
-                  isLoading={generating}
-                  setIsLoading={setGenerating}
-                  profile={profile}
-                />
-              )}
+              <AdvancedGenerationControls
+                onGenerate={handleAdvancedGenerate}
+                isLoading={generating}
+                setIsLoading={setGenerating}
+                profile={profile}
+              />
             </Box>
 
             {/* Results */}
-            {generationMode === 'basic' && result && (
-              <ResultsDisplay
-                result={result}
-                onGenerateVariation={handleGenerateVariation}
-                generating={generating}
-              />
-            )}
-
-            {generationMode === 'advanced' && advancedResult && (
+            {advancedResult && (
               <AdvancedResultsDisplay result={advancedResult} />
             )}
 

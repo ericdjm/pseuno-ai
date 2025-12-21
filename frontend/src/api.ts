@@ -44,92 +44,13 @@ export interface AuthStatus {
   user_image?: string;
 }
 
-export interface GenerateRequest {
-  time_range: 'short_term' | 'medium_term' | 'long_term';
-  theme?: string;
-  energy: number;
-  rhythm_complexity: number;
-  darkness: number;
-  extra_notes?: string;
-  preset?: string;
-}
-
-export interface GenerateResponse {
-  concept_title: string;
-  suno_prompt: string;
-  lyrics: string;
-  debug_profile?: TasteProfile;
-}
-
-// === Advanced Generation Types ===
-
-export interface VibeIntent {
-  primary_feeling: string;
-  sensory_goals?: string[];
-  context?: string;
-}
-
-export interface VocalControls {
-  intensity?: string;
-  range?: string;
-  experimental?: string[];
-}
-
-export interface RhythmControls {
-  complexity?: string;
-  drops?: string;
-  accents?: string[];
-}
-
-export interface TextureControls {
-  organic_vs_synthetic?: number;
-  atmosphere?: string[];
-}
-
-export interface StructureControls {
-  fake_drops?: boolean;
-  unresolved?: boolean;
-  intentional_chaos?: boolean;
-}
-
-export interface RuleBreaking {
-  break_melody?: boolean;
-  break_rhythm?: boolean;
-  permission_to_violate?: string[];
-}
-
-export interface ContentTheme {
-  theme_type?: string;
-  specific_topic?: string;
-  repetition_style?: string;
-}
-
-export interface ContrastIteration {
-  reference_id?: string;
-  less_of?: string[];
-  more_of?: string[];
-  push_direction?: string;
-}
+// === Generation Types ===
 
 export interface AdvancedGenerateRequest {
-  vibe_intent?: VibeIntent;
-  mode?: string;
-  vocals?: VocalControls;
-  rhythm?: RhythmControls;
-  texture?: TextureControls;
-  structure?: StructureControls;
-  rule_breaking?: RuleBreaking;
-  content_theme?: ContentTheme;
-  contrast?: ContrastIteration;
-  lyric_density?: string;
-  separate_artifacts?: boolean;
-  time_range?: TimeRange;
-  extra_notes?: string;
-  user_prompt?: string;
+  user_prompt: string;
+  lyrics_about: string;
   selected_artists?: string[];
-  excluded_artists?: string[];
-  selected_genres?: string[];
-  custom_vibes?: string[];
+  tags?: string[];
 }
 
 export interface AdvancedGenerateResponse {
@@ -137,32 +58,10 @@ export interface AdvancedGenerateResponse {
   concept_title: string;
   suno_prompt: string;
   lyrics: string;
-  vibe_signature: {
-    primary_feeling: string;
-    sensory_goals: string[];
-    mode: string;
-    intensity_vector: {
-      vocal: number;
-      rhythmic: number;
-      textural: number;
-    };
-    rule_breaking_active: boolean;
-    iteration_mode: boolean;
-  };
-  control_layers_used: {
-    vocals: boolean;
-    rhythm: boolean;
-    texture: boolean;
-    structure: boolean;
-    rule_breaking: boolean;
-    content_theme: boolean;
-    contrast_iteration: boolean;
-    taste_profile: boolean;
-  };
+  exclude: string;
+  weirdness: number;
+  style_influence: number;
   debug_info?: {
-    mode: string;
-    lyric_density: string;
-    taste_influence?: string;
     agent_model?: string;
     context_hash?: string;
   };
@@ -272,37 +171,7 @@ export async function getProfile(
 // === Generation Functions ===
 
 /**
- * Generate Suno AI prompt and lyrics
- */
-export async function generate(
-  payload: GenerateRequest
-): Promise<GenerateResponse> {
-  const response = await fetch(`${API_BASE}/generate`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  });
-  return handleResponse<GenerateResponse>(response);
-}
-
-/**
- * Get available mode presets for advanced generation
- */
-export async function getAvailableModes(): Promise<string[]> {
-  const response = await fetch(`${API_BASE}/generate/modes`, {
-    credentials: 'include',
-  });
-  const data = await handleResponse<{
-    modes: Record<string, { description: string; vibe_keywords: string[] }>;
-  }>(response);
-  return Object.keys(data.modes || {});
-}
-
-/**
- * Generate with advanced vibe-first controls
+ * Generate with the Suno formatter agent
  */
 export async function generateAdvanced(
   payload: AdvancedGenerateRequest
@@ -319,39 +188,6 @@ export async function generateAdvanced(
 }
 
 // === Utility Functions ===
-
-/**
- * Generate a shareable URL with encoded result
- */
-export function createShareUrl(result: GenerateResponse): string {
-  const data = {
-    t: result.concept_title,
-    p: result.suno_prompt,
-    l: result.lyrics,
-  };
-  const encoded = btoa(encodeURIComponent(JSON.stringify(data)));
-  return `${window.location.origin}${window.location.pathname}#share=${encoded}`;
-}
-
-/**
- * Parse a shared result from URL hash
- */
-export function parseShareUrl(): GenerateResponse | null {
-  const hash = window.location.hash;
-  if (!hash.startsWith('#share=')) return null;
-  
-  try {
-    const encoded = hash.slice(7);
-    const decoded = JSON.parse(decodeURIComponent(atob(encoded)));
-    return {
-      concept_title: decoded.t || '',
-      suno_prompt: decoded.p || '',
-      lyrics: decoded.l || '',
-    };
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Check if there's an error in the URL (from OAuth callback)

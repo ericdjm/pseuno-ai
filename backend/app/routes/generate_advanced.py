@@ -1,5 +1,5 @@
 """
-Advanced generation routes using vibe-first methodology
+Minimal generation routes for the Suno formatter agent.
 """
 
 from fastapi import APIRouter, Request
@@ -8,52 +8,22 @@ from app.models_advanced import (
     AdvancedGenerateRequest,
     AdvancedGenerateResponse,
 )
-from app.services.advanced_prompt_builder import MODE_PRESETS
 from app.services.agent_prompt_builder import AgentPromptBuilder
 from app.config import get_settings
-from app.utils import get_authenticated_client, fetch_and_parse_spotify_data
+from app.utils import get_authenticated_client
 
 router = APIRouter()
-
-
-@router.get("/modes")
-async def get_modes():
-    """Get available generation modes with descriptions"""
-    return {
-        "modes": {
-            mode: {
-                "description": preset["description"],
-                "vibe_keywords": preset["vibe_keywords"]
-            }
-            for mode, preset in MODE_PRESETS.items()
-        }
-    }
-
 
 @router.post("/advanced", response_model=AdvancedGenerateResponse)
 async def generate_advanced(request: Request, body: AdvancedGenerateRequest):
     """
-    Advanced vibe-first generation
-    
-    Implements:
-    - Vibe-first intent (not genre-first)
-    - Orthogonal control layers (vocals, rhythm, texture, structure)
-    - Contrast-based iteration
-    - Rule breaking permissions
-    - Content themes as anchors
-    - Lyric density matching intensity
-    - Separated artifacts (lyrics vs prompt)
+    Minimal Suno formatter generation.
     """
-    client = get_authenticated_client(request)
-    
-    # Fetch and parse Spotify data for taste profile (uses parallel API calls)
-    top_artists, _, taste_profile = await fetch_and_parse_spotify_data(
-        client, body.time_range
-    )
+    get_authenticated_client(request)
     
     # Generate using LangChain agent
     settings = get_settings()
     builder = AgentPromptBuilder(settings)
-    result = await builder.generate(body, taste_profile, top_artists)
+    result = await builder.generate(body)
     
     return AdvancedGenerateResponse(**result)

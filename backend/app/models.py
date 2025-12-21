@@ -43,27 +43,6 @@ class SpotifyProfileResponse(BaseModel):
     time_range: str
 
 
-# === Generation Models ===
-
-class GenerateRequest(BaseModel):
-    """Request body for prompt generation"""
-    time_range: str = Field(default="medium_term", pattern="^(short_term|medium_term|long_term)$")
-    theme: Optional[str] = Field(default=None, max_length=200)
-    energy: int = Field(default=50, ge=0, le=100)
-    rhythm_complexity: int = Field(default=50, ge=0, le=100)
-    darkness: int = Field(default=50, ge=0, le=100)
-    extra_notes: Optional[str] = Field(default=None, max_length=500)
-    preset: Optional[str] = Field(default=None, description="Genre preset override")
-
-
-class GenerateResponse(BaseModel):
-    """Response from prompt generation"""
-    concept_title: str = Field(description="Short title for the concept")
-    suno_prompt: str = Field(description="Structured prompt for Suno AI", max_length=700)
-    lyrics: str = Field(description="Original lyrics with section tags", max_length=1800)
-    debug_profile: Optional[TasteProfile] = Field(default=None, description="Debug info (dev only)")
-
-
 # === Auth Models ===
 
 class LoginResponse(BaseModel):

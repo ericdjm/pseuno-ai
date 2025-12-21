@@ -10,7 +10,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.routes import auth, spotify, generate, generate_advanced
+from app.routes import auth, spotify, generate_advanced
 from app.services.session_store import session_store
 from app.config import validate_settings
 
@@ -125,7 +125,6 @@ async def rate_limit_middleware(request: Request, call_next):
 # Include routers
 app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 app.include_router(spotify.router, prefix="/spotify", tags=["Spotify"])
-app.include_router(generate.router, prefix="/generate", tags=["Generation"])
 app.include_router(generate_advanced.router, prefix="/generate", tags=["Advanced Generation"])
 
 @app.get("/health")
