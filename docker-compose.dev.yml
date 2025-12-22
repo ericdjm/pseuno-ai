@@ -36,7 +36,7 @@ services:
       - ./backend/.env
     environment:
       # Docker-specific overrides (override .env values for containerized environment)
-      FRONTEND_ORIGIN: http://localhost:5173
+      FRONTEND_ORIGIN: http://127.0.0.1:5173
       DATABASE_URL: postgresql+psycopg://pseuno:pseuno@postgres:5432/pseuno
       REDIS_URL: redis://redis:6379/0
     volumes:

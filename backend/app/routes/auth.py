@@ -98,23 +98,32 @@ async def spotify_callback(
     Handle Spotify OAuth callback
     Exchanges authorization code for tokens
     """
+    print(f"🔍 Callback received - cookies: {request.cookies}")
+    print(f"🔍 Code present: {bool(code)}, State present: {bool(state)}, Error: {error}")
+    
     settings = get_settings()
     frontend_url = settings.frontend_origin
     
     if error:
+        print(f"⚠️  OAuth error from Spotify: {error}")
         return RedirectResponse(url=f"{frontend_url}?error={error}")
     
     if not code or not state:
+        print(f"⚠️  Missing code or state")
         return RedirectResponse(url=f"{frontend_url}?error=missing_params")
     
     # Get session
     session_id = request.cookies.get("session_id")
+    print(f"🔍 Callback received - session_id: {session_id}")
     if not session_id:
+        print("⚠️  No session_id cookie found")
         return RedirectResponse(url=f"{frontend_url}?error=no_session")
     
     # Verify state and get code verifier
     pkce_data = session_store.get_pkce_data(session_id)
+    print(f"🔍 PKCE data: {pkce_data}")
     if not pkce_data or pkce_data.get("state") != state:
+        print(f"⚠️  Invalid state - expected: {pkce_data.get('state') if pkce_data else 'None'}, got: {state}")
         return RedirectResponse(url=f"{frontend_url}?error=invalid_state")
     
     code_verifier = pkce_data.get("code_verifier")
@@ -143,6 +152,7 @@ async def spotify_callback(
                 return RedirectResponse(url=f"{frontend_url}?error={error_detail}")
             
             tokens = token_response.json()
+            print(f"✓ Token exchange successful")
             
             # Store tokens in session
             session_store.set_tokens(
@@ -151,6 +161,7 @@ async def spotify_callback(
                 refresh_token=tokens.get("refresh_token"),
                 expires_in=tokens.get("expires_in", 3600)
             )
+            print(f"✓ Tokens stored in session")
             
             # Fetch user profile
             user_response = await client.get(
@@ -165,6 +176,7 @@ async def spotify_callback(
                     user_name=user_data.get("display_name", "User"),
                     user_image=user_data.get("images", [{}])[0].get("url") if user_data.get("images") else None
                 )
+                print(f"✓ User profile stored: {user_data.get('display_name')}")
             
             # Clear PKCE data
             session_store.clear_pkce_data(session_id)

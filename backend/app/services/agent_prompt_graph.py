@@ -64,42 +64,52 @@ class OpenAIChatClient:
             "Content-Type": "application/json",
         }
         timeout = httpx.Timeout(self.timeout)
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            try:
-                response = await client.post(
-                    "https://api.openai.com/v1/responses",
-                    json=payload,
-                    headers=headers,
-                )
-            except httpx.ReadTimeout:
-                # Retry once with a longer timeout to handle slow model responses.
-                retry_timeout = httpx.Timeout(max(self.timeout * 2, self.timeout + 30))
-                async with httpx.AsyncClient(timeout=retry_timeout) as retry_client:
-                    response = await retry_client.post(
+        
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                try:
+                    response = await client.post(
                         "https://api.openai.com/v1/responses",
                         json=payload,
                         headers=headers,
                     )
-            if response.status_code >= 400:
-                # Some models do not support temperature; retry without it if needed.
-                if self._is_unsupported_temperature(response):
-                    payload.pop("temperature", None)
-                    retry = await client.post(
-                        "https://api.openai.com/v1/responses",
-                        json=payload,
-                        headers=headers,
-                    )
-                    if retry.status_code >= 400:
-                        raise RuntimeError(
-                            f"OpenAI API error {retry.status_code}: {retry.text}"
+                except httpx.ReadTimeout:
+                    # Retry once with a longer timeout to handle slow model responses.
+                    retry_timeout = httpx.Timeout(max(self.timeout * 2, self.timeout + 30))
+                    async with httpx.AsyncClient(timeout=retry_timeout) as retry_client:
+                        response = await retry_client.post(
+                            "https://api.openai.com/v1/responses",
+                            json=payload,
+                            headers=headers,
                         )
-                    data = retry.json()
+                
+                if response.status_code >= 400:
+                    # Some models do not support temperature; retry without it if needed.
+                    if self._is_unsupported_temperature(response):
+                        payload.pop("temperature", None)
+                        retry = await client.post(
+                            "https://api.openai.com/v1/responses",
+                            json=payload,
+                            headers=headers,
+                        )
+                        if retry.status_code >= 400:
+                            raise RuntimeError(
+                                f"OpenAI API error {retry.status_code}: {retry.text}"
+                            )
+                        data = retry.json()
+                    else:
+                        raise RuntimeError(
+                            f"OpenAI API error {response.status_code}: {response.text}"
+                        )
                 else:
-                    raise RuntimeError(
-                        f"OpenAI API error {response.status_code}: {response.text}"
-                    )
-            else:
-                data = response.json()
+                    data = response.json()
+        except httpx.ReadTimeout as e:
+            # If we still timeout after retry, provide a helpful error
+            raise RuntimeError(
+                f"OpenAI API request timed out after {self.timeout}s. "
+                f"Try increasing HTTP_TIMEOUT in your environment settings."
+            ) from e
+            
         content = self._extract_text(data)
         return _LLMResponse(content=content or "")
 

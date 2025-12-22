@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     rate_limit_window: int = 60
 
     # Request timeouts
-    http_timeout: int = 30
+    http_timeout: int = 60  # Increased for LLM API calls
 
     # Storage settings
     redis_url: Optional[str] = Field(
