@@ -4,13 +4,17 @@ LangGraph-based agent for Suno prompt + lyrics generation.
 
 import hashlib
 import json
+import logging
 import re
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, TypedDict
 
 import httpx
 from langgraph.graph import END, StateGraph
+
+logger = logging.getLogger(__name__)
 
 from app.config import Settings
 from app.models_advanced import AdvancedGenerateRequest
@@ -278,6 +282,12 @@ class AgentPromptGraph:
         self.settings = settings
         self.llm = llm or self._create_llm_client(settings)
         self._graph = self._build_graph()
+        self._debug_file = Path(__file__).parent.parent.parent / "debug_agent.log"
+
+    def _debug_log(self, msg: str):
+        """Write debug message to log file."""
+        with open(self._debug_file, "a", encoding="utf-8") as f:
+            f.write(msg + "\n")
 
     @staticmethod
     def _create_llm_client(settings: Settings):
@@ -308,14 +318,14 @@ class AgentPromptGraph:
         graph.add_node("generate", self._node_generate)
         graph.add_node("parse_validate", self._node_parse_validate)
         graph.add_node("repair", self._node_repair)
-        graph.add_node("fallback", self._node_fallback)
+        graph.add_node("error", self._node_error)
         graph.add_node("finalize", self._node_finalize)
 
         graph.set_entry_point("build_context")
         graph.add_edge("build_context", "generate")
         graph.add_edge("generate", "parse_validate")
         graph.add_edge("repair", "parse_validate")
-        graph.add_edge("fallback", "finalize")
+        graph.add_edge("error", END)
 
         graph.add_conditional_edges(
             "parse_validate",
@@ -323,7 +333,7 @@ class AgentPromptGraph:
             {
                 "finalize": "finalize",
                 "repair": "repair",
-                "fallback": "fallback",
+                "error": "error",
             },
         )
 
@@ -350,14 +360,58 @@ class AgentPromptGraph:
         }
 
     async def _node_generate(self, state: _AgentState) -> _AgentState:
+        logger.info("agent.generate calling LLM (model=%s)", self.settings.llm_model)
+
+        # DEBUG: Write full request to log file
+        self._debug_log("=" * 80)
+        self._debug_log(f"MODEL: {self.settings.llm_model}")
+        self._debug_log("=" * 80)
+        self._debug_log("\n--- SYSTEM PROMPT ---")
+        self._debug_log(
+            self.settings.song_agent_prompt[:500] + "..."
+            if len(self.settings.song_agent_prompt) > 500
+            else self.settings.song_agent_prompt
+        )
+        self._debug_log("\n--- USER CONTEXT ---")
+        self._debug_log(state["context_text"])
+        self._debug_log("\n--- END REQUEST ---\n")
+
         raw_output = await self._call_llm(
             self.settings.song_agent_prompt, state["context_text"]
         )
+
+        # DEBUG: Write raw response
+        self._debug_log("\n--- RAW LLM RESPONSE ---")
+        self._debug_log(raw_output)
+        self._debug_log("\n--- END RESPONSE ---\n")
+
+        logger.info("agent.generate received LLM output (chars=%s)", len(raw_output))
         return {**state, "raw_output": raw_output}
 
     async def _node_parse_validate(self, state: _AgentState) -> _AgentState:
         parsed = self._parse_agent_output(state.get("raw_output", ""))
         issues = self._validate_output(parsed, state["context_pack"])
+
+        # DEBUG: Write parsed output and issues
+        self._debug_log("\n--- PARSED OUTPUT ---")
+        self._debug_log(f"order: {parsed.order}")
+        self._debug_log(
+            f"suno_prompt: {parsed.suno_prompt[:200]}..."
+            if len(parsed.suno_prompt) > 200
+            else f"suno_prompt: {parsed.suno_prompt}"
+        )
+        self._debug_log(f"exclude: {parsed.exclude}")
+        self._debug_log(f"weirdness: {parsed.weirdness}")
+        self._debug_log(f"style_influence: {parsed.style_influence}")
+        self._debug_log(f"\nISSUES FOUND: {len(issues)}")
+        for issue in issues:
+            self._debug_log(f"  - {issue}")
+        self._debug_log("--- END PARSED ---\n")
+
+        if issues:
+            logger.info("agent.parse_validate found issues (count=%s)", len(issues))
+        else:
+            logger.info("agent.parse_validate ok")
         return {**state, "parsed": parsed, "issues": issues}
 
     def _route_after_validation(self, state: _AgentState) -> str:
@@ -366,7 +420,7 @@ class AgentPromptGraph:
             return "finalize"
         if state.get("repairs_left", 0) > 0:
             return "repair"
-        return "fallback"
+        return "error"
 
     async def _node_repair(self, state: _AgentState) -> _AgentState:
         repairs_left = max(0, state.get("repairs_left", 0) - 1)
@@ -393,20 +447,33 @@ class AgentPromptGraph:
             "repaired": True,
         }
 
-    def _node_fallback(self, state: _AgentState) -> _AgentState:
-        fallback_raw, fallback_parsed = self._build_fallback(state["context_pack"])
+    def _node_error(self, state: _AgentState) -> _AgentState:
+        """Return an error result with validation issues — no silent fallback."""
+        issues = state.get("issues") or []
+        logger.warning("agent.error validation failed (issues=%s)", len(issues))
+
+        # Log the issues for debugging
+        for issue in issues:
+            logger.warning("  - %s", issue)
+        self._debug_log("\n--- VALIDATION FAILED (NO FALLBACK) ---")
+        for issue in issues:
+            self._debug_log(f"  - {issue}")
+        self._debug_log("--- END ERROR ---\n")
+
         return {
             **state,
-            "raw_output": fallback_raw,
-            "parsed": fallback_parsed,
-            "issues": [],
-            "repaired": True,
+            "result": {
+                "success": False,
+                "error": "Validation failed after all repair attempts",
+                "issues": issues,
+                "raw_output": state.get("raw_output", ""),
+            },
         }
 
     def _node_finalize(self, state: _AgentState) -> _AgentState:
         context_pack = state["context_pack"]
         parsed = state["parsed"]
-        song_prompt = context_pack.get("song_prompt", "")
+        song_prompt = context_pack.get("user_style_request", "")
         lyrics_about = context_pack.get("lyrics_about", "")
 
         concept_title = self._derive_title(song_prompt, lyrics_about)
@@ -460,14 +527,21 @@ class AgentPromptGraph:
     def _build_context_pack(self, request: AdvancedGenerateRequest) -> Dict[str, Any]:
         return {
             "selected_artists": request.selected_artists or [],
-            "song_prompt": request.user_prompt or "",
+            "user_style_request": request.user_prompt or "",
             "lyrics_about": request.lyrics_about or "",
             "tags": request.tags or [],
         }
 
     def _format_context_pack(self, context_pack: Dict[str, Any]) -> str:
-        context_json = json.dumps(context_pack, indent=2, ensure_ascii=True)
-        return f"BEGIN_CONTEXT\n{context_json}\nEND_CONTEXT"
+        # Format context with clear instructions about what each field is
+        lines = [
+            "USER INPUT (transform this into SUNO PROMPT - do NOT copy verbatim):",
+            f"  style_request: {context_pack.get('user_style_request', '')}",
+            f"  lyrics_about: {context_pack.get('lyrics_about', '')}",
+            f"  reference_artists: {context_pack.get('selected_artists', [])}",
+            f"  tags: {context_pack.get('tags', [])}",
+        ]
+        return "\n".join(lines)
 
     def _parse_agent_output(self, text: str) -> _ParsedAgentOutput:
         order, sections = self._extract_sections(text)
@@ -491,6 +565,7 @@ class AgentPromptGraph:
     def _extract_sections(self, text: str) -> Tuple[Tuple[str, ...], Dict[str, str]]:
         """
         Extracts the agent's labeled sections and preserves header order.
+        Filters out --- separator lines that some models include.
         """
         sections: Dict[str, str] = {}
         order: List[str] = []
@@ -498,6 +573,11 @@ class AgentPromptGraph:
         buffer: list[str] = []
 
         for line in text.splitlines():
+            # Skip separator lines (---, ===, etc.)
+            stripped = line.strip()
+            if stripped and all(c in "-=" for c in stripped):
+                continue
+
             header = self._normalize_header(line)
             if header:
                 if current_key is not None:
@@ -534,12 +614,13 @@ class AgentPromptGraph:
         if parsed.suno_prompt and len(parsed.suno_prompt) > 500:
             issues.append("SUNO PROMPT exceeds 500 characters.")
 
-        # EXCLUDE must be one line, comma-separated, no dashes, no extra prose.
+        # EXCLUDE must be one line, comma-separated, no extra prose.
         exclude = parsed.exclude.strip()
         if "\n" in exclude or "\r" in exclude:
             issues.append("EXCLUDE must be one line only.")
-        if "-" in exclude:
-            issues.append("EXCLUDE must not contain dashes.")
+        # Only flag dashes used as separators (space-dash-space), not hyphens in words like "hi-hats"
+        if " - " in exclude or exclude.startswith("- ") or exclude.endswith(" -"):
+            issues.append("EXCLUDE must use commas as separators, not dashes.")
         if exclude:
             # Allow simple comma-separated phrases. Disallow obvious prose separators.
             if any(token in exclude for token in (":", ";", "•", "—")):
@@ -562,6 +643,34 @@ class AgentPromptGraph:
                 parsed.sections.get("STYLE INFLUENCE", ""), "STYLE INFLUENCE"
             )
         )
+
+        # Detect lazy "echo" outputs where the model just repeats the user prompt.
+        suno_prompt_lower = (parsed.suno_prompt or "").lower().strip()
+        lazy_patterns = [
+            "make a song",
+            "create a song",
+            "write a song",
+            "sounds like",
+            "mixed with",
+            "in the style of",
+        ]
+        for pattern in lazy_patterns:
+            if (
+                suno_prompt_lower.startswith(pattern)
+                or f" {pattern}" in suno_prompt_lower[:100]
+            ):
+                issues.append(
+                    f"SUNO PROMPT echoes input ('{pattern}'). Transform into style descriptors."
+                )
+                break
+
+        # Detect lazy default values (both exactly 50% + empty EXCLUDE is a red flag)
+        if parsed.weirdness == 50 and parsed.style_influence == 50:
+            exclude_val = parsed.exclude.strip().lower()
+            if not exclude_val or exclude_val in ("(none)", "none"):
+                issues.append(
+                    "Lazy defaults detected (50%/50%, empty EXCLUDE). Generate specific values."
+                )
 
         # Enforce: do not mention real artists by name in SUNO PROMPT (lyrics not enforced).
         artists = context_pack.get("selected_artists") or []
@@ -618,57 +727,6 @@ class AgentPromptGraph:
             seen.add(a.lower())
             out.append(a)
         return out
-
-    def _build_fallback(
-        self, context_pack: Dict[str, Any]
-    ) -> Tuple[str, _ParsedAgentOutput]:
-        """
-        Deterministic fallback: always returns a valid 5-section output,
-        and scrubs artist names from SUNO PROMPT.
-        """
-        song_prompt = (context_pack.get("song_prompt") or "").strip()
-        lyrics_about = (context_pack.get("lyrics_about") or "").strip()
-        tags = context_pack.get("tags") or []
-        artists = context_pack.get("selected_artists") or []
-
-        # SUNO PROMPT: keep it short and descriptive; do not include artist names.
-        base_prompt = (
-            song_prompt
-            or "Original song with clear instrumentation and strong production details."
-        )
-        if tags:
-            base_prompt = f"{base_prompt} | tags: {', '.join(str(t) for t in tags if str(t).strip())}"
-        suno_prompt = self._trim_text(
-            self._scrub_artist_names(base_prompt, artists).strip(), 500
-        )
-
-        # Lyrics: simple, valid bracket structure; not enforcing lyric artist leakage per requirements.
-        topic = lyrics_about or "a vivid scene with strong emotion"
-        lyrics = (
-            "[Verse]\n"
-            f"{self._trim_text(topic, 80)}\n\n"
-            "[Chorus]\n"
-            f"{self._trim_text(topic, 80)}\n"
-        )
-
-        exclude = ""
-        weirdness = 50
-        style_influence = 50
-
-        raw = (
-            "LYRICS\n"
-            f"{lyrics}\n\n"
-            "SUNO PROMPT\n"
-            f"{suno_prompt}\n\n"
-            "EXCLUDE\n"
-            f"{exclude}\n\n"
-            "WEIRDNESS\n"
-            f"{weirdness}\n\n"
-            "STYLE INFLUENCE\n"
-            f"{style_influence}\n"
-        )
-        parsed = self._parse_agent_output(raw)
-        return raw, parsed
 
     def _scrub_artist_names(self, text: str, artists: Sequence[str]) -> str:
         """
