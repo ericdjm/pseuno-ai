@@ -4,34 +4,11 @@ Utility functions to reduce code duplication
 
 import asyncio
 from typing import List
-from fastapi import Request, HTTPException
+from fastapi import HTTPException
 
 from app.models import SpotifyArtist, SpotifyTrack, TasteProfile
-from app.services.spotify_client import SpotifyClient
+from app.services.spotify_client import SpotifyClient, SpotifyClientError
 from app.services.taste_analyzer import build_taste_profile
-from app.services.session_store import session_store
-
-
-def get_authenticated_client(request: Request) -> SpotifyClient:
-    """
-    Get an authenticated Spotify client from session.
-    Raises HTTPException if not authenticated.
-    """
-    session_id = request.cookies.get("session_id")
-    
-    if not session_id:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
-    session = session_store.get_session(session_id)
-    
-    if not session or not session.get("access_token"):
-        raise HTTPException(status_code=401, detail="Session expired or invalid")
-    
-    return SpotifyClient(
-        access_token=session["access_token"],
-        refresh_token=session.get("refresh_token"),
-        session_id=session_id
-    )
 
 
 async def fetch_and_parse_spotify_data(
@@ -59,13 +36,13 @@ async def fetch_and_parse_spotify_data(
         # Fetch artists and tracks in parallel for better performance
         top_artists_data, top_tracks_data = await asyncio.gather(
             client.get_top_artists(time_range=time_range, limit=artist_limit),
-            client.get_top_tracks(time_range=time_range, limit=track_limit)
+            client.get_top_tracks(time_range=time_range, limit=track_limit),
         )
-    except Exception as e:
+    except SpotifyClientError as exc:
         raise HTTPException(
             status_code=502,
-            detail=f"Failed to fetch Spotify data: {str(e)}"
-        )
+            detail=f"Failed to fetch Spotify data: {exc}",
+        ) from exc
     
     # Parse artists
     top_artists = [
