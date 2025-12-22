@@ -418,7 +418,6 @@ class AgentPromptGraph:
         self._debug_log("\n--- END RESPONSE ---\n")
 
         logger.info("agent.generate received LLM output (chars=%s)", len(raw_output))
-        logger.info("agent.generate received LLM output (chars=%s)", len(raw_output))
         return {**state, "raw_output": raw_output}
 
     async def _node_parse_validate(self, state: _AgentState) -> _AgentState:
