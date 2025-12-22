@@ -64,7 +64,7 @@ class Settings(BaseSettings):
         default=None, description="Google Gemini API key"
     )
     llm_model: str = Field(
-        default="gpt-5-nano",
+        default="gpt-4.1",
         description="LLM model for song agent (e.g., gpt-5-nano, gemini-3-flash-preview)",
     )
     llm_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
