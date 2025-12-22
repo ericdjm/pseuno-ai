@@ -5,7 +5,7 @@ Tests for AgentPromptGraph — basic use cases + repair/validation behavior.
 import asyncio
 
 from app.config import Settings
-from app.models_advanced import AdvancedGenerateRequest
+from app.schemas.advanced import AdvancedGenerateRequest
 from app.services.agent_prompt_graph import AgentPromptGraph
 
 

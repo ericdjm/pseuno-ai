@@ -5,7 +5,7 @@ Fetches and processes user's Spotify data
 
 from fastapi import APIRouter, Depends, Query
 
-from app.models import SpotifyProfileResponse
+from app.schemas.spotify import SpotifyProfileResponse
 from app.deps import get_spotify_client
 from app.services.spotify_client import SpotifyClient
 from app.utils import fetch_and_parse_spotify_data

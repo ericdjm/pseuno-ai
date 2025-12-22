@@ -6,7 +6,7 @@ import asyncio
 from typing import List
 from fastapi import HTTPException
 
-from app.models import SpotifyArtist, SpotifyTrack, TasteProfile
+from app.schemas.spotify import SpotifyArtist, SpotifyTrack, TasteProfile
 from app.services.spotify_client import SpotifyClient, SpotifyClientError
 from app.services.taste_analyzer import build_taste_profile
 
