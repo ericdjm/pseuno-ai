@@ -48,6 +48,16 @@ class Settings(BaseSettings):
     # Request timeouts
     http_timeout: int = 30
 
+    # Storage settings
+    redis_url: Optional[str] = Field(
+        default=None,
+        description="Redis connection URL for session storage",
+    )
+    database_url: str = Field(
+        default="sqlite:///./pseuno.db",
+        description="SQLAlchemy database URL",
+    )
+
     # OpenAI settings
     openai_api_key: Optional[str] = Field(default=None, description="OpenAI API key")
     openai_model: str = Field(

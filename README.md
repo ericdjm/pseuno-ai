@@ -94,6 +94,22 @@ echo "VITE_API_BASE=http://localhost:8000" > .env.local
 
 ## Running the App
 
+### Docker (dev)
+
+```bash
+docker compose -f docker-compose.dev.yml up --build
+```
+
+This starts backend, frontend, Postgres, and Redis. Optional: create a `.env`
+in the repo root to provide `SPOTIFY_CLIENT_ID` and `OPENAI_API_KEY` for the
+backend container.
+
+Or use the Makefile shortcut:
+
+```bash
+make dev
+```
+
 ### Start the Backend
 
 ```bash
@@ -145,6 +161,27 @@ curl -X POST http://localhost:8000/generate/advanced \
 cd backend
 source venv/bin/activate
 pytest
+```
+
+## Database Migrations (Alembic)
+
+Migrations are scaffolded but there are no tables yet. Add SQLAlchemy models in
+`backend/app/db/models.py`, then create and apply the first migration.
+
+Local (venv):
+
+```bash
+cd backend
+source venv/bin/activate
+alembic revision --autogenerate -m "init"
+alembic upgrade head
+```
+
+Docker dev:
+
+```bash
+docker compose -f docker-compose.dev.yml exec backend alembic revision --autogenerate -m "init"
+docker compose -f docker-compose.dev.yml exec backend alembic upgrade head
 ```
 
 ## Project Structure
