@@ -39,6 +39,7 @@ class InMemorySessionStore:
                 "token_expires_at": None,
                 "user_name": None,
                 "user_image": None,
+                "user_id": None,
                 "pkce": None,
             }
             return self._sessions[session_id]
@@ -114,12 +115,22 @@ class InMemorySessionStore:
                     }
                 )
 
-    def set_user_data(self, session_id: str, user_name: str, user_image: Optional[str]):
+    def set_user_data(
+        self,
+        session_id: str,
+        user_name: str,
+        user_image: Optional[str],
+        user_id: Optional[str] = None,
+    ):
         """Store user profile data"""
         with self._lock:
             if session_id in self._sessions:
                 self._sessions[session_id].update(
-                    {"user_name": user_name, "user_image": user_image}
+                    {
+                        "user_name": user_name,
+                        "user_image": user_image,
+                        "user_id": user_id,
+                    }
                 )
 
     def is_token_expired(self, session_id: str) -> bool:
@@ -230,6 +241,7 @@ class RedisSessionStore:
             "token_expires_at": to_float(data.get("token_expires_at")),
             "user_name": to_optional(data.get("user_name")),
             "user_image": to_optional(data.get("user_image")),
+            "user_id": to_optional(data.get("user_id")),
             "pkce": None,
         }
 
@@ -254,6 +266,7 @@ class RedisSessionStore:
             "token_expires_at": None,
             "user_name": None,
             "user_image": None,
+            "user_id": None,
             "pkce": None,
         }
         key = self._key(session_id)
@@ -336,13 +349,20 @@ class RedisSessionStore:
             },
         )
 
-    def set_user_data(self, session_id: str, user_name: str, user_image: Optional[str]):
+    def set_user_data(
+        self,
+        session_id: str,
+        user_name: str,
+        user_image: Optional[str],
+        user_id: Optional[str] = None,
+    ):
         """Store user profile data"""
         self._redis.hset(
             self._key(session_id),
             mapping={
                 "user_name": user_name,
                 "user_image": user_image or "",
+                "user_id": user_id or "",
             },
         )
 

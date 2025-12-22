@@ -6,12 +6,17 @@ import base64
 import hashlib
 import logging
 import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 from urllib.parse import urlencode
 
 import httpx
+from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import Settings
+from app.db.models import ExternalAccount, User
+from app.db.session import SessionLocal
 from app.services.session_store import session_store
 
 logger = logging.getLogger(__name__)
@@ -141,12 +146,18 @@ async def handle_spotify_callback(
             except ValueError:
                 logger.warning("Spotify user profile JSON parsing failed")
             else:
+                user_name = user_data.get("display_name", "User")
+                user_image = (
+                    user_data.get("images", [{}])[0].get("url")
+                    if user_data.get("images")
+                    else None
+                )
+                user_id = _upsert_spotify_account(tokens, user_data)
                 session_store.set_user_data(
                     session_id,
-                    user_name=user_data.get("display_name", "User"),
-                    user_image=user_data.get("images", [{}])[0].get("url")
-                    if user_data.get("images")
-                    else None,
+                    user_name=user_name,
+                    user_image=user_image,
+                    user_id=user_id,
                 )
 
         session_store.clear_pkce_data(session_id)
@@ -161,3 +172,60 @@ async def handle_spotify_callback(
         return f"{frontend_url}?error=unknown_error"
 
     return f"{frontend_url}?success=true"
+
+
+def _upsert_spotify_account(tokens: dict, user_data: dict) -> Optional[str]:
+    provider_user_id = user_data.get("id")
+    if not provider_user_id:
+        return None
+
+    token_expires_at = datetime.now(timezone.utc) + timedelta(
+        seconds=max(tokens.get("expires_in", 3600) - 60, 0)
+    )
+    user_image = (
+        user_data.get("images", [{}])[0].get("url") if user_data.get("images") else None
+    )
+
+    db = SessionLocal()
+    try:
+        account = db.scalar(
+            select(ExternalAccount).where(
+                ExternalAccount.provider == "spotify",
+                ExternalAccount.provider_user_id == provider_user_id,
+            )
+        )
+        if account:
+            account.access_token = tokens.get("access_token")
+            if tokens.get("refresh_token") is not None:
+                account.refresh_token = tokens.get("refresh_token")
+            account.token_expires_at = token_expires_at
+            account.scopes = SCOPES
+            account.display_name = user_data.get("display_name")
+            account.email = user_data.get("email")
+            account.profile_image_url = user_image
+            user = account.user
+        else:
+            user = User()
+            account = ExternalAccount(
+                user=user,
+                provider="spotify",
+                provider_user_id=provider_user_id,
+                email=user_data.get("email"),
+                display_name=user_data.get("display_name"),
+                profile_image_url=user_image,
+                access_token=tokens.get("access_token"),
+                refresh_token=tokens.get("refresh_token"),
+                token_expires_at=token_expires_at,
+                scopes=SCOPES,
+            )
+            db.add(user)
+            db.add(account)
+        db.commit()
+        db.refresh(user)
+        return user.id
+    except SQLAlchemyError:
+        db.rollback()
+        logger.exception("Failed to persist Spotify account")
+        return None
+    finally:
+        db.close()
