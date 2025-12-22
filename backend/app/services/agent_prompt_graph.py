@@ -65,60 +65,75 @@ class OpenAIChatClient:
         self.model = model
         self.temperature = temperature
         self.timeout = timeout
+        self._client: Optional[httpx.AsyncClient] = None
 
-    async def ainvoke(self, messages: List[Dict[str, str]]):
+    def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            self._client = httpx.AsyncClient()
+        return self._client
+
+    async def aclose(self):
+        if self._client is not None:
+            await self._client.aclose()
+
+    async def ainvoke(
+        self, messages: List[Dict[str, str]], temperature: Optional[float] = None
+    ):
         payload = {
             "model": self.model,
             "input": self._format_messages(messages),
         }
-        if self.temperature is not None:
-            payload["temperature"] = self.temperature
+        effective_temp = self.temperature if temperature is None else temperature
+        if effective_temp is not None:
+            payload["temperature"] = effective_temp
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
+        client = self._get_client()
         timeout = httpx.Timeout(self.timeout)
 
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                try:
-                    response = await client.post(
+            try:
+                response = await client.post(
+                    "https://api.openai.com/v1/responses",
+                    json=payload,
+                    headers=headers,
+                    timeout=timeout,
+                )
+            except httpx.ReadTimeout:
+                # Retry once with a longer timeout to handle slow model responses.
+                retry_timeout = httpx.Timeout(
+                    max(self.timeout * 2, self.timeout + 30)
+                )
+                response = await client.post(
+                    "https://api.openai.com/v1/responses",
+                    json=payload,
+                    headers=headers,
+                    timeout=retry_timeout,
+                )
+
+            if response.status_code >= 400:
+                # Some models do not support temperature; retry without it if needed.
+                if self._is_unsupported_temperature(response):
+                    payload.pop("temperature", None)
+                    retry = await client.post(
                         "https://api.openai.com/v1/responses",
                         json=payload,
                         headers=headers,
+                        timeout=timeout,
                     )
-                except httpx.ReadTimeout:
-                    # Retry once with a longer timeout to handle slow model responses.
-                    retry_timeout = httpx.Timeout(
-                        max(self.timeout * 2, self.timeout + 30)
-                    )
-                    async with httpx.AsyncClient(timeout=retry_timeout) as retry_client:
-                        response = await retry_client.post(
-                            "https://api.openai.com/v1/responses",
-                            json=payload,
-                            headers=headers,
-                        )
-
-                if response.status_code >= 400:
-                    # Some models do not support temperature; retry without it if needed.
-                    if self._is_unsupported_temperature(response):
-                        payload.pop("temperature", None)
-                        retry = await client.post(
-                            "https://api.openai.com/v1/responses",
-                            json=payload,
-                            headers=headers,
-                        )
-                        if retry.status_code >= 400:
-                            raise RuntimeError(
-                                f"OpenAI API error {retry.status_code}: {retry.text}"
-                            )
-                        data = retry.json()
-                    else:
+                    if retry.status_code >= 400:
                         raise RuntimeError(
-                            f"OpenAI API error {response.status_code}: {response.text}"
+                            f"OpenAI API error {retry.status_code}: {retry.text}"
                         )
+                    data = retry.json()
                 else:
-                    data = response.json()
+                    raise RuntimeError(
+                        f"OpenAI API error {response.status_code}: {response.text}"
+                    )
+            else:
+                data = response.json()
         except httpx.ReadTimeout as e:
             # If we still timeout after retry, provide a helpful error
             raise RuntimeError(
@@ -205,7 +220,9 @@ class GeminiChatClient:
             )
         return self._client
 
-    async def ainvoke(self, messages: List[Dict[str, str]]):
+    async def ainvoke(
+        self, messages: List[Dict[str, str]], temperature: Optional[float] = None
+    ):
         """
         Invoke the Gemini model with the given messages.
         Gemini uses a different format - we convert from OpenAI-style messages.
@@ -214,10 +231,14 @@ class GeminiChatClient:
 
         # Run synchronous Gemini call in executor to avoid blocking
         loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(None, self._sync_generate, messages)
+        response = await loop.run_in_executor(
+            None, self._sync_generate, messages, temperature
+        )
         return _LLMResponse(content=response or "")
 
-    def _sync_generate(self, messages: List[Dict[str, str]]) -> str:
+    def _sync_generate(
+        self, messages: List[Dict[str, str]], temperature: Optional[float]
+    ) -> str:
         """Synchronous generation using the Gemini SDK."""
         from google.genai import types
 
@@ -244,7 +265,7 @@ class GeminiChatClient:
 
         # Build generation config
         config = types.GenerateContentConfig(
-            temperature=self.temperature,
+            temperature=self.temperature if temperature is None else temperature,
             system_instruction=system_instruction,
         )
 
@@ -470,14 +491,10 @@ class AgentPromptGraph:
             {"role": "user", "content": user_prompt},
         ]
 
-        if temperature is not None and hasattr(self.llm, "temperature"):
-            original = getattr(self.llm, "temperature")
-            try:
-                setattr(self.llm, "temperature", temperature)
-                response = await self.llm.ainvoke(messages)
-            finally:
-                setattr(self.llm, "temperature", original)
-        else:
+        try:
+            response = await self.llm.ainvoke(messages, temperature=temperature)
+        except TypeError:
+            # Compatibility with stubs or older clients without temperature kwarg.
             response = await self.llm.ainvoke(messages)
 
         return response.content or ""
