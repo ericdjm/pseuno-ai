@@ -45,6 +45,19 @@ STYLE & CONTROL
 - If I request "less lyrics / more instrumentation," keep vocal content minimal and include at least one instrumental-only bracket section.
 """
 
+SUNO_LYRIC_RULES = """\
+LYRIC RULES
+- Lyrics must focus on the lyrical topic (lyrics_about), not the musical style.
+- NEVER let production or style descriptors leak into lyrics literally.
+  BAD: "When the bass drops, I feel alive" (if user asked for bass drops)
+  BAD: "Sliding down the pole when the beat hits hard" (if user asked for firefighter + heavy production)
+  GOOD: Write about the firefighter's experience; let the SUNO PROMPT handle the bass/production.
+- The song_prompt describes *sound*. The lyrics_about describes *meaning*. Keep them separate.
+- Avoid self-referential lyrics about the music itself unless the user explicitly asks for meta content.
+- Lyrics should feel like they could exist independently of the production style.
+- Prioritize imagery, emotion, and narrative over describing what the music is doing.
+"""
+
 SUNO_PARAMETER_SECTIONS = """\
 PARAMETER SECTIONS
 - WEIRDNESS (%):
@@ -69,6 +82,7 @@ Use selected_artists as the ONLY style reference. Do NOT mention artist names.
 Use tags as optional style hints when present.
 
 {SUNO_FORMAT_RULES}
+{SUNO_LYRIC_RULES}
 {SUNO_STYLE_CONTROL}
 {SUNO_PARAMETER_SECTIONS}
 
