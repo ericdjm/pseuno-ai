@@ -3,6 +3,8 @@ Pseuno AI - FastAPI Backend
 Spotify-powered music taste analyzer and prompt generator for Suno AI
 """
 
+import inspect
+import logging
 import os
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
@@ -11,8 +13,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.routes import auth, spotify, generate_advanced
+from app.services.agent_prompt_graph import AgentPromptGraph
 from app.services.session_store import session_store
-from app.config import validate_settings
+from app.config import get_settings, validate_settings
 
 load_dotenv()
 
@@ -21,13 +24,34 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler"""
     # Startup
     print("🎵 Pseuno AI starting up...")
-    validate_settings()  # Validate configuration on startup
+    settings = validate_settings()  # Validate configuration on startup
+    logging.basicConfig(
+        level=logging.DEBUG if settings.debug else logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+    # Build the LangGraph agent once; compiling per request is expensive.
+    app.state.song_agent = AgentPromptGraph(settings)
+    print("AgentPromptGraph initialized")
     session_store.start_cleanup_task()  # Start session cleanup
     yield
     # Shutdown
     print("🎵 Pseuno AI shutting down...")
     session_store.stop_cleanup_task()
     session_store.clear_all()
+    agent = getattr(app.state, "song_agent", None)
+    if agent is not None:
+        close_fn = getattr(agent, "aclose", None) or getattr(agent, "close", None)
+        if close_fn:
+            result = close_fn()
+            if inspect.isawaitable(result):
+                await result
+        llm = getattr(agent, "llm", None)
+        if llm is not None:
+            llm_close = getattr(llm, "aclose", None) or getattr(llm, "close", None)
+            if llm_close:
+                result = llm_close()
+                if inspect.isawaitable(result):
+                    await result
 
 app = FastAPI(
     title="Pseuno AI",
@@ -37,8 +61,6 @@ app = FastAPI(
 )
 
 # CORS Configuration
-from app.config import get_settings
-
 settings = get_settings()
 
 # In development, allow both 127.0.0.1 and localhost

@@ -5,6 +5,7 @@ LangGraph-based agent for Suno prompt + lyrics generation.
 import hashlib
 import json
 import logging
+import logging
 import re
 import time
 from dataclasses import dataclass
@@ -19,6 +20,8 @@ logger = logging.getLogger(__name__)
 from app.config import Settings
 from app.models_advanced import AdvancedGenerateRequest
 from app.prompts import REPAIR_AGENT_SYSTEM_PROMPT
+
+logger = logging.getLogger(__name__)
 
 # Gemini models that should use the Google Generative AI client
 GEMINI_MODELS = frozenset(
@@ -341,7 +344,9 @@ class AgentPromptGraph:
         return graph.compile()
 
     async def generate(self, request: AdvancedGenerateRequest) -> Dict[str, Any]:
+        logger.info("AgentPromptGraph.generate start")
         state = await self._graph.ainvoke({"request": request})
+        logger.info("AgentPromptGraph.generate complete")
         return state["result"]
 
     async def _node_build_context(self, state: _AgentState) -> _AgentState:
@@ -350,6 +355,12 @@ class AgentPromptGraph:
         context_text = self._format_context_pack(context_pack)
         max_repairs = (
             self.settings.agent_max_repairs if self.settings.agent_repair_enabled else 0
+        )
+        logger.info(
+            "agent.build_context prepared context (repairs_left=%s, tags=%s, artists=%s)",
+            max_repairs,
+            len(context_pack.get("tags", [])),
+            len(context_pack.get("selected_artists", [])),
         )
         return {
             **state,
@@ -376,6 +387,7 @@ class AgentPromptGraph:
         self._debug_log(state["context_text"])
         self._debug_log("\n--- END REQUEST ---\n")
 
+        logger.info("agent.generate calling LLM (model=%s)", self.settings.llm_model)
         raw_output = await self._call_llm(
             self.settings.song_agent_prompt, state["context_text"]
         )
@@ -385,6 +397,7 @@ class AgentPromptGraph:
         self._debug_log(raw_output)
         self._debug_log("\n--- END RESPONSE ---\n")
 
+        logger.info("agent.generate received LLM output (chars=%s)", len(raw_output))
         logger.info("agent.generate received LLM output (chars=%s)", len(raw_output))
         return {**state, "raw_output": raw_output}
 
@@ -412,6 +425,10 @@ class AgentPromptGraph:
             logger.info("agent.parse_validate found issues (count=%s)", len(issues))
         else:
             logger.info("agent.parse_validate ok")
+        if issues:
+            logger.info("agent.parse_validate found issues (count=%s)", len(issues))
+        else:
+            logger.info("agent.parse_validate ok")
         return {**state, "parsed": parsed, "issues": issues}
 
     def _route_after_validation(self, state: _AgentState) -> str:
@@ -425,6 +442,11 @@ class AgentPromptGraph:
     async def _node_repair(self, state: _AgentState) -> _AgentState:
         repairs_left = max(0, state.get("repairs_left", 0) - 1)
         issues = state.get("issues") or []
+        logger.info(
+            "agent.repair attempt (remaining=%s, issues=%s)",
+            repairs_left,
+            len(issues),
+        )
         issues_text = "\n".join(f"- {issue}" for issue in issues)
         repair_input = (
             f"{state['context_text']}\n\n"
@@ -440,6 +462,7 @@ class AgentPromptGraph:
             repair_input,
             temperature=0.0,
         )
+        logger.info("agent.repair received LLM output (chars=%s)", len(raw_output))
         return {
             **state,
             "raw_output": raw_output,
@@ -447,6 +470,9 @@ class AgentPromptGraph:
             "repaired": True,
         }
 
+    def _node_fallback(self, state: _AgentState) -> _AgentState:
+        logger.info("agent.fallback using fallback output")
+        fallback_raw, fallback_parsed = self._build_fallback(state["context_pack"])
     def _node_error(self, state: _AgentState) -> _AgentState:
         """Return an error result with validation issues — no silent fallback."""
         issues = state.get("issues") or []
@@ -471,6 +497,7 @@ class AgentPromptGraph:
         }
 
     def _node_finalize(self, state: _AgentState) -> _AgentState:
+        logger.info("agent.finalize assembling response")
         context_pack = state["context_pack"]
         parsed = state["parsed"]
         song_prompt = context_pack.get("user_style_request", "")
