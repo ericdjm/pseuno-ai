@@ -117,7 +117,11 @@ async def handle_spotify_callback(
             logger.warning("Spotify OAuth token exchange failed")
             return f"{frontend_url}?error={error_detail}"
 
-        tokens = token_response.json()
+        try:
+            tokens = token_response.json()
+        except ValueError:
+            logger.warning("Spotify OAuth token response was not valid JSON")
+            return f"{frontend_url}?error=token_exchange_failed"
 
         session_store.set_tokens(
             session_id,
