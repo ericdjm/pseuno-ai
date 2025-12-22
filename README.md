@@ -110,6 +110,9 @@ Or use the Makefile shortcut:
 make dev
 ```
 
+If you use Spotify login, ensure your Spotify App redirect URI matches:
+`http://127.0.0.1:8000/auth/spotify/callback`.
+
 ### Start the Backend
 
 ```bash

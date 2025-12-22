@@ -32,12 +32,11 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.dev
+    env_file:
+      - ./backend/.env
     environment:
+      # Docker-specific overrides (override .env values for containerized environment)
       FRONTEND_ORIGIN: http://localhost:5173
-      DEBUG: "true"
-      SPOTIFY_REDIRECT_URI: http://localhost:8000/auth/spotify/callback
-      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       DATABASE_URL: postgresql+psycopg://pseuno:pseuno@postgres:5432/pseuno
       REDIS_URL: redis://redis:6379/0
     volumes:
