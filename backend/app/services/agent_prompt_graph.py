@@ -491,7 +491,7 @@ class AgentPromptGraph:
 
     def _node_fallback(self, state: _AgentState) -> _AgentState:
         logger.info("agent.fallback using fallback output")
-        fallback_raw, fallback_parsed = self._build_fallback(state["context_pack"])
+        _fallback_raw, _fallback_parsed = self._build_fallback(state["context_pack"])
     def _node_error(self, state: _AgentState) -> _AgentState:
         """Return an error result with validation issues — no silent fallback."""
         issues = state.get("issues") or []
