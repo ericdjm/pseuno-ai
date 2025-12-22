@@ -2,6 +2,7 @@
 Configuration management
 """
 
+import logging
 import secrets
 from functools import lru_cache
 from typing import Optional
@@ -10,6 +11,8 @@ from pydantic import ConfigDict, Field, model_validator
 from pydantic_settings import BaseSettings
 
 from app.prompts import SONG_AGENT_SYSTEM_PROMPT
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -114,18 +117,22 @@ def validate_settings():
     settings = get_settings()
 
     if not settings.spotify_client_id:
-        print(
-            "⚠️  SPOTIFY_CLIENT_ID not set; Spotify auth/profile endpoints will be unavailable"
+        logger.warning(
+            "SPOTIFY_CLIENT_ID not set; Spotify auth/profile endpoints will be unavailable"
         )
 
     if not settings.debug:
-        print("⚠️  Running in PRODUCTION mode")
+        logger.info("Running in PRODUCTION mode")
+        if not settings.redis_url:
+            raise ValueError(
+                "REDIS_URL must be set in production for sessions and rate limiting"
+            )
         if settings.secret_key == "change-this-in-production-use-a-real-secret":
             raise ValueError("SECRET_KEY must be set in production")
         if not settings.session_cookie_secure:
-            print("⚠️  WARNING: Secure cookies not enabled in production!")
+            logger.warning("Secure cookies not enabled in production")
     else:
-        print("🔧 Running in DEBUG mode")
+        logger.info("Running in DEBUG mode")
 
-    print("✓ Settings validated successfully")
+    logger.info("Settings validated successfully")
     return settings
