@@ -117,7 +117,7 @@ class AgentPromptBuilder:
 
     def _normalize_header(self, line: str) -> Optional[str]:
         normalized = line.strip().upper().rstrip(":")
-        normalized = re.sub(r"^[A-E]\\)\\s*", "", normalized)
+        normalized = re.sub(r"^[A-E]\)\s*", "", normalized)
         if normalized == "LYRICS":
             return "LYRICS"
         if "SUNO PROMPT" in normalized:
