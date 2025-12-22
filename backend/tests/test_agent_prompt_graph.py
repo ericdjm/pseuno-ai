@@ -25,7 +25,7 @@ class FakeLLM:
         self.calls = 0
         self.temperature = 0.7
 
-    async def ainvoke(self, _messages):
+    async def ainvoke(self, _messages, temperature=None):
         self.calls += 1
         if not self._contents:
             return _FakeResponse("")
