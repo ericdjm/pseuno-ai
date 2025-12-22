@@ -6,7 +6,7 @@ Derives music taste insights from Spotify data
 from collections import Counter
 from typing import List
 
-from app.models import SpotifyArtist, SpotifyTrack, TasteProfile
+from app.schemas.spotify import SpotifyArtist, SpotifyTrack, TasteProfile
 
 
 # Genre to mood mapping (heuristic)

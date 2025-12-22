@@ -17,7 +17,7 @@ from langgraph.graph import END, StateGraph
 logger = logging.getLogger(__name__)
 
 from app.config import Settings
-from app.models_advanced import AdvancedGenerateRequest
+from app.schemas.advanced import AdvancedGenerateRequest
 from app.prompts import REPAIR_AGENT_SYSTEM_PROMPT
 
 # Gemini models that should use the Google Generative AI client
@@ -66,60 +66,75 @@ class OpenAIChatClient:
         self.model = model
         self.temperature = temperature
         self.timeout = timeout
+        self._client: Optional[httpx.AsyncClient] = None
 
-    async def ainvoke(self, messages: List[Dict[str, str]]):
+    def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            self._client = httpx.AsyncClient()
+        return self._client
+
+    async def aclose(self):
+        if self._client is not None:
+            await self._client.aclose()
+
+    async def ainvoke(
+        self, messages: List[Dict[str, str]], temperature: Optional[float] = None
+    ):
         payload = {
             "model": self.model,
             "input": self._format_messages(messages),
         }
-        if self.temperature is not None:
-            payload["temperature"] = self.temperature
+        effective_temp = self.temperature if temperature is None else temperature
+        if effective_temp is not None:
+            payload["temperature"] = effective_temp
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
+        client = self._get_client()
         timeout = httpx.Timeout(self.timeout)
 
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                try:
-                    response = await client.post(
+            try:
+                response = await client.post(
+                    "https://api.openai.com/v1/responses",
+                    json=payload,
+                    headers=headers,
+                    timeout=timeout,
+                )
+            except httpx.ReadTimeout:
+                # Retry once with a longer timeout to handle slow model responses.
+                retry_timeout = httpx.Timeout(
+                    max(self.timeout * 2, self.timeout + 30)
+                )
+                response = await client.post(
+                    "https://api.openai.com/v1/responses",
+                    json=payload,
+                    headers=headers,
+                    timeout=retry_timeout,
+                )
+
+            if response.status_code >= 400:
+                # Some models do not support temperature; retry without it if needed.
+                if self._is_unsupported_temperature(response):
+                    payload.pop("temperature", None)
+                    retry = await client.post(
                         "https://api.openai.com/v1/responses",
                         json=payload,
                         headers=headers,
+                        timeout=timeout,
                     )
-                except httpx.ReadTimeout:
-                    # Retry once with a longer timeout to handle slow model responses.
-                    retry_timeout = httpx.Timeout(
-                        max(self.timeout * 2, self.timeout + 30)
-                    )
-                    async with httpx.AsyncClient(timeout=retry_timeout) as retry_client:
-                        response = await retry_client.post(
-                            "https://api.openai.com/v1/responses",
-                            json=payload,
-                            headers=headers,
-                        )
-
-                if response.status_code >= 400:
-                    # Some models do not support temperature; retry without it if needed.
-                    if self._is_unsupported_temperature(response):
-                        payload.pop("temperature", None)
-                        retry = await client.post(
-                            "https://api.openai.com/v1/responses",
-                            json=payload,
-                            headers=headers,
-                        )
-                        if retry.status_code >= 400:
-                            raise RuntimeError(
-                                f"OpenAI API error {retry.status_code}: {retry.text}"
-                            )
-                        data = retry.json()
-                    else:
+                    if retry.status_code >= 400:
                         raise RuntimeError(
-                            f"OpenAI API error {response.status_code}: {response.text}"
+                            f"OpenAI API error {retry.status_code}: {retry.text}"
                         )
+                    data = retry.json()
                 else:
-                    data = response.json()
+                    raise RuntimeError(
+                        f"OpenAI API error {response.status_code}: {response.text}"
+                    )
+            else:
+                data = response.json()
         except httpx.ReadTimeout as e:
             # If we still timeout after retry, provide a helpful error
             raise RuntimeError(
@@ -206,7 +221,9 @@ class GeminiChatClient:
             )
         return self._client
 
-    async def ainvoke(self, messages: List[Dict[str, str]]):
+    async def ainvoke(
+        self, messages: List[Dict[str, str]], temperature: Optional[float] = None
+    ):
         """
         Invoke the Gemini model with the given messages.
         Gemini uses a different format - we convert from OpenAI-style messages.
@@ -215,10 +232,14 @@ class GeminiChatClient:
 
         # Run synchronous Gemini call in executor to avoid blocking
         loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(None, self._sync_generate, messages)
+        response = await loop.run_in_executor(
+            None, self._sync_generate, messages, temperature
+        )
         return _LLMResponse(content=response or "")
 
-    def _sync_generate(self, messages: List[Dict[str, str]]) -> str:
+    def _sync_generate(
+        self, messages: List[Dict[str, str]], temperature: Optional[float]
+    ) -> str:
         """Synchronous generation using the Gemini SDK."""
         from google.genai import types
 
@@ -245,7 +266,7 @@ class GeminiChatClient:
 
         # Build generation config
         config = types.GenerateContentConfig(
-            temperature=self.temperature,
+            temperature=self.temperature if temperature is None else temperature,
             system_instruction=system_instruction,
         )
 
@@ -341,7 +362,9 @@ class AgentPromptGraph:
         return graph.compile()
 
     async def generate(self, request: AdvancedGenerateRequest) -> Dict[str, Any]:
+        logger.info("AgentPromptGraph.generate start")
         state = await self._graph.ainvoke({"request": request})
+        logger.info("AgentPromptGraph.generate complete")
         return state["result"]
 
     async def _node_build_context(self, state: _AgentState) -> _AgentState:
@@ -350,6 +373,12 @@ class AgentPromptGraph:
         context_text = self._format_context_pack(context_pack)
         max_repairs = (
             self.settings.agent_max_repairs if self.settings.agent_repair_enabled else 0
+        )
+        logger.info(
+            "agent.build_context prepared context (repairs_left=%s, tags=%s, artists=%s)",
+            max_repairs,
+            len(context_pack.get("tags", [])),
+            len(context_pack.get("selected_artists", [])),
         )
         return {
             **state,
@@ -376,6 +405,7 @@ class AgentPromptGraph:
         self._debug_log(state["context_text"])
         self._debug_log("\n--- END REQUEST ---\n")
 
+        logger.info("agent.generate calling LLM (model=%s)", self.settings.llm_model)
         raw_output = await self._call_llm(
             self.settings.song_agent_prompt, state["context_text"]
         )
@@ -412,6 +442,10 @@ class AgentPromptGraph:
             logger.info("agent.parse_validate found issues (count=%s)", len(issues))
         else:
             logger.info("agent.parse_validate ok")
+        if issues:
+            logger.info("agent.parse_validate found issues (count=%s)", len(issues))
+        else:
+            logger.info("agent.parse_validate ok")
         return {**state, "parsed": parsed, "issues": issues}
 
     def _route_after_validation(self, state: _AgentState) -> str:
@@ -425,6 +459,11 @@ class AgentPromptGraph:
     async def _node_repair(self, state: _AgentState) -> _AgentState:
         repairs_left = max(0, state.get("repairs_left", 0) - 1)
         issues = state.get("issues") or []
+        logger.info(
+            "agent.repair attempt (remaining=%s, issues=%s)",
+            repairs_left,
+            len(issues),
+        )
         issues_text = "\n".join(f"- {issue}" for issue in issues)
         repair_input = (
             f"{state['context_text']}\n\n"
@@ -440,6 +479,7 @@ class AgentPromptGraph:
             repair_input,
             temperature=0.0,
         )
+        logger.info("agent.repair received LLM output (chars=%s)", len(raw_output))
         return {
             **state,
             "raw_output": raw_output,
@@ -447,6 +487,9 @@ class AgentPromptGraph:
             "repaired": True,
         }
 
+    def _node_fallback(self, state: _AgentState) -> _AgentState:
+        logger.info("agent.fallback using fallback output")
+        _fallback_raw, _fallback_parsed = self._build_fallback(state["context_pack"])
     def _node_error(self, state: _AgentState) -> _AgentState:
         """Return an error result with validation issues — no silent fallback."""
         issues = state.get("issues") or []
@@ -471,6 +514,7 @@ class AgentPromptGraph:
         }
 
     def _node_finalize(self, state: _AgentState) -> _AgentState:
+        logger.info("agent.finalize assembling response")
         context_pack = state["context_pack"]
         parsed = state["parsed"]
         song_prompt = context_pack.get("user_style_request", "")
@@ -512,14 +556,10 @@ class AgentPromptGraph:
             {"role": "user", "content": user_prompt},
         ]
 
-        if temperature is not None and hasattr(self.llm, "temperature"):
-            original = getattr(self.llm, "temperature")
-            try:
-                setattr(self.llm, "temperature", temperature)
-                response = await self.llm.ainvoke(messages)
-            finally:
-                setattr(self.llm, "temperature", original)
-        else:
+        try:
+            response = await self.llm.ainvoke(messages, temperature=temperature)
+        except TypeError:
+            # Compatibility with stubs or older clients without temperature kwarg.
             response = await self.llm.ainvoke(messages)
 
         return response.content or ""

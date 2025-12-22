@@ -5,6 +5,7 @@ Uses Redis when REDIS_URL is set, otherwise falls back to in-memory storage.
 
 import asyncio
 import json
+import logging
 import time
 from threading import Lock
 from typing import Optional
@@ -12,6 +13,8 @@ from typing import Optional
 from redis import Redis
 
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class InMemorySessionStore:
@@ -139,7 +142,7 @@ class InMemorySessionStore:
             for sid in expired:
                 del self._sessions[sid]
             if expired:
-                print(f"🧹 Cleaned up {len(expired)} expired sessions")
+                logger.info("Cleaned up %s expired sessions", len(expired))
             return len(expired)
 
     async def _cleanup_loop(self):
@@ -151,14 +154,14 @@ class InMemorySessionStore:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                print(f"⚠️  Session cleanup error: {e}")
+                logger.warning("Session cleanup error: %s", e)
 
     def start_cleanup_task(self):
         """Start the background cleanup task"""
         if not self._cleanup_running:
             self._cleanup_running = True
             self._cleanup_task = asyncio.create_task(self._cleanup_loop())
-            print("✓ Session cleanup task started")
+            logger.info("Session cleanup task started")
 
     def stop_cleanup_task(self):
         """Stop the background cleanup task"""
@@ -166,7 +169,7 @@ class InMemorySessionStore:
             self._cleanup_running = False
             if self._cleanup_task:
                 self._cleanup_task.cancel()
-            print("✓ Session cleanup task stopped")
+            logger.info("Session cleanup task stopped")
 
     def clear_all(self):
         """Clear all sessions (for shutdown)"""
@@ -174,7 +177,7 @@ class InMemorySessionStore:
             count = len(self._sessions)
             self._sessions.clear()
             if count > 0:
-                print(f"🧹 Cleared {count} sessions on shutdown")
+                logger.info("Cleared %s sessions on shutdown", count)
 
 
 class RedisSessionStore:
@@ -374,6 +377,10 @@ class RedisSessionStore:
 
 def create_session_store():
     settings = get_settings()
+    if not settings.debug and not settings.redis_url:
+        raise ValueError(
+            "REDIS_URL must be set in production for session storage"
+        )
     if settings.redis_url:
         return RedisSessionStore(
             settings.redis_url,

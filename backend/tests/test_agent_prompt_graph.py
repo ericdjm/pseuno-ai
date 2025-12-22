@@ -5,7 +5,7 @@ Tests for AgentPromptGraph — basic use cases + repair/validation behavior.
 import asyncio
 
 from app.config import Settings
-from app.models_advanced import AdvancedGenerateRequest
+from app.schemas.advanced import AdvancedGenerateRequest
 from app.services.agent_prompt_graph import AgentPromptGraph
 
 
@@ -25,7 +25,7 @@ class FakeLLM:
         self.calls = 0
         self.temperature = 0.7
 
-    async def ainvoke(self, _messages):
+    async def ainvoke(self, _messages, temperature=None):
         self.calls += 1
         if not self._contents:
             return _FakeResponse("")

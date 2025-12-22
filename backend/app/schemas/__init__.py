@@ -1,0 +1,3 @@
+"""
+API request/response schemas.
+"""
