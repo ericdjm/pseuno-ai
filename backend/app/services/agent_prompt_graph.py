@@ -14,7 +14,7 @@ import httpx
 from langgraph.graph import END, StateGraph
 
 from app.config import Settings
-from app.models_advanced import AdvancedGenerateRequest
+from app.schemas.advanced import AdvancedGenerateRequest
 from app.prompts import REPAIR_AGENT_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)

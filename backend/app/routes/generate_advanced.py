@@ -4,7 +4,7 @@ Minimal generation routes for the Suno formatter agent.
 
 from fastapi import APIRouter, Depends
 
-from app.models_advanced import (
+from app.schemas.advanced import (
     AdvancedGenerateRequest,
     AdvancedGenerateResponse,
 )

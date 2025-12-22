@@ -4,7 +4,7 @@ Tests for taste analyzer
 
 import pytest
 from app.services.taste_analyzer import build_taste_profile
-from app.models import SpotifyArtist, SpotifyTrack
+from app.schemas.spotify import SpotifyArtist, SpotifyTrack
 
 
 def create_mock_artists(count: int = 5) -> list[SpotifyArtist]:
