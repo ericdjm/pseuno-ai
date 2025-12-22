@@ -20,8 +20,6 @@ from app.config import Settings
 from app.schemas.advanced import AdvancedGenerateRequest
 from app.prompts import REPAIR_AGENT_SYSTEM_PROMPT
 
-logger = logging.getLogger(__name__)
-
 # Gemini models that should use the Google Generative AI client
 GEMINI_MODELS = frozenset(
     {
