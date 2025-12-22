@@ -16,10 +16,16 @@ import {
   Avatar,
   useToast,
   Spinner,
-  Center,
   Alert,
   AlertIcon,
   AlertDescription,
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+  PopoverArrow,
+  PopoverCloseButton,
+  PopoverHeader,
+  PopoverBody,
 } from '@chakra-ui/react';
 import { FaSpotify } from 'react-icons/fa';
 
@@ -90,6 +96,8 @@ function App() {
   useEffect(() => {
     if (!authStatus.authenticated) {
       setProfile(null);
+      setProfileError(null);
+      setProfileLoading(false);
       return;
     }
 
@@ -158,31 +166,56 @@ function App() {
             <Spacer />
             {authLoading ? (
               <Spinner size="sm" />
-            ) : authStatus.authenticated ? (
-              <HStack spacing={4}>
-                <HStack spacing={2}>
-                  <Avatar
-                    size="sm"
-                    src={authStatus.user_image || undefined}
-                    name={authStatus.user_name}
-                  />
-                  <Text fontSize="sm" color="gray.300">
-                    {authStatus.user_name}
-                  </Text>
-                </HStack>
-                <Button size="sm" variant="ghost" onClick={handleLogout}>
-                  Logout
-                </Button>
-              </HStack>
             ) : (
-              <Button
-                leftIcon={<FaSpotify />}
-                variant="spotify"
-                size="md"
-                onClick={handleLogin}
-              >
-                Login with Spotify
-              </Button>
+              <Popover placement="bottom-end">
+                <PopoverTrigger>
+                  <Button
+                    variant="ghost"
+                    p={0}
+                    minW="auto"
+                    aria-label="Profile menu"
+                  >
+                    <Avatar
+                      size="sm"
+                      src={authStatus.user_image || undefined}
+                      name={authStatus.authenticated ? authStatus.user_name : undefined}
+                    />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent bg="gray.800" borderColor="gray.700" w="240px">
+                  <PopoverArrow bg="gray.800" />
+                  <PopoverCloseButton />
+                  <PopoverHeader borderColor="gray.700">
+                    {authStatus.authenticated ? 'Signed in' : 'Guest'}
+                  </PopoverHeader>
+                  <PopoverBody>
+                    {authStatus.authenticated ? (
+                      <VStack align="stretch" spacing={3}>
+                        <Text fontSize="sm" color="gray.400">
+                          {authStatus.user_name || 'Spotify user'}
+                        </Text>
+                        <Button size="sm" variant="outline" onClick={handleLogout}>
+                          Logout
+                        </Button>
+                      </VStack>
+                    ) : (
+                      <VStack align="stretch" spacing={3}>
+                        <Text fontSize="sm" color="gray.400">
+                          Sign in to personalize with Spotify.
+                        </Text>
+                        <Button
+                          leftIcon={<FaSpotify />}
+                          variant="spotify"
+                          size="sm"
+                          onClick={handleLogin}
+                        >
+                          Sign in with Spotify
+                        </Button>
+                      </VStack>
+                    )}
+                  </PopoverBody>
+                </PopoverContent>
+              </Popover>
             )}
           </Flex>
         </Container>
@@ -190,66 +223,60 @@ function App() {
 
       {/* Main Content */}
       <Container maxW="container.lg" py={8}>
-        {!authStatus.authenticated ? (
-          // Not logged in
-          <Center py={20}>
-            <VStack spacing={6} textAlign="center">
-              <Heading size="xl">
-                Generate Personalized Music Prompts
-              </Heading>
-              <Text fontSize="lg" color="gray.400" maxW="md">
-                Connect your Spotify to analyze your music taste and create
-                custom prompts for Suno AI based on what you actually listen to.
-              </Text>
-              <Button
-                leftIcon={<FaSpotify />}
-                variant="spotify"
-                size="lg"
-                onClick={handleLogin}
-              >
-                Login with Spotify
-              </Button>
-              <PrivacyNote />
-            </VStack>
-          </Center>
-        ) : (
-          // Logged in
-          <VStack spacing={8} align="stretch">
-            {/* Profile Error */}
-            {profileError && (
-              <Alert status="error" borderRadius="md">
-                <AlertIcon />
-                <AlertDescription>{profileError}</AlertDescription>
-              </Alert>
-            )}
+        <VStack spacing={8} align="stretch">
+          <Box textAlign={{ base: 'left', md: 'center' }}>
+            <Heading size="xl">Generate Music Prompts</Heading>
+            <Text fontSize="lg" color="gray.400" maxW="2xl" mx={{ md: 'auto' }} mt={2}>
+              Use the generator right away, or connect Spotify from the profile
+              menu to personalize your prompts.
+            </Text>
+          </Box>
 
-            {/* Taste Display */}
+          {!authStatus.authenticated && (
+            <Alert status="info" borderRadius="md">
+              <AlertIcon />
+              <AlertDescription>
+                You are in guest mode. Connect Spotify from the avatar to unlock taste-based
+                suggestions.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Profile Error */}
+          {profileError && (
+            <Alert status="error" borderRadius="md">
+              <AlertIcon />
+              <AlertDescription>{profileError}</AlertDescription>
+            </Alert>
+          )}
+
+          {authStatus.authenticated && (
             <TasteDisplay
               profile={profile}
               loading={profileLoading}
               timeRange={settings.timeRange}
               onTimeRangeChange={(tr) => updateSettings({ timeRange: tr })}
             />
+          )}
 
-            {/* Generation Controls */}
-            <Box>
-              <AdvancedGenerationControls
-                onGenerate={handleAdvancedGenerate}
-                isLoading={generating}
-                setIsLoading={setGenerating}
-                profile={profile}
-              />
-            </Box>
+          {/* Generation Controls */}
+          <Box>
+            <AdvancedGenerationControls
+              onGenerate={handleAdvancedGenerate}
+              isLoading={generating}
+              setIsLoading={setGenerating}
+              profile={profile}
+            />
+          </Box>
 
-            {/* Results */}
-            {advancedResult && (
-              <AdvancedResultsDisplay result={advancedResult} />
-            )}
+          {/* Results */}
+          {advancedResult && (
+            <AdvancedResultsDisplay result={advancedResult} />
+          )}
 
-            {/* Privacy Note */}
-            <PrivacyNote />
-          </VStack>
-        )}
+          {/* Privacy Note */}
+          <PrivacyNote />
+        </VStack>
       </Container>
     </Box>
   );

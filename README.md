@@ -1,17 +1,18 @@
 # Pseuno AI
 
-Generate personalized Suno AI prompts based on your Spotify listening history.
+Generate Suno AI prompts with optional Spotify taste personalization.
 
 ![Pseuno AI](https://img.shields.io/badge/Pseuno-AI-1DB954?style=for-the-badge&logo=spotify&logoColor=white)
 
 ## Features
 
-- 🎵 **Spotify Integration**: Connect your Spotify account to analyze your music taste
+- 🎵 **Spotify Integration**: Connect your Spotify account to analyze your music taste (optional)
 - 🎨 **Taste Analysis**: Automatically detects your top genres, artists, and mood preferences
 - ✨ **Custom Prompts**: Generate Suno AI prompts tailored to your unique listening history
 - 📝 **Original Lyrics**: Get auto-generated lyrics with proper [Verse]/[Chorus]/[Bridge] tags
 - 🎛️ **Fine-tune Controls**: Adjust energy, rhythm complexity, and darkness levels
 - 🔗 **Share Results**: Create shareable links to your generated prompts
+- 🧑‍🎤 **Guest Mode**: Generate prompts without Spotify (via API)
 
 ## Tech Stack
 
@@ -31,7 +32,7 @@ Generate personalized Suno AI prompts based on your Spotify listening history.
 
 - Python 3.11+
 - Node.js 18+
-- A Spotify Developer account
+- Optional: A Spotify Developer account (for taste personalization)
 
 ## Spotify App Setup
 
@@ -69,10 +70,10 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Edit `.env` with your Spotify credentials:
+Edit `.env` with your Spotify credentials (optional):
 
 ```env
-SPOTIFY_CLIENT_ID=your_spotify_client_id_here
+SPOTIFY_CLIENT_ID=your_spotify_client_id_here  # Optional for Spotify features
 SPOTIFY_REDIRECT_URI=http://localhost:8000/auth/spotify/callback
 FRONTEND_ORIGIN=http://localhost:5173
 DEBUG=true
@@ -118,13 +119,25 @@ The app will be available at http://localhost:5173
 ## Usage
 
 1. Open http://localhost:5173 in your browser
-2. Click "Login with Spotify"
+2. (Optional) Click "Login with Spotify" to personalize results
 3. Authorize the app to read your top artists and tracks
 4. Select a time range (Last 4 Weeks / Last 6 Months / All Time)
 5. Adjust the sliders (Energy, Rhythm Complexity, Darkness)
 6. Optionally add a theme or story idea
 7. Click "Generate Prompt + Lyrics"
 8. Copy the prompt to use in Suno AI!
+
+Guest usage (no Spotify):
+
+```bash
+curl -X POST http://localhost:8000/generate/advanced \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_prompt": "Cinematic synthwave chase scene",
+    "lyrics_about": "a neon city at midnight",
+    "tags": ["retro", "driving", "noir"]
+  }'
+```
 
 ## Running Tests
 
@@ -184,8 +197,8 @@ pseuno-ai/
 | GET | `/auth/spotify/callback` | OAuth callback |
 | GET | `/auth/status` | Check auth status |
 | POST | `/auth/logout` | Clear session |
-| GET | `/spotify/profile` | Get taste profile |
-| POST | `/generate` | Generate prompt + lyrics |
+| GET | `/spotify/profile` | Get taste profile (requires Spotify auth) |
+| POST | `/generate/advanced` | Generate prompt + lyrics (no auth required) |
 
 ## Environment Variables
 
@@ -193,7 +206,7 @@ pseuno-ai/
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SPOTIFY_CLIENT_ID` | Your Spotify app's Client ID | Required |
+| `SPOTIFY_CLIENT_ID` | Your Spotify app's Client ID | Optional |
 | `SPOTIFY_REDIRECT_URI` | OAuth callback URL | `http://localhost:8000/auth/spotify/callback` |
 | `FRONTEND_ORIGIN` | Frontend URL for CORS | `http://localhost:5173` |
 | `DEBUG` | Enable debug mode | `true` |

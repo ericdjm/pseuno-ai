@@ -21,11 +21,11 @@ npm install
 ```bash
 cd backend
 
-# Should fail without SPOTIFY_CLIENT_ID
+# Should succeed without SPOTIFY_CLIENT_ID (Spotify features disabled)
 python -c "from app.config import Settings; Settings()"
-# Expected: ValidationError
+# Expected: No ValidationError
 
-# Should succeed with SPOTIFY_CLIENT_ID in .env
+# Should succeed with SPOTIFY_CLIENT_ID in .env (enables Spotify auth/profile)
 python -c "from app.config import validate_settings; validate_settings()"
 # Expected: ✓ Settings validated successfully
 ```
@@ -84,7 +84,7 @@ Check server logs for:
 🧹 Cleaned up X expired sessions
 ```
 
-### 7. Test OAuth Flow
+### 7. Test OAuth Flow (requires SPOTIFY_CLIENT_ID)
 
 ```bash
 # 1. Get auth URL
@@ -203,17 +203,13 @@ Expected: All 10 requests succeed (no 401 errors)
 ### Performance Test
 
 ```bash
-# Test parallel API calls improvement
-
 # Time the generate endpoint:
-time curl -X POST http://localhost:8000/generate \
+time curl -X POST http://localhost:8000/generate/advanced \
   -H "Content-Type: application/json" \
-  -H "Cookie: session_id=YOUR_SESSION_ID" \
   -d '{
-    "time_range": "medium_term",
-    "energy": 50,
-    "rhythm_complexity": 50,
-    "darkness": 50
+    "user_prompt": "Cinematic synthwave chase scene",
+    "lyrics_about": "a neon city at midnight",
+    "tags": ["retro", "driving", "noir"]
   }'
 
 # Should be ~50% faster than before (around 300-500ms instead of 600-1000ms)

@@ -13,8 +13,11 @@ from functools import lru_cache
 class Settings(BaseSettings):
     """Application settings loaded from environment variables"""
     
-    # Spotify OAuth (required)
-    spotify_client_id: str = Field(..., min_length=1, description="Spotify Client ID (required)")
+    # Spotify OAuth (optional)
+    spotify_client_id: Optional[str] = Field(
+        default=None,
+        description="Spotify Client ID (optional; enables Spotify login/profile)"
+    )
     spotify_redirect_uri: str = "http://127.0.0.1:8000/auth/spotify/callback"
     
     # App settings
@@ -126,7 +129,7 @@ def validate_settings():
     settings = get_settings()
     
     if not settings.spotify_client_id:
-        raise ValueError("SPOTIFY_CLIENT_ID environment variable is required")
+        print("⚠️  SPOTIFY_CLIENT_ID not set; Spotify auth/profile endpoints will be unavailable")
     
     if not settings.debug:
         print("⚠️  Running in PRODUCTION mode")
