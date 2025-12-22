@@ -101,7 +101,7 @@ docker compose -f docker-compose.dev.yml up --build
 ```
 
 This starts backend, frontend, Postgres, and Redis. Optional: create a `.env`
-in the repo root to provide `SPOTIFY_CLIENT_ID` and `OPENAI_API_KEY` for the
+in the repo root to provide `SPOTIFY_CLIENT_ID` and your LLM API key (`OPENAI_API_KEY` or `GEMINI_API_KEY`) for the
 backend container.
 
 Or use the Makefile shortcut:
@@ -251,6 +251,14 @@ pseuno-ai/
 | `FRONTEND_ORIGIN` | Frontend URL for CORS | `http://localhost:5173` |
 | `DEBUG` | Enable debug mode | `true` |
 | `SECRET_KEY` | Session secret key | Required for production |
+| `OPENAI_API_KEY` | OpenAI API key (for GPT models) | Required for OpenAI |
+| `GEMINI_API_KEY` | Google Gemini API key | Required for Gemini |
+| `LLM_MODEL` | LLM model to use | `gpt-5-nano` |
+| `LLM_TEMPERATURE` | Generation temperature (0.0-2.0) | `0.7` |
+
+**Supported models:**
+- OpenAI: `gpt-5-nano`, `gpt-5-mini`, `gpt-5.2`, etc.
+- Gemini: `gemini-3-flash-preview`, `gemini-2.5-flash`, `gemini-2.0-flash`, etc.
 
 ### Frontend (.env.local)
 
@@ -260,7 +268,7 @@ pseuno-ai/
 
 ## Future Improvements
 
-- [ ] Wire prompt generation to an LLM (OpenAI, Claude, etc.)
+- [x] Wire prompt generation to an LLM (OpenAI, Gemini)
 - [ ] Add persistent session storage (Redis)
 - [ ] Deploy to cloud (Vercel + Railway/Fly.io)
 - [ ] Add more genre presets

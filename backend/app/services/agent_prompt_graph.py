@@ -16,6 +16,17 @@ from app.config import Settings
 from app.models_advanced import AdvancedGenerateRequest
 from app.prompts import REPAIR_AGENT_SYSTEM_PROMPT
 
+# Gemini models that should use the Google Generative AI client
+GEMINI_MODELS = frozenset(
+    {
+        "gemini-3-flash-preview",
+        "gemini-3-pro-preview",
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-2.0-flash",
+    }
+)
+
 
 @dataclass(frozen=True)
 class _ParsedAgentOutput:
@@ -64,7 +75,7 @@ class OpenAIChatClient:
             "Content-Type": "application/json",
         }
         timeout = httpx.Timeout(self.timeout)
-        
+
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 try:
@@ -75,14 +86,16 @@ class OpenAIChatClient:
                     )
                 except httpx.ReadTimeout:
                     # Retry once with a longer timeout to handle slow model responses.
-                    retry_timeout = httpx.Timeout(max(self.timeout * 2, self.timeout + 30))
+                    retry_timeout = httpx.Timeout(
+                        max(self.timeout * 2, self.timeout + 30)
+                    )
                     async with httpx.AsyncClient(timeout=retry_timeout) as retry_client:
                         response = await retry_client.post(
                             "https://api.openai.com/v1/responses",
                             json=payload,
                             headers=headers,
                         )
-                
+
                 if response.status_code >= 400:
                     # Some models do not support temperature; retry without it if needed.
                     if self._is_unsupported_temperature(response):
@@ -109,7 +122,7 @@ class OpenAIChatClient:
                 f"OpenAI API request timed out after {self.timeout}s. "
                 f"Try increasing HTTP_TIMEOUT in your environment settings."
             ) from e
-            
+
         content = self._extract_text(data)
         return _LLMResponse(content=content or "")
 
@@ -157,6 +170,93 @@ class OpenAIChatClient:
         return data.get("choices", [{}])[0].get("message", {}).get("content", "")
 
 
+class GeminiChatClient:
+    """
+    Google Gemini API client using the google-genai SDK.
+    """
+
+    def __init__(
+        self,
+        api_key: Optional[str],
+        model: str,
+        temperature: float,
+        timeout: int,
+    ) -> None:
+        if not api_key:
+            raise RuntimeError("GEMINI_API_KEY is required to use Gemini models.")
+        self.api_key = api_key
+        self.model = model
+        self.temperature = temperature
+        self.timeout = timeout
+        self._client = None
+
+    def _get_client(self):
+        """Lazy-initialize the Gemini client."""
+        if self._client is None:
+            from google import genai
+            from google.genai import types
+
+            self._client = genai.Client(
+                api_key=self.api_key,
+                http_options=types.HttpOptions(timeout=self.timeout * 1000),  # ms
+            )
+        return self._client
+
+    async def ainvoke(self, messages: List[Dict[str, str]]):
+        """
+        Invoke the Gemini model with the given messages.
+        Gemini uses a different format - we convert from OpenAI-style messages.
+        """
+        import asyncio
+
+        # Run synchronous Gemini call in executor to avoid blocking
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(None, self._sync_generate, messages)
+        return _LLMResponse(content=response or "")
+
+    def _sync_generate(self, messages: List[Dict[str, str]]) -> str:
+        """Synchronous generation using the Gemini SDK."""
+        from google.genai import types
+
+        client = self._get_client()
+
+        # Extract system instruction and user content
+        system_instruction = None
+        contents = []
+
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+
+            if role == "system":
+                system_instruction = content
+            else:
+                # Map roles: "user" -> "user", "assistant" -> "model"
+                gemini_role = "model" if role == "assistant" else "user"
+                contents.append(
+                    types.Content(
+                        role=gemini_role, parts=[types.Part.from_text(text=content)]
+                    )
+                )
+
+        # Build generation config
+        config = types.GenerateContentConfig(
+            temperature=self.temperature,
+            system_instruction=system_instruction,
+        )
+
+        response = client.models.generate_content(
+            model=self.model,
+            contents=contents,
+            config=config,
+        )
+
+        # Extract text from response
+        if response.text:
+            return response.text
+        return ""
+
+
 class _AgentState(TypedDict, total=False):
     request: AdvancedGenerateRequest
     context_pack: Dict[str, Any]
@@ -176,13 +276,30 @@ class AgentPromptGraph:
 
     def __init__(self, settings: Settings, llm: Optional[Any] = None):
         self.settings = settings
-        self.llm = llm or OpenAIChatClient(
+        self.llm = llm or self._create_llm_client(settings)
+        self._graph = self._build_graph()
+
+    @staticmethod
+    def _create_llm_client(settings: Settings):
+        """Create the appropriate LLM client based on the model name."""
+        model = settings.llm_model
+
+        # Check if this is a Gemini model
+        if model in GEMINI_MODELS or model.startswith("gemini-"):
+            return GeminiChatClient(
+                api_key=settings.gemini_api_key,
+                model=model,
+                temperature=settings.llm_temperature,
+                timeout=settings.http_timeout,
+            )
+
+        # Default to OpenAI
+        return OpenAIChatClient(
             api_key=settings.openai_api_key,
-            model=settings.openai_model,
-            temperature=settings.openai_temperature,
+            model=model,
+            temperature=settings.llm_temperature,
             timeout=settings.http_timeout,
         )
-        self._graph = self._build_graph()
 
     def _build_graph(self):
         graph = StateGraph(_AgentState)
@@ -311,7 +428,7 @@ class AgentPromptGraph:
             "style_influence": style_influence,
             "generation_id": generation_id,
             "debug_info": {
-                "agent_model": self.settings.openai_model,
+                "agent_model": self.settings.llm_model,
                 "context_hash": context_hash,
                 "repaired": state.get("repaired", False),
                 "repair_enabled": self.settings.agent_repair_enabled,

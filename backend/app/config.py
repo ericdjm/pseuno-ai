@@ -58,12 +58,16 @@ class Settings(BaseSettings):
         description="SQLAlchemy database URL",
     )
 
-    # OpenAI settings
+    # LLM settings
     openai_api_key: Optional[str] = Field(default=None, description="OpenAI API key")
-    openai_model: str = Field(
-        default="gpt-5-nano", description="OpenAI model for song agent"
+    gemini_api_key: Optional[str] = Field(
+        default=None, description="Google Gemini API key"
     )
-    openai_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    llm_model: str = Field(
+        default="gpt-5-nano",
+        description="LLM model for song agent (e.g., gpt-5-nano, gemini-3-flash-preview)",
+    )
+    llm_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     song_agent_prompt: str = Field(
         default=SONG_AGENT_SYSTEM_PROMPT,
         description="System prompt for the song agent",
