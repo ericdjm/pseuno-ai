@@ -8,7 +8,7 @@ from app.models_advanced import (
     AdvancedGenerateRequest,
     AdvancedGenerateResponse,
 )
-from app.services.agent_prompt_builder import AgentPromptBuilder
+from app.services.agent_prompt_graph import AgentPromptGraph
 from app.config import get_settings
 router = APIRouter()
 
@@ -17,9 +17,9 @@ async def generate_advanced(body: AdvancedGenerateRequest):
     """
     Minimal Suno formatter generation (no auth required).
     """
-    # Generate using LangChain agent
+    # Generate using LangGraph agent
     settings = get_settings()
-    builder = AgentPromptBuilder(settings)
-    result = await builder.generate(body)
+    graph = AgentPromptGraph(settings)
+    result = await graph.generate(body)
     
     return AdvancedGenerateResponse(**result)

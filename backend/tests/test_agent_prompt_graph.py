@@ -1,12 +1,12 @@
 """
-Tests for AgentPromptBuilder — basic use cases + repair/validation behavior.
+Tests for AgentPromptGraph — basic use cases + repair/validation behavior.
 """
 
 import asyncio
 
 from app.config import Settings
 from app.models_advanced import AdvancedGenerateRequest
-from app.services.agent_prompt_builder import AgentPromptBuilder
+from app.services.agent_prompt_graph import AgentPromptGraph
 
 
 class _FakeResponse:
@@ -16,7 +16,7 @@ class _FakeResponse:
 
 class FakeLLM:
     """
-    Minimal fake LangChain-compatible LLM for testing.
+    Minimal LLM stub for testing.
     It returns a sequence of contents across successive `ainvoke` calls.
     """
 
@@ -33,7 +33,7 @@ class FakeLLM:
 
 
 def _settings() -> Settings:
-    # Settings requires SPOTIFY_CLIENT_ID; other values can use defaults.
+    # Spotify is optional; provide a stub value for clarity.
     return Settings(spotify_client_id="test_spotify_client_id", openai_api_key="test")
 
 
@@ -62,7 +62,7 @@ def test_valid_output_no_repairs_needed():
     """When the LLM returns valid output on first try, no repairs are triggered."""
     output = _valid_output()
     llm = FakeLLM([output])
-    builder = AgentPromptBuilder(_settings(), llm=llm)
+    builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="Make a funky pop song",
         lyrics_about="dancing in the rain",
@@ -85,7 +85,7 @@ def test_extracts_all_response_fields():
     """All expected fields are present in the response."""
     output = _valid_output()
     llm = FakeLLM([output])
-    builder = AgentPromptBuilder(_settings(), llm=llm)
+    builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="Cinematic orchestral piece",
         lyrics_about="stars colliding",
@@ -110,7 +110,7 @@ def test_concept_title_derived_from_lyrics_about():
     """Concept title is derived from lyrics_about when provided."""
     output = _valid_output()
     llm = FakeLLM([output])
-    builder = AgentPromptBuilder(_settings(), llm=llm)
+    builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="Make something epic",
         lyrics_about="ants marching on Mars",
@@ -126,7 +126,7 @@ def test_concept_title_falls_back_to_user_prompt():
     """When lyrics_about is empty, concept title is derived from user_prompt."""
     output = _valid_output()
     llm = FakeLLM([output])
-    builder = AgentPromptBuilder(_settings(), llm=llm)
+    builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="heavy metal breakdown",
         lyrics_about="",
@@ -141,7 +141,7 @@ def test_generation_id_is_unique():
     """Each generation produces a unique generation_id."""
     output = _valid_output()
     llm = FakeLLM([output, output])
-    builder = AgentPromptBuilder(_settings(), llm=llm)
+    builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="synth wave",
         lyrics_about="neon nights",
@@ -159,7 +159,7 @@ def test_suno_prompt_over_500_triggers_repair_or_fallback():
     output = _valid_output(suno_prompt=long_prompt)
     # Provide only one invalid output → will repair once, then fallback
     llm = FakeLLM([output, output, output])
-    builder = AgentPromptBuilder(_settings(), llm=llm)
+    builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="test prompt",
         lyrics_about="test topic",
@@ -177,7 +177,7 @@ def test_weirdness_out_of_range_triggers_repair_or_fallback():
     # Value > 100 is invalid per validator
     output_high = _valid_output(weirdness=150)
     llm = FakeLLM([output_high, output_high, output_high])
-    builder = AgentPromptBuilder(_settings(), llm=llm)
+    builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(user_prompt="test", lyrics_about="test")
 
     result = asyncio.run(builder.generate(req))
@@ -191,7 +191,7 @@ def test_style_influence_out_of_range_triggers_repair_or_fallback():
     """Style influence values outside 0-100 are invalid and trigger repair/fallback."""
     output = _valid_output(style_influence=200)
     llm = FakeLLM([output, output, output])
-    builder = AgentPromptBuilder(_settings(), llm=llm)
+    builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(user_prompt="test", lyrics_about="test")
 
     result = asyncio.run(builder.generate(req))
@@ -205,7 +205,7 @@ def test_tags_are_passed_through():
     """Tags from request are included in context and don't break generation."""
     output = _valid_output()
     llm = FakeLLM([output])
-    builder = AgentPromptBuilder(_settings(), llm=llm)
+    builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="indie rock anthem",
         lyrics_about="summer nights",
@@ -223,7 +223,7 @@ def test_selected_artists_not_leaked_when_valid():
     # LLM returns valid output that doesn't mention artist
     output = _valid_output(suno_prompt="Retro funk, smooth bass, falsetto vocals")
     llm = FakeLLM([output])
-    builder = AgentPromptBuilder(_settings(), llm=llm)
+    builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="Make it sound like Prince",
         lyrics_about="purple rain",
@@ -253,7 +253,7 @@ def test_repairs_when_missing_sections():
     )
 
     llm = FakeLLM([bad, good])
-    builder = AgentPromptBuilder(_settings(), llm=llm)
+    builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="Make something big and cinematic",
         lyrics_about="ants on Mars",
@@ -298,7 +298,7 @@ def test_repairs_when_artist_name_leaks_in_suno_prompt_only():
     )
 
     llm = FakeLLM([bad, good])
-    builder = AgentPromptBuilder(_settings(), llm=llm)
+    builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="Make a song that sounds like Bruno Mars",
         lyrics_about="dancing alone",
@@ -316,7 +316,7 @@ def test_falls_back_after_two_failed_repairs():
     # Provide three invalid outputs (initial + 2 repairs). Builder should fallback deterministically.
     invalid = "SUNO PROMPT\nblah\n"
     llm = FakeLLM([invalid, invalid, invalid])
-    builder = AgentPromptBuilder(_settings(), llm=llm)
+    builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="Make a song that sounds like Will.I.Am",
         lyrics_about="robots",
@@ -349,7 +349,7 @@ def test_repair_disabled_skips_repair_attempts():
         openai_api_key="test",
         agent_repair_enabled=False,
     )
-    builder = AgentPromptBuilder(settings, llm=llm)
+    builder = AgentPromptGraph(settings, llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="test",
         lyrics_about="test",
@@ -376,7 +376,7 @@ def test_custom_max_repairs_is_respected():
         agent_repair_enabled=True,
         agent_max_repairs=5,
     )
-    builder = AgentPromptBuilder(settings, llm=llm)
+    builder = AgentPromptGraph(settings, llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="test",
         lyrics_about="test",
@@ -400,7 +400,7 @@ def test_zero_max_repairs_goes_straight_to_fallback():
         agent_repair_enabled=True,
         agent_max_repairs=0,
     )
-    builder = AgentPromptBuilder(settings, llm=llm)
+    builder = AgentPromptGraph(settings, llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="test",
         lyrics_about="test",
@@ -424,7 +424,7 @@ def test_debug_info_includes_repair_config():
         agent_repair_enabled=True,
         agent_max_repairs=3,
     )
-    builder = AgentPromptBuilder(settings, llm=llm)
+    builder = AgentPromptGraph(settings, llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="test",
         lyrics_about="test",

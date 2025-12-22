@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     # Request timeouts
     http_timeout: int = 30
 
-    # OpenAI / LangChain settings
+    # OpenAI settings
     openai_api_key: Optional[str] = Field(default=None, description="OpenAI API key")
     openai_model: str = Field(
         default="gpt-5-nano", description="OpenAI model for song agent"

@@ -1,5 +1,5 @@
 """
-LangChain-based agent for Suno prompt + lyrics generation.
+LangGraph-based agent for Suno prompt + lyrics generation.
 """
 
 import hashlib
@@ -7,9 +7,10 @@ import json
 import re
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple, TypedDict
 
-from langchain_core.prompts import ChatPromptTemplate
+import httpx
+from langgraph.graph import END, StateGraph
 
 from app.config import Settings
 from app.models_advanced import AdvancedGenerateRequest
@@ -27,67 +28,257 @@ class _ParsedAgentOutput:
     style_influence: int
 
 
-class AgentPromptBuilder:
+@dataclass(frozen=True)
+class _LLMResponse:
+    content: str
+
+
+class OpenAIChatClient:
     """
-    LangChain agent to generate song artifacts using a minimal context pack.
+    Minimal OpenAI-compatible client using HTTPX (Responses API).
+    """
+
+    def __init__(
+        self,
+        api_key: Optional[str],
+        model: str,
+        temperature: float,
+        timeout: int,
+    ) -> None:
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY is required to call the LLM.")
+        self.api_key = api_key
+        self.model = model
+        self.temperature = temperature
+        self.timeout = timeout
+
+    async def ainvoke(self, messages: List[Dict[str, str]]):
+        payload = {
+            "model": self.model,
+            "input": self._format_messages(messages),
+        }
+        if self.temperature is not None:
+            payload["temperature"] = self.temperature
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        timeout = httpx.Timeout(self.timeout)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            try:
+                response = await client.post(
+                    "https://api.openai.com/v1/responses",
+                    json=payload,
+                    headers=headers,
+                )
+            except httpx.ReadTimeout:
+                # Retry once with a longer timeout to handle slow model responses.
+                retry_timeout = httpx.Timeout(max(self.timeout * 2, self.timeout + 30))
+                async with httpx.AsyncClient(timeout=retry_timeout) as retry_client:
+                    response = await retry_client.post(
+                        "https://api.openai.com/v1/responses",
+                        json=payload,
+                        headers=headers,
+                    )
+            if response.status_code >= 400:
+                # Some models do not support temperature; retry without it if needed.
+                if self._is_unsupported_temperature(response):
+                    payload.pop("temperature", None)
+                    retry = await client.post(
+                        "https://api.openai.com/v1/responses",
+                        json=payload,
+                        headers=headers,
+                    )
+                    if retry.status_code >= 400:
+                        raise RuntimeError(
+                            f"OpenAI API error {retry.status_code}: {retry.text}"
+                        )
+                    data = retry.json()
+                else:
+                    raise RuntimeError(
+                        f"OpenAI API error {response.status_code}: {response.text}"
+                    )
+            else:
+                data = response.json()
+        content = self._extract_text(data)
+        return _LLMResponse(content=content or "")
+
+    def _is_unsupported_temperature(self, response: httpx.Response) -> bool:
+        try:
+            data = response.json()
+        except ValueError:
+            return "temperature" in response.text.lower()
+        error = (data or {}).get("error", {})
+        message = (error.get("message") or "").lower()
+        param = (error.get("param") or "").lower()
+        return "temperature" in message or param == "temperature"
+
+    def _format_messages(self, messages: List[Dict[str, str]]) -> List[Dict[str, Any]]:
+        formatted: List[Dict[str, Any]] = []
+        for message in messages:
+            role = message.get("role", "user")
+            text = message.get("content", "")
+            formatted.append(
+                {
+                    "role": role,
+                    "content": text,
+                }
+            )
+        return formatted
+
+    def _extract_text(self, data: Dict[str, Any]) -> str:
+        # Responses API sometimes exposes a convenience field.
+        output_text = data.get("output_text")
+        if output_text:
+            return output_text
+
+        # Fallback: walk output messages and collect text chunks.
+        parts: List[str] = []
+        for item in data.get("output", []) or []:
+            for content in item.get("content", []) or []:
+                if content.get("type") in ("output_text", "text"):
+                    text = content.get("text", "")
+                    if text:
+                        parts.append(text)
+        if parts:
+            return "\n".join(parts)
+
+        # Last-resort: support chat-completions-like shapes.
+        return data.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+
+class _AgentState(TypedDict, total=False):
+    request: AdvancedGenerateRequest
+    context_pack: Dict[str, Any]
+    context_text: str
+    raw_output: str
+    parsed: _ParsedAgentOutput
+    issues: List[str]
+    repairs_left: int
+    repaired: bool
+    result: Dict[str, Any]
+
+
+class AgentPromptGraph:
+    """
+    LangGraph agent that generates song artifacts using a minimal context pack.
     """
 
     def __init__(self, settings: Settings, llm: Optional[Any] = None):
         self.settings = settings
-        if llm is not None:
-            self.llm = llm
-        else:
-            try:
-                from langchain_openai import ChatOpenAI  # type: ignore
-            except ModuleNotFoundError as e:  # pragma: no cover
-                raise RuntimeError(
-                    "langchain-openai is required to use AgentPromptBuilder without a custom LLM. "
-                    "Install it (pip install langchain-openai) or pass a compatible `llm=`."
-                ) from e
+        self.llm = llm or OpenAIChatClient(
+            api_key=settings.openai_api_key,
+            model=settings.openai_model,
+            temperature=settings.openai_temperature,
+            timeout=settings.http_timeout,
+        )
+        self._graph = self._build_graph()
 
-            self.llm = ChatOpenAI(
-                api_key=settings.openai_api_key,
-                model=settings.openai_model,
-                temperature=settings.openai_temperature,
-            )
-        self.prompt = ChatPromptTemplate.from_messages(
-            [
-                ("system", settings.song_agent_prompt),
-                ("human", "{context_pack}"),
-            ]
+    def _build_graph(self):
+        graph = StateGraph(_AgentState)
+
+        graph.add_node("build_context", self._node_build_context)
+        graph.add_node("generate", self._node_generate)
+        graph.add_node("parse_validate", self._node_parse_validate)
+        graph.add_node("repair", self._node_repair)
+        graph.add_node("fallback", self._node_fallback)
+        graph.add_node("finalize", self._node_finalize)
+
+        graph.set_entry_point("build_context")
+        graph.add_edge("build_context", "generate")
+        graph.add_edge("generate", "parse_validate")
+        graph.add_edge("repair", "parse_validate")
+        graph.add_edge("fallback", "finalize")
+
+        graph.add_conditional_edges(
+            "parse_validate",
+            self._route_after_validation,
+            {
+                "finalize": "finalize",
+                "repair": "repair",
+                "fallback": "fallback",
+            },
         )
-        self._repair_prompt = ChatPromptTemplate.from_messages(
-            [
-                ("system", REPAIR_AGENT_SYSTEM_PROMPT),
-                (
-                    "human",
-                    (
-                        "{context_pack}\n\n"
-                        "BEGIN_PREVIOUS_OUTPUT\n"
-                        "{previous_output}\n"
-                        "END_PREVIOUS_OUTPUT\n\n"
-                        "BEGIN_ISSUES\n"
-                        "{issues}\n"
-                        "END_ISSUES\n"
-                    ),
-                ),
-            ]
-        )
+
+        graph.add_edge("finalize", END)
+        return graph.compile()
 
     async def generate(self, request: AdvancedGenerateRequest) -> Dict[str, Any]:
+        state = await self._graph.ainvoke({"request": request})
+        return state["result"]
+
+    async def _node_build_context(self, state: _AgentState) -> _AgentState:
+        request = state["request"]
         context_pack = self._build_context_pack(request)
         context_text = self._format_context_pack(context_pack)
-
-        # Use config for repair behavior (0 repairs if disabled)
         max_repairs = (
             self.settings.agent_max_repairs if self.settings.agent_repair_enabled else 0
         )
+        return {
+            **state,
+            "context_pack": context_pack,
+            "context_text": context_text,
+            "repairs_left": max_repairs,
+            "repaired": False,
+        }
 
-        raw_output, parsed, repaired = await self._generate_with_repairs(
-            context_pack=context_pack,
-            context_text=context_text,
-            max_repairs=max_repairs,
+    async def _node_generate(self, state: _AgentState) -> _AgentState:
+        raw_output = await self._call_llm(
+            self.settings.song_agent_prompt, state["context_text"]
         )
+        return {**state, "raw_output": raw_output}
+
+    async def _node_parse_validate(self, state: _AgentState) -> _AgentState:
+        parsed = self._parse_agent_output(state.get("raw_output", ""))
+        issues = self._validate_output(parsed, state["context_pack"])
+        return {**state, "parsed": parsed, "issues": issues}
+
+    def _route_after_validation(self, state: _AgentState) -> str:
+        issues = state.get("issues") or []
+        if not issues:
+            return "finalize"
+        if state.get("repairs_left", 0) > 0:
+            return "repair"
+        return "fallback"
+
+    async def _node_repair(self, state: _AgentState) -> _AgentState:
+        repairs_left = max(0, state.get("repairs_left", 0) - 1)
+        issues = state.get("issues") or []
+        issues_text = "\n".join(f"- {issue}" for issue in issues)
+        repair_input = (
+            f"{state['context_text']}\n\n"
+            "BEGIN_PREVIOUS_OUTPUT\n"
+            f"{state.get('raw_output', '')}\n"
+            "END_PREVIOUS_OUTPUT\n\n"
+            "BEGIN_ISSUES\n"
+            f"{issues_text}\n"
+            "END_ISSUES\n"
+        )
+        raw_output = await self._call_llm(
+            REPAIR_AGENT_SYSTEM_PROMPT,
+            repair_input,
+            temperature=0.0,
+        )
+        return {
+            **state,
+            "raw_output": raw_output,
+            "repairs_left": repairs_left,
+            "repaired": True,
+        }
+
+    def _node_fallback(self, state: _AgentState) -> _AgentState:
+        fallback_raw, fallback_parsed = self._build_fallback(state["context_pack"])
+        return {
+            **state,
+            "raw_output": fallback_raw,
+            "parsed": fallback_parsed,
+            "issues": [],
+            "repaired": True,
+        }
+
+    def _node_finalize(self, state: _AgentState) -> _AgentState:
+        context_pack = state["context_pack"]
+        parsed = state["parsed"]
         song_prompt = context_pack.get("song_prompt", "")
         lyrics_about = context_pack.get("lyrics_about", "")
 
@@ -101,7 +292,7 @@ class AgentPromptBuilder:
         generation_id = self._create_generation_id(song_prompt, lyrics_about)
         context_hash = self._hash_context(context_pack)
 
-        return {
+        result = {
             "concept_title": concept_title,
             "lyrics": lyrics,
             "suno_prompt": suno_prompt,
@@ -112,64 +303,21 @@ class AgentPromptBuilder:
             "debug_info": {
                 "agent_model": self.settings.openai_model,
                 "context_hash": context_hash,
-                "repaired": repaired,
+                "repaired": state.get("repaired", False),
                 "repair_enabled": self.settings.agent_repair_enabled,
                 "max_repairs": self.settings.agent_max_repairs,
             },
         }
-
-    async def _generate_with_repairs(
-        self,
-        context_pack: Dict[str, Any],
-        context_text: str,
-        max_repairs: int,
-    ) -> Tuple[str, _ParsedAgentOutput, bool]:
-        """
-        Run the agent, validate output, and attempt up to `max_repairs` repair passes.
-        Repairs are triggered by invalid formatting/sections or SUNO PROMPT artist leakage.
-        """
-        repaired = False
-
-        # Attempt 0: original generation
-        raw_output = await self._call_llm(self.prompt, {"context_pack": context_text})
-        parsed = self._parse_agent_output(raw_output)
-        issues = self._validate_output(parsed, context_pack)
-
-        for _ in range(max_repairs):
-            if not issues:
-                return raw_output, parsed, repaired
-
-            repaired = True
-            raw_output = await self._call_llm(
-                self._repair_prompt,
-                {
-                    "context_pack": context_text,
-                    "previous_output": raw_output,
-                    "issues": "\n".join(f"- {issue}" for issue in issues),
-                },
-                # Reduce randomness for repairs (best-effort; fake LLMs can ignore this).
-                temperature=0.0,
-            )
-            parsed = self._parse_agent_output(raw_output)
-            issues = self._validate_output(parsed, context_pack)
-
-        if not issues:
-            return raw_output, parsed, repaired
-
-        # Final fallback (deterministic, always returns a valid shape).
-        fallback_raw, fallback_parsed = self._build_fallback(context_pack)
-        return fallback_raw, fallback_parsed, True
+        return {**state, "result": result}
 
     async def _call_llm(
-        self,
-        prompt: ChatPromptTemplate,
-        variables: Dict[str, Any],
-        temperature: Optional[float] = None,
+        self, system_prompt: str, user_prompt: str, temperature: Optional[float] = None
     ) -> str:
-        messages = prompt.format_messages(**variables)
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
 
-        # Best-effort: if the underlying LLM exposes a `temperature` attribute, override it
-        # for this call (useful for repair stability). Fake LLMs can ignore this.
         if temperature is not None and hasattr(self.llm, "temperature"):
             original = getattr(self.llm, "temperature")
             try:
