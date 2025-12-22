@@ -5,7 +5,6 @@ LangGraph-based agent for Suno prompt + lyrics generation.
 import hashlib
 import json
 import logging
-import logging
 import re
 import time
 from dataclasses import dataclass
