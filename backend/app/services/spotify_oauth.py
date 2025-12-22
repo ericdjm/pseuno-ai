@@ -136,14 +136,18 @@ async def handle_spotify_callback(
         )
 
         if user_response.status_code == 200:
-            user_data = user_response.json()
-            session_store.set_user_data(
-                session_id,
-                user_name=user_data.get("display_name", "User"),
-                user_image=user_data.get("images", [{}])[0].get("url")
-                if user_data.get("images")
-                else None,
-            )
+            try:
+                user_data = user_response.json()
+            except ValueError:
+                logger.warning("Spotify user profile JSON parsing failed")
+            else:
+                session_store.set_user_data(
+                    session_id,
+                    user_name=user_data.get("display_name", "User"),
+                    user_image=user_data.get("images", [{}])[0].get("url")
+                    if user_data.get("images")
+                    else None,
+                )
 
         session_store.clear_pkce_data(session_id)
     except httpx.TimeoutException:
