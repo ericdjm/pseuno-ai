@@ -36,6 +36,7 @@ GEMINI_MODELS = frozenset(
 class _ParsedAgentOutput:
     order: Tuple[str, ...]
     sections: Dict[str, str]
+    song_title: str
     lyrics: str
     suno_prompt: str
     exclude: str
@@ -515,7 +516,10 @@ class AgentPromptGraph:
         song_prompt = context_pack.get("user_style_request", "")
         lyrics_about = context_pack.get("lyrics_about", "")
 
-        concept_title = self._derive_title(song_prompt, lyrics_about)
+        # Use LLM-generated title, fall back to derived if empty
+        concept_title = parsed.song_title.strip() or self._derive_title(
+            song_prompt, lyrics_about
+        )
         suno_prompt = parsed.suno_prompt.strip() or song_prompt.strip()
         suno_prompt = self._trim_text(suno_prompt, 500)
         lyrics = parsed.lyrics.strip()
@@ -581,6 +585,7 @@ class AgentPromptGraph:
     def _parse_agent_output(self, text: str) -> _ParsedAgentOutput:
         order, sections = self._extract_sections(text)
 
+        song_title = self._first_non_empty_line(sections.get("SONG TITLE", ""))
         lyrics = sections.get("LYRICS", "").strip()
         suno_prompt = sections.get("SUNO PROMPT", "").strip()
         exclude = self._first_non_empty_line(sections.get("EXCLUDE", ""))
@@ -590,6 +595,7 @@ class AgentPromptGraph:
         return _ParsedAgentOutput(
             order=order,
             sections=sections,
+            song_title=song_title,
             lyrics=lyrics,
             suno_prompt=suno_prompt,
             exclude=exclude,
@@ -634,7 +640,14 @@ class AgentPromptGraph:
         self, parsed: _ParsedAgentOutput, context_pack: Dict[str, Any]
     ) -> List[str]:
         issues: List[str] = []
-        required = ("LYRICS", "SUNO PROMPT", "EXCLUDE", "WEIRDNESS", "STYLE INFLUENCE")
+        required = (
+            "SONG TITLE",
+            "LYRICS",
+            "SUNO PROMPT",
+            "EXCLUDE",
+            "WEIRDNESS",
+            "STYLE INFLUENCE",
+        )
 
         # Sections must exist, and appear in the required order (no missing / re-ordered).
         if parsed.order != required:
@@ -783,7 +796,9 @@ class AgentPromptGraph:
 
     def _normalize_header(self, line: str) -> Optional[str]:
         normalized = line.strip().upper().rstrip(":")
-        normalized = re.sub(r"^[A-E]\)\s*", "", normalized)
+        normalized = re.sub(r"^[A-F]\)\s*", "", normalized)
+        if "SONG TITLE" in normalized or normalized == "TITLE":
+            return "SONG TITLE"
         if normalized == "LYRICS":
             return "LYRICS"
         if "SUNO PROMPT" in normalized:
