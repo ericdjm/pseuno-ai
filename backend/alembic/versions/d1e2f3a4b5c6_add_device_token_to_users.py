@@ -1,7 +1,7 @@
 """add device_token and is_guest to users
 
 Revision ID: d1e2f3a4b5c6
-Revises: c9d8e7f6a5b4, 46365e54cf44
+Revises: c9d8e7f6a5b4
 Create Date: 2025-02-23 12:00:00.000000
 
 """
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 revision = "d1e2f3a4b5c6"
-down_revision = ("c9d8e7f6a5b4", "46365e54cf44")  # Merge heads
+down_revision = "c9d8e7f6a5b4"
 branch_labels = None
 depends_on = None
 
@@ -38,4 +38,3 @@ def downgrade() -> None:
     op.drop_index("ix_users_device_token", table_name="users")
     op.drop_column("users", "device_token")
     op.drop_column("users", "is_guest")
-
