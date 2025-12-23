@@ -243,6 +243,7 @@ Create JSON files with test cases:
 ## Database Migrations (Alembic)
 
 Migrations are managed with Alembic. Always apply existing migrations before creating new ones.
+Keep the migration history linear (single head). Before creating a new migration, make sure your branch is up to date and `alembic heads` shows only one head. If multiple heads appear, rebase on the latest main and regenerate your migration so it points to the current head (do not add mergepoint revisions).
 
 **Workflow:**
 1. Apply pending migrations: `alembic upgrade head`
