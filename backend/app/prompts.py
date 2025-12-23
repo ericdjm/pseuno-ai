@@ -10,6 +10,50 @@ This module uses modular sections that can be composed into different prompts:
 - SUNO_PROMPT_SPEC: Style prompt formula
 - EXCLUDE_SPEC: What to exclude
 - PARAMETER_SPEC: Weirdness/Style Influence guidelines
+
+═══════════════════════════════════════════════════════════════════════════════
+SYSTEM PROMPT BEST PRACTICES
+═══════════════════════════════════════════════════════════════════════════════
+
+1. STRUCTURE
+   - Use clear section headers (POLICY, OUTPUT CONTRACT, TASK, etc.)
+   - Put immutable rules first (POLICY) — models weight early content higher
+   - Define output format explicitly before explaining how to generate it
+
+2. CONSTRAINTS
+   - State prohibitions explicitly: "No X" is clearer than "Avoid X"
+   - Use BAD/GOOD examples to show boundaries concretely
+   - Include failure modes: what to do when input is ambiguous or missing
+
+3. OUTPUT CONTRACT
+   - Specify exact section order and names
+   - Define constraints for each field (max chars, allowed values, format)
+   - "No trailing period" level specificity prevents common issues
+
+4. TRANSFORMATION, NOT ECHO
+   - Explicitly instruct: "transform, do not copy"
+   - Show input→output examples to demonstrate transformation
+   - Ban verbatim copying in POLICY section
+
+5. NEGATIVE CONSTRAINTS
+   - List what NOT to include (production terms in lyrics, artist names, etc.)
+   - Be specific: "(Heavy bass textures)" will be sung literally by Suno
+   - Redirect: "Put X in section tags, not in lyrics"
+
+6. COMPOSABILITY
+   - Break prompts into reusable specs (LYRICS_SPEC, SONG_TITLE_SPEC)
+   - Compose full prompts from shared components
+   - Keeps rules in sync across SONG_AGENT, REPAIR_AGENT, LYRICS agents
+
+7. EXAMPLES
+   - Use domain-specific BAD/GOOD pairs
+   - Keep examples short but illustrative
+   - Avoid examples that match test cases (prevents overfitting)
+
+8. PARAMETERS
+   - Provide ranges with semantic meaning (30-40 = radio-friendly)
+   - Forbid default values: "No 50/50 parameters"
+   - Tie values to genre conventions
 """
 
 from app.constants import SUNO_PROMPT_MAX_CHARS
