@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   Box,
   VStack,
@@ -11,16 +12,38 @@ import {
   Stat,
   StatLabel,
   StatNumber,
+  Icon,
+  Tooltip,
+  Input,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
+  ModalCloseButton,
+  useDisclosure,
+  FormControl,
+  FormLabel,
 } from '@chakra-ui/react';
-import { CopyIcon } from '@chakra-ui/icons';
-import { AdvancedGenerateResponse } from '../api';
+import { CopyIcon, StarIcon } from '@chakra-ui/icons';
+import { AdvancedGenerateResponse, createSavedPrompt } from '../api';
 
 interface AdvancedResultsDisplayProps {
   result: AdvancedGenerateResponse;
+  isAuthenticated?: boolean;
+  onPromptSaved?: () => void;
 }
 
-export default function AdvancedResultsDisplay({ result }: AdvancedResultsDisplayProps) {
+export default function AdvancedResultsDisplay({
+  result,
+  isAuthenticated = false,
+  onPromptSaved,
+}: AdvancedResultsDisplayProps) {
   const toast = useToast();
+  const { isOpen, onOpen, onClose } = useDisclosure();
+  const [saving, setSaving] = useState(false);
+  const [title, setTitle] = useState(result.concept_title);
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -30,6 +53,38 @@ export default function AdvancedResultsDisplay({ result }: AdvancedResultsDispla
       duration: 2000,
       isClosable: true,
     });
+  };
+
+  const handleSavePrompt = async () => {
+    setSaving(true);
+    try {
+      await createSavedPrompt({
+        suno_prompt: result.suno_prompt,
+        exclude: result.exclude,
+        weirdness: result.weirdness,
+        style_influence: result.style_influence,
+        title: title || result.concept_title,
+      });
+      toast({
+        title: 'Prompt saved!',
+        description: 'Added to your saved prompts library.',
+        status: 'success',
+        duration: 3000,
+        isClosable: true,
+      });
+      onClose();
+      onPromptSaved?.();
+    } catch (e) {
+      toast({
+        title: 'Failed to save',
+        description: 'Could not save prompt. Please try again.',
+        status: 'error',
+        duration: 4000,
+        isClosable: true,
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const promptLength = result.suno_prompt.length;
@@ -48,11 +103,72 @@ export default function AdvancedResultsDisplay({ result }: AdvancedResultsDispla
               ID: {result.generation_id}
             </Text>
           </VStack>
-          <Badge colorScheme="purple" fontSize="md" px={3} py={1}>
-            Agent Output
-          </Badge>
+          <HStack spacing={2}>
+            {isAuthenticated ? (
+              <Button
+                leftIcon={<Icon as={StarIcon} />}
+                colorScheme="yellow"
+                variant="outline"
+                size="sm"
+                onClick={onOpen}
+              >
+                Save
+              </Button>
+            ) : (
+              <Tooltip label="Sign in to save prompts" placement="left">
+                <Button
+                  leftIcon={<Icon as={StarIcon} />}
+                  colorScheme="yellow"
+                  variant="outline"
+                  size="sm"
+                  isDisabled
+                >
+                  Save
+                </Button>
+              </Tooltip>
+            )}
+            <Badge colorScheme="purple" fontSize="md" px={3} py={1}>
+              Agent Output
+            </Badge>
+          </HStack>
         </HStack>
       </Box>
+
+      {/* Save Prompt Modal */}
+      <Modal isOpen={isOpen} onClose={onClose} isCentered>
+        <ModalOverlay />
+        <ModalContent bg="gray.800">
+          <ModalHeader>Save SUNO Prompt</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <FormControl>
+              <FormLabel>Title</FormLabel>
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Enter a title for this prompt"
+                bg="gray.700"
+              />
+            </FormControl>
+            <Text fontSize="sm" color="gray.400" mt={4}>
+              This will save the prompt along with its parameters (weirdness: {result.weirdness}%, 
+              style influence: {result.style_influence}%).
+            </Text>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="ghost" mr={3} onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              colorScheme="yellow"
+              onClick={handleSavePrompt}
+              isLoading={saving}
+            >
+              Save Prompt
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
 
       <Divider />
 

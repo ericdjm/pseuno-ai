@@ -69,6 +69,42 @@ export interface AdvancedGenerateResponse {
 
 export type TimeRange = 'short_term' | 'medium_term' | 'long_term';
 
+// === Saved Prompts Types ===
+
+export interface SavedSunoPrompt {
+  id: number;
+  suno_prompt: string;
+  exclude: string;
+  weirdness: number;
+  style_influence: number;
+  title: string | null;
+  notes: string | null;
+  visibility: 'private' | 'unlisted' | 'public';
+  share_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SavedPromptsListResponse {
+  prompts: SavedSunoPrompt[];
+  total: number;
+}
+
+export interface CreateSunoPromptRequest {
+  suno_prompt: string;
+  exclude: string;
+  weirdness: number;
+  style_influence: number;
+  title?: string;
+  notes?: string;
+}
+
+export interface UpdateSunoPromptRequest {
+  title?: string;
+  notes?: string;
+  visibility?: 'private' | 'unlisted' | 'public';
+}
+
 // === API Error Handling ===
 
 export class ApiError extends Error {
@@ -185,6 +221,82 @@ export async function generateAdvanced(
     body: JSON.stringify(payload),
   });
   return handleResponse<AdvancedGenerateResponse>(response);
+}
+
+// === Saved Prompts Functions ===
+
+/**
+ * Save a Suno prompt as a favorite
+ */
+export async function createSavedPrompt(
+  payload: CreateSunoPromptRequest
+): Promise<SavedSunoPrompt> {
+  const response = await fetch(`${API_BASE}/prompts`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  return handleResponse<SavedSunoPrompt>(response);
+}
+
+/**
+ * List the current user's saved prompts
+ */
+export async function listSavedPrompts(
+  limit: number = 50,
+  offset: number = 0
+): Promise<SavedPromptsListResponse> {
+  const response = await fetch(
+    `${API_BASE}/prompts?limit=${limit}&offset=${offset}`,
+    {
+      credentials: 'include',
+    }
+  );
+  return handleResponse<SavedPromptsListResponse>(response);
+}
+
+/**
+ * Get a single saved prompt by ID
+ */
+export async function getSavedPrompt(promptId: number): Promise<SavedSunoPrompt> {
+  const response = await fetch(`${API_BASE}/prompts/${promptId}`, {
+    credentials: 'include',
+  });
+  return handleResponse<SavedSunoPrompt>(response);
+}
+
+/**
+ * Update a saved prompt's metadata
+ */
+export async function updateSavedPrompt(
+  promptId: number,
+  payload: UpdateSunoPromptRequest
+): Promise<SavedSunoPrompt> {
+  const response = await fetch(`${API_BASE}/prompts/${promptId}`, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  return handleResponse<SavedSunoPrompt>(response);
+}
+
+/**
+ * Delete a saved prompt
+ */
+export async function deleteSavedPrompt(promptId: number): Promise<void> {
+  const response = await fetch(`${API_BASE}/prompts/${promptId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    throw new ApiError(`Delete failed: ${response.status}`, response.status);
+  }
 }
 
 // === Utility Functions ===

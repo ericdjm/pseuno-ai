@@ -35,6 +35,7 @@ import { TasteDisplay } from './components/TasteDisplay';
 import { PrivacyNote } from './components/PrivacyNote';
 import AdvancedGenerationControls from './components/AdvancedGenerationControls';
 import AdvancedResultsDisplay from './components/AdvancedResultsDisplay';
+import SavedPromptsLibrary from './components/SavedPromptsLibrary';
 
 function App() {
   const toast = useToast();
@@ -52,6 +53,9 @@ function App() {
   // Generation state
   const [advancedResult, setAdvancedResult] = useState<api.AdvancedGenerateResponse | null>(null);
   const [generating, setGenerating] = useState(false);
+
+  // Saved prompts state
+  const [savedPromptsRefresh, setSavedPromptsRefresh] = useState(0);
 
   // Check for OAuth callback
   useEffect(() => {
@@ -271,7 +275,24 @@ function App() {
 
           {/* Results */}
           {advancedResult && (
-            <AdvancedResultsDisplay result={advancedResult} />
+            <AdvancedResultsDisplay
+              result={advancedResult}
+              isAuthenticated={authStatus.authenticated}
+              onPromptSaved={() => setSavedPromptsRefresh((n) => n + 1)}
+            />
+          )}
+
+          {/* Saved Prompts Library */}
+          {authStatus.authenticated && (
+            <Box
+              bg="gray.800"
+              borderRadius="lg"
+              p={6}
+              borderWidth="1px"
+              borderColor="gray.700"
+            >
+              <SavedPromptsLibrary refreshTrigger={savedPromptsRefresh} />
+            </Box>
           )}
 
           {/* Privacy Note */}
