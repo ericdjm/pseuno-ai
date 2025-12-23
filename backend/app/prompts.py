@@ -125,8 +125,13 @@ LYRICS_SPEC = """\
 LYRICS SPEC
 ═══════════════════════════════════════════════════════════════════════════════
 Required tags: [Verse], [Chorus], [Bridge], [Breakdown], [Outro]
-Tag modifiers allowed: [Verse, hushed], [Chorus, explosive]
-Instrumental sections: tag only, no text beneath.
+Tag modifiers: Use multiple comma-separated descriptors to control each section.
+  Examples:
+  - [Verse, soft, introspective, breathy vocals]
+  - [Chorus, anthemic, soaring, powerful belting]
+  - [Breakdown, sparse, haunting, whispered]
+  - [Bridge, building tension, layered harmonies]
+Instrumental sections: tag only, no text beneath. Example: [Breakdown, heavy, distorted, instrumental]
 
 Vocal formatting:
 - (text) = backing vocals — ONLY use for words that should be SUNG as backing vocals.
@@ -136,7 +141,7 @@ Vocal formatting:
 - Stretched vowels = held notes: "faaaalling"
 - Do NOT end lines or sections with "..." — ellipses are rare, only for mid-line hesitation.
 - NO stage directions, production notes, or instrumental descriptions in lyrics.
-  Put production hints in the section tag modifier instead: [Breakdown, electronic, heavy bass]
+  Put production hints in the section tag modifiers instead.
 
 Content rules:
 - Lyrics inspired by lyrics_about; style_request influences phrasing and genre tropes only.
@@ -148,7 +153,10 @@ Content rules:
 - Prioritize punchy, impactful lines over filler. Each line should earn its place.
 - Maintain consistent syllable count and rhythm within each section for singability.
 
-Ending: Use [Chorus, final] or [Outro, fade] to force clean termination.
+Structure: Songs should have a clear beginning, build, and resolution.
+  - Start strong: [Verse, atmospheric intro] or [Intro, ambient, building]
+  - End decisively: [Chorus, triumphant, final] or [Outro, fading, reflective]
+  - Don't trail off — give the song a definitive close.
 """
 
 SONG_TITLE_SPEC = """\
