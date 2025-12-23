@@ -1,0 +1,11 @@
+[
+  {
+    "name": "Meshuggah meets EDM with Hozier vocalist",
+    "user_prompt": "Make a song that sounds like Meshuggah with Hozier style vocals. Make the song very heavy and intense with a dubstep style breakdown near the end after a massive build up.",
+    "lyrics_about": "The song should be about the inner conflict of a person who is trying to escape chronic pain and suffering.",
+    "selected_artists": [],
+    "tags": [],
+    "lyric_red_flags": ["meshuggah", "hozier", "heavy", "intense", "dubstep", "breakdown"],
+    "lyric_green_flags": ["pain", "suffering", "escape", "conflict", "inner", "struggle"]
+  }
+]

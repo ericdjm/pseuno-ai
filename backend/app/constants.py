@@ -28,7 +28,7 @@ LYRICS_TOPIC_MAX_CHARS = 500
 # Allowed Section Tags
 # ===========================================================================
 
-ALLOWED_SECTION_TAGS = ["[Verse]", "[Chorus]", "[Breakdown]", "[Bridge]"]
+ALLOWED_SECTION_TAGS = ["[Verse]", "[Chorus]", "[Bridge]", "[Breakdown]", "[Outro]", "[Instrumental]", "[Intro]", "[Pre-Chorus]", "[Post-Chorus]"]
 ALLOWED_SECTION_TAGS_STR = ", ".join(ALLOWED_SECTION_TAGS)
 
 # ===========================================================================

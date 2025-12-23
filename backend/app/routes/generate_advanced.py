@@ -12,7 +12,7 @@ from app.schemas.advanced import (
 )
 from app.deps import get_song_agent
 from app.services.agent_prompt_graph import AgentPromptGraph
-from app.prompts import LYRICS_ONLY_SYSTEM_PROMPT
+from app.prompts import LYRICS_SYSTEM_PROMPT
 
 router = APIRouter()
 
@@ -47,7 +47,7 @@ lyrics_about: {body.lyrics_about}
 END_CONTEXT"""
 
     # Use the agent's LLM client directly for a simpler call
-    lyrics = await agent._call_llm(LYRICS_ONLY_SYSTEM_PROMPT, context_text)
+    lyrics = await agent._call_llm(LYRICS_SYSTEM_PROMPT, context_text)
 
     # Clean up the response (remove any accidental headers/prose)
     lyrics = lyrics.strip()

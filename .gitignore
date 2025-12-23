@@ -60,6 +60,7 @@ frontend/.cache/
 # Backend specific
 backend/*.db
 backend/*.sqlite
+backend/prompt_lab/results/
 
 # Misc
 *.bak

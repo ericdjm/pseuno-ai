@@ -1,0 +1,20 @@
+[
+  {
+    "name": "Royal Blood / Hockey Dad / Oasis",
+    "user_prompt": "Make a song that sounds like Royal Blood mixed with Hockey Dad mixed with a sublte amount of Oasis inlfuence. The verses should just be guitar and drums and the choruses should be heavy and use an octave down on the guitar to make bass noise",
+    "lyrics_about": "Being 19 again and missing the desire to get high, acknowledging that many of the things that I did were stupid, but it was all part of the ride.",
+    "selected_artists": [],
+    "tags": [],
+    "lyric_red_flags": ["royal blood", "hockey dad", "oasis", "guitar", "drums", "bass", "octave down", "heavy", "chorus"],
+    "lyric_green_flags": []
+  },
+  {
+    "name": "Gojira / Dead Poet Society / System of a Down / Queens of the Stone Age",
+    "user_prompt": "Make a song that sounds like Gojira mixed with Dead Poet Society mixed with System of a Down mixed with a sublte amount of Queens of the Stone Age influence. The verses should just be guitar and drums and the choruses should be heavy and use an octave down on the guitar to make bass noise",
+    "lyrics_about": "A song about the struggle of being a musician and the pressure to succeed.",
+    "selected_artists": [],
+    "tags": [],
+    "lyric_red_flags": ["gojira", "dead poet society", "system of a down", "queens of the stone age", "guitar", "drums", "bass", "octave down", "heavy", "chorus"],
+    "lyric_green_flags": []
+  }
+]

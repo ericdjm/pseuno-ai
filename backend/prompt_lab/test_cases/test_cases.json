@@ -1,0 +1,58 @@
+[
+  {
+    "name": "Funky pop song",
+    "user_prompt": "Make a funky pop song with groovy bass and crisp drums",
+    "lyrics_about": "dancing in the moonlight with friends",
+    "selected_artists": ["Bruno Mars", "Daft Punk"],
+    "tags": ["funk", "pop", "groovy"],
+    "lyric_red_flags": ["bass", "drums", "groove", "funky beat", "crisp snare"],
+    "lyric_green_flags": ["dance", "moon", "night", "friends"]
+  },
+  {
+    "name": "Heavy metal + electronic fusion",
+    "user_prompt": "Combine heavy metal riffs with electronic drops and glitchy textures",
+    "lyrics_about": "the unstoppable power of the ocean",
+    "selected_artists": ["Gojira", "Skrillex"],
+    "tags": ["metal", "electronic", "heavy", "glitch"],
+    "lyric_red_flags": ["drop", "glitch", "riff", "electronic", "bass drop", "synth"],
+    "lyric_green_flags": ["ocean", "wave", "water", "power", "sea", "storm"]
+  },
+  {
+    "name": "Minimal/ambient (less lyrics)",
+    "user_prompt": "Less lyrics, more instrumentation, ambient and spacious",
+    "lyrics_about": "empty rooms and fading memories",
+    "selected_artists": ["Brian Eno", "Sigur Ros"],
+    "tags": ["ambient", "instrumental", "ethereal"],
+    "lyric_red_flags": ["ambient", "spacious", "instrumental", "synth pad"],
+    "lyric_green_flags": ["room", "empty", "memory", "fade", "dust", "silence"]
+  },
+  {
+    "name": "Artist leak stress test",
+    "user_prompt": "Make it sound exactly like the artist, capture their signature style perfectly",
+    "lyrics_about": "heartbreak and moving on",
+    "selected_artists": ["Taylor Swift"],
+    "tags": ["pop", "country", "emotional"],
+    "lyric_red_flags": ["guitar strum", "pop production", "country twang"],
+    "lyric_green_flags": ["heart", "love", "goodbye", "moving on", "tears"]
+  },
+  {
+    "name": "Modal jazz fusion",
+    "user_prompt": "Jazz fusion with Phrygian mode, complex polyrhythms, and a build to a climax",
+    "lyrics_about": "a journey through ancient ruins",
+    "selected_artists": ["Snarky Puppy", "Hiatus Kaiyote"],
+    "tags": ["jazz", "fusion", "phrygian", "polyrhythm"],
+    "lyric_red_flags": ["polyrhythm", "phrygian", "jazz chord", "fusion groove", "climax builds"],
+    "lyric_green_flags": ["ruins", "ancient", "stone", "journey", "temple", "dust"]
+  },
+  {
+    "name": "Simple indie folk",
+    "user_prompt": "Stripped-down indie folk, acoustic guitar, intimate vocals",
+    "lyrics_about": "a quiet morning in the countryside",
+    "selected_artists": ["Bon Iver", "Iron & Wine"],
+    "tags": ["indie", "folk", "acoustic"],
+    "lyric_red_flags": ["acoustic guitar", "stripped-down", "intimate vocal", "folk strum"],
+    "lyric_green_flags": ["morning", "quiet", "field", "sun", "dew", "countryside"]
+  }
+]
+
+

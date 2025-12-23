@@ -1,0 +1,11 @@
+[
+  {
+    "name": "Indie rock in style of Flipturn mixed with Richy Mitch and the Coal Miners",
+    "user_prompt": "Indie rock in style of Flipturn mixed with Richy Mitch and the Coal Miners. It should lean on beautiful emotional high pitch vocals with some grit like flipturn, but sometimes verses should become chill like richy mitch and the coal miners. Make the choruses use synths but the verses more acoustic. Add polyrhythmic guitar playing and drums but do not overdo it",
+    "lyrics_about": "A portage trip through the wilderness of the pacific northwest where you're vibing.",
+    "selected_artists": [],
+    "tags": [],
+    "lyric_red_flags": ["flipturn", "richy mitch and the coal miners", "acoustic", "synth", "chill", "vibing"],
+    "lyric_green_flags": []
+  }
+]

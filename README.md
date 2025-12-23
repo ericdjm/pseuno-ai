@@ -166,6 +166,80 @@ source venv/bin/activate
 pytest
 ```
 
+## Prompt Lab
+
+Prompt Lab is a CLI tool for iterating on system prompts and comparing results across different LLMs. Use it to evaluate prompt quality, test different models, and export results for human review.
+
+### Basic Usage
+
+```bash
+cd backend
+source venv/bin/activate
+
+# Compare prompt variants
+python prompt_lab/prompt_lab.py --prompts prompt_lab/prompts/v11_production.txt prompt_lab/prompts/v14_protocol.txt
+
+# Test with specific models
+python prompt_lab/prompt_lab.py --prompts prompt_lab/prompts/v14_protocol.txt \
+    --models gpt-5-nano gpt-5-mini gpt-5.2
+
+# Use Gemini models (requires GEMINI_API_KEY)
+python prompt_lab/prompt_lab.py --prompts prompt_lab/prompts/v14_protocol.txt \
+    --models gemini-3-flash-preview
+
+# Use custom test cases
+python prompt_lab/prompt_lab.py --prompts prompt_lab/prompts/v14_protocol.txt \
+    --test-cases prompt_lab/test_cases.json prompt_lab/test_cases_artists.json
+
+# Interactive mode (enter test cases manually)
+python prompt_lab/prompt_lab.py --prompts prompt_lab/prompts/v14_protocol.txt --interactive
+
+# Save results to files (JSON + CSV for human eval)
+python prompt_lab/prompt_lab.py --prompts prompt_lab/prompts/v14_protocol.txt \
+    --output prompt_lab/results/
+```
+
+### CLI Options
+
+| Flag | Description |
+|------|-------------|
+| `--prompts` | One or more system prompt files to compare |
+| `--models` | LLM models to test (default: `gpt-5-nano`) |
+| `--test-cases` | One or more JSON test case files |
+| `--interactive` | Enter test cases manually in the terminal |
+| `--output` | Directory to save results (JSON + CSV) |
+| `--no-lyric-eval` | Skip automated lyric evaluation |
+| `--no-repair` | Disable repair loop (single-shot mode) |
+| `--verbose` | Show detailed output |
+
+### Test Case Format
+
+Create JSON files with test cases:
+
+```json
+[
+  {
+    "name": "Indie Folk Ballad",
+    "style_request": "acoustic folk ballad with fingerpicking",
+    "lyrics_about": "leaving home for the first time",
+    "reference_artists": ["Fleet Foxes", "Iron & Wine"],
+    "lyric_green_flags": ["home", "road", "memories"],
+    "lyric_red_flags": ["acoustic", "folk", "fingerpicking"]
+  }
+]
+```
+
+- `lyric_green_flags`: Words expected in good lyrics
+- `lyric_red_flags`: Words that shouldn't appear (style leakage)
+
+### Evaluation Workflow
+
+1. Run Prompt Lab to generate outputs
+2. Review console output for structural issues
+3. Export CSV with `--output` for human evaluation
+4. Copy `suno_prompt` from CSV → paste into Suno → generate songs
+5. Listen to songs and add notes to CSV
+
 ## Database Migrations (Alembic)
 
 Migrations are managed with Alembic. Always apply existing migrations before creating new ones.
