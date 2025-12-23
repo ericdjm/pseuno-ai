@@ -168,21 +168,27 @@ pytest
 
 ## Database Migrations (Alembic)
 
-Migrations are scaffolded but there are no tables yet. Add SQLAlchemy models in
-`backend/app/db/models.py`, then create and apply the first migration.
+Migrations are managed with Alembic. Always apply existing migrations before creating new ones.
+
+**Workflow:**
+1. Apply pending migrations: `alembic upgrade head`
+2. Create new migration: `alembic revision --autogenerate -m "description"`
+3. Apply your new migration: `alembic upgrade head`
 
 Local (venv):
 
 ```bash
 cd backend
 source venv/bin/activate
-alembic revision --autogenerate -m "init"
-alembic upgrade head
+alembic upgrade head                          # Apply existing migrations first
+alembic revision --autogenerate -m "init"     # Generate new migration
+alembic upgrade head                          # Apply your new migration
 ```
 
 Docker dev:
 
 ```bash
+docker compose -f docker-compose.dev.yml exec backend alembic upgrade head
 docker compose -f docker-compose.dev.yml exec backend alembic revision --autogenerate -m "init"
 docker compose -f docker-compose.dev.yml exec backend alembic upgrade head
 ```
