@@ -24,7 +24,9 @@ class SunoPromptUpdate(BaseModel):
 
     title: Optional[str] = Field(default=None, max_length=255)
     notes: Optional[str] = Field(default=None, max_length=2000)
-    visibility: Optional[str] = Field(default=None, pattern="^(private|unlisted|public)$")
+    visibility: Optional[str] = Field(
+        default=None, pattern="^(private|unlisted|public)$"
+    )
 
 
 class SunoPromptResponse(BaseModel):
@@ -50,4 +52,3 @@ class SunoPromptListResponse(BaseModel):
 
     prompts: list[SunoPromptResponse]
     total: int
-
