@@ -35,6 +35,14 @@ export default function AdvancedGenerationControls({
 }: AdvancedGenerationControlsProps) {
   const toast = useToast();
 
+  const MAX_STYLE_PROMPT_LEN = 500;
+  const MAX_LYRICS_ABOUT_LEN = 500;
+  const MAX_ARTISTS_INPUT_LEN = 300;
+  const MAX_TAGS_INPUT_LEN = 300;
+  const MAX_ARTISTS_COUNT = 20;
+  const MAX_TAGS_COUNT = 25;
+  const MAX_ARTIST_NAME_LEN = 60;
+  const MAX_TAG_LEN = 40;
   const [artistInput, setArtistInput] = useState('');
   const [songPrompt, setSongPrompt] = useState('');
   const [lyricsAbout, setLyricsAbout] = useState('');
@@ -59,8 +67,12 @@ export default function AdvancedGenerationControls({
 
     setIsLoading(true);
     try {
-      const artists = parseList(artistInput);
-      const tags = parseList(tagsInput);
+      const artists = parseList(artistInput)
+        .map((a) => a.slice(0, MAX_ARTIST_NAME_LEN))
+        .slice(0, MAX_ARTISTS_COUNT);
+      const tags = parseList(tagsInput)
+        .map((t) => t.slice(0, MAX_TAG_LEN))
+        .slice(0, MAX_TAGS_COUNT);
 
       const request: AdvancedGenerateRequest = {
         user_prompt: songPrompt.trim(),
@@ -91,9 +103,15 @@ export default function AdvancedGenerationControls({
   };
 
   const addArtist = (name: string) => {
-    const current = parseList(artistInput);
-    if (!current.some((artist) => artist.toLowerCase() === name.toLowerCase())) {
-      const updated = [...current, name];
+    const safeName = name.slice(0, MAX_ARTIST_NAME_LEN);
+    const current = parseList(artistInput)
+      .map((a) => a.slice(0, MAX_ARTIST_NAME_LEN))
+      .slice(0, MAX_ARTISTS_COUNT);
+    if (
+      !current.some((artist) => artist.toLowerCase() === safeName.toLowerCase()) &&
+      current.length < MAX_ARTISTS_COUNT
+    ) {
+      const updated = [...current, safeName];
       setArtistInput(updated.join(', '));
     }
   };
@@ -106,11 +124,17 @@ export default function AdvancedGenerationControls({
           <Input
             placeholder="Comma-separated artist references"
             value={artistInput}
-            onChange={(e) => setArtistInput(e.target.value)}
+            maxLength={MAX_ARTISTS_INPUT_LEN}
+            onChange={(e) =>
+              setArtistInput(e.target.value.slice(0, MAX_ARTISTS_INPUT_LEN))
+            }
           />
           {artistInput.trim() ? (
             <Wrap mt={2}>
-              {parseList(artistInput).map((artist) => (
+              {parseList(artistInput)
+                .map((a) => a.slice(0, MAX_ARTIST_NAME_LEN))
+                .slice(0, MAX_ARTISTS_COUNT)
+                .map((artist) => (
                 <WrapItem key={artist}>
                   <Badge colorScheme="green">{artist}</Badge>
                 </WrapItem>
@@ -130,7 +154,7 @@ export default function AdvancedGenerationControls({
                       variant="outline"
                       onClick={() => addArtist(artist.name)}
                     >
-                      {artist.name}
+                      {artist.name.slice(0, MAX_ARTIST_NAME_LEN)}
                     </Button>
                   </WrapItem>
                 ))}
@@ -144,8 +168,20 @@ export default function AdvancedGenerationControls({
           <Textarea
             placeholder="Describe the style or sound you want"
             value={songPrompt}
-            onChange={(e) => setSongPrompt(e.target.value)}
+            maxLength={MAX_STYLE_PROMPT_LEN}
+            onChange={(e) => setSongPrompt(e.target.value.slice(0, MAX_STYLE_PROMPT_LEN))}
           />
+          <HStack justify="space-between" mt={1}>
+            <Text fontSize="xs" color="gray.500">
+              Max {MAX_STYLE_PROMPT_LEN} characters
+            </Text>
+            <Text
+              fontSize="xs"
+              color={songPrompt.length >= MAX_STYLE_PROMPT_LEN ? 'orange.300' : 'gray.500'}
+            >
+              {songPrompt.length}/{MAX_STYLE_PROMPT_LEN}
+            </Text>
+          </HStack>
         </FormControl>
 
         <FormControl isRequired>
@@ -153,8 +189,22 @@ export default function AdvancedGenerationControls({
           <Input
             placeholder="What should the lyrics be about?"
             value={lyricsAbout}
-            onChange={(e) => setLyricsAbout(e.target.value)}
+            maxLength={MAX_LYRICS_ABOUT_LEN}
+            onChange={(e) =>
+              setLyricsAbout(e.target.value.slice(0, MAX_LYRICS_ABOUT_LEN))
+            }
           />
+          <HStack justify="space-between" mt={1}>
+            <Text fontSize="xs" color="gray.500">
+              Max {MAX_LYRICS_ABOUT_LEN} characters
+            </Text>
+            <Text
+              fontSize="xs"
+              color={lyricsAbout.length >= MAX_LYRICS_ABOUT_LEN ? 'orange.300' : 'gray.500'}
+            >
+              {lyricsAbout.length}/{MAX_LYRICS_ABOUT_LEN}
+            </Text>
+          </HStack>
         </FormControl>
 
         <FormControl>
@@ -162,7 +212,8 @@ export default function AdvancedGenerationControls({
           <Input
             placeholder="Comma-separated tags (e.g., dubstep, airy, 90s)"
             value={tagsInput}
-            onChange={(e) => setTagsInput(e.target.value)}
+            maxLength={MAX_TAGS_INPUT_LEN}
+            onChange={(e) => setTagsInput(e.target.value.slice(0, MAX_TAGS_INPUT_LEN))}
           />
         </FormControl>
       </VStack>

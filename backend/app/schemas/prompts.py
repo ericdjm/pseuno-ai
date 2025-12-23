@@ -11,7 +11,8 @@ from pydantic import BaseModel, Field, model_validator
 class SunoPromptCreate(BaseModel):
     """Request to save a new Suno prompt."""
 
-    suno_prompt: str = Field(..., min_length=1, max_length=2000)
+    # Suno hard cap: prompts cannot exceed 500 chars
+    suno_prompt: str = Field(..., min_length=1, max_length=500)
     exclude: str = Field(default="", max_length=500)
     weirdness: int = Field(default=50, ge=0, le=100)
     style_influence: int = Field(default=50, ge=0, le=100)

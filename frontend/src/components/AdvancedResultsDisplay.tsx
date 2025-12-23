@@ -40,7 +40,8 @@ export default function AdvancedResultsDisplay({
   const toast = useToast();
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [saving, setSaving] = useState(false);
-  const [title, setTitle] = useState(result.concept_title);
+  const MAX_SAVED_TITLE_LEN = 255;
+  const [title, setTitle] = useState(result.concept_title.slice(0, MAX_SAVED_TITLE_LEN));
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -60,7 +61,7 @@ export default function AdvancedResultsDisplay({
         exclude: result.exclude,
         weirdness: result.weirdness,
         style_influence: result.style_influence,
-        title: title || result.concept_title,
+        title: (title || result.concept_title).slice(0, MAX_SAVED_TITLE_LEN),
       });
       toast({
         title: 'Prompt saved!',
@@ -128,10 +129,22 @@ export default function AdvancedResultsDisplay({
               <FormLabel>Title</FormLabel>
               <Input
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                maxLength={MAX_SAVED_TITLE_LEN}
+                onChange={(e) => setTitle(e.target.value.slice(0, MAX_SAVED_TITLE_LEN))}
                 placeholder="Enter a title for this prompt"
                 bg="gray.700"
               />
+              <HStack justify="space-between" mt={1}>
+                <Text fontSize="xs" color="gray.500">
+                  Max {MAX_SAVED_TITLE_LEN} characters
+                </Text>
+                <Text
+                  fontSize="xs"
+                  color={title.length >= MAX_SAVED_TITLE_LEN ? 'orange.300' : 'gray.500'}
+                >
+                  {title.length}/{MAX_SAVED_TITLE_LEN}
+                </Text>
+              </HStack>
             </FormControl>
             <Text fontSize="sm" color="gray.400" mt={4}>
               This will save the prompt along with its parameters (weirdness: {result.weirdness}%, 
