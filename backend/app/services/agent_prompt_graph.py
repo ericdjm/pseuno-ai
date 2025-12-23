@@ -14,11 +14,11 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, TypedDict
 import httpx
 from langgraph.graph import END, StateGraph
 
-logger = logging.getLogger(__name__)
-
 from app.config import Settings
 from app.schemas.advanced import AdvancedGenerateRequest
 from app.prompts import REPAIR_AGENT_SYSTEM_PROMPT
+
+logger = logging.getLogger(__name__)
 
 # Gemini models that should use the Google Generative AI client
 GEMINI_MODELS = frozenset(
@@ -104,9 +104,7 @@ class OpenAIChatClient:
                 )
             except httpx.ReadTimeout:
                 # Retry once with a longer timeout to handle slow model responses.
-                retry_timeout = httpx.Timeout(
-                    max(self.timeout * 2, self.timeout + 30)
-                )
+                retry_timeout = httpx.Timeout(max(self.timeout * 2, self.timeout + 30))
                 response = await client.post(
                     "https://api.openai.com/v1/responses",
                     json=payload,
@@ -487,9 +485,6 @@ class AgentPromptGraph:
             "repaired": True,
         }
 
-    def _node_fallback(self, state: _AgentState) -> _AgentState:
-        logger.info("agent.fallback using fallback output")
-        _fallback_raw, _fallback_parsed = self._build_fallback(state["context_pack"])
     def _node_error(self, state: _AgentState) -> _AgentState:
         """Return an error result with validation issues — no silent fallback."""
         issues = state.get("issues") or []
