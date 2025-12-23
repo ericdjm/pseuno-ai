@@ -51,10 +51,12 @@ async def spotify_callback(
 ):
     """
     Handle Spotify OAuth callback
-    Exchanges authorization code for tokens
+    Exchanges authorization code for tokens.
+    If user has a device_token (guest account), merges their prompts.
     """
     settings = get_settings()
     session_id = request.cookies.get("session_id")
+    device_token = request.cookies.get("device_token")
 
     redirect_url = await handle_spotify_callback(
         settings=settings,
@@ -63,6 +65,7 @@ async def spotify_callback(
         code=code,
         state=state,
         error=error,
+        device_token=device_token,
     )
     return RedirectResponse(url=redirect_url)
 

@@ -13,7 +13,6 @@ import {
   StatLabel,
   StatNumber,
   Icon,
-  Tooltip,
   Input,
   Modal,
   ModalOverlay,
@@ -31,13 +30,11 @@ import { AdvancedGenerateResponse, createSavedPrompt } from '../api';
 
 interface AdvancedResultsDisplayProps {
   result: AdvancedGenerateResponse;
-  isAuthenticated?: boolean;
   onPromptSaved?: () => void;
 }
 
 export default function AdvancedResultsDisplay({
   result,
-  isAuthenticated = false,
   onPromptSaved,
 }: AdvancedResultsDisplayProps) {
   const toast = useToast();
@@ -104,29 +101,15 @@ export default function AdvancedResultsDisplay({
             </Text>
           </VStack>
           <HStack spacing={2}>
-            {isAuthenticated ? (
-              <Button
-                leftIcon={<Icon as={StarIcon} />}
-                colorScheme="yellow"
-                variant="outline"
-                size="sm"
-                onClick={onOpen}
-              >
-                Save
-              </Button>
-            ) : (
-              <Tooltip label="Sign in to save prompts" placement="left">
-                <Button
-                  leftIcon={<Icon as={StarIcon} />}
-                  colorScheme="yellow"
-                  variant="outline"
-                  size="sm"
-                  isDisabled
-                >
-                  Save
-                </Button>
-              </Tooltip>
-            )}
+            <Button
+              leftIcon={<Icon as={StarIcon} />}
+              colorScheme="yellow"
+              variant="outline"
+              size="sm"
+              onClick={onOpen}
+            >
+              Save
+            </Button>
             <Badge colorScheme="purple" fontSize="md" px={3} py={1}>
               Agent Output
             </Badge>

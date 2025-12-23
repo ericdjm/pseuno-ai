@@ -1,13 +1,25 @@
 """
 CRUD routes for saved Suno prompts (favorites).
+
+Supports two auth modes:
+1. Spotify session (user_id from session store) - for linked users
+2. Device token (guest user from cookie) - for anonymous users
+
+The create endpoint will auto-create a guest user if needed and set the device_token cookie.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
-from app.db.models import SunoPrompt
-from app.deps import get_current_user_id, get_db
+from app.config import get_settings
+from app.db.models import SunoPrompt, User
+from app.deps import (
+    get_current_user_id_optional,
+    get_db,
+    get_device_user,
+    get_or_create_device_user,
+)
 from app.schemas.prompts import (
     SunoPromptCreate,
     SunoPromptListResponse,
@@ -17,14 +29,63 @@ from app.schemas.prompts import (
 
 router = APIRouter()
 
+# Cookie settings for device token (1 year expiry)
+DEVICE_TOKEN_MAX_AGE = 365 * 24 * 60 * 60  # 1 year in seconds
+
+
+def _get_user_id_or_raise(
+    spotify_user_id: str | None,
+    device_user: User | None,
+) -> str:
+    """
+    Get user_id from either Spotify session or device token.
+    Raises 401 if neither is available.
+    """
+    if spotify_user_id:
+        return spotify_user_id
+    if device_user:
+        return device_user.id
+    raise HTTPException(
+        status_code=401,
+        detail="Not authenticated. Please log in or enable cookies.",
+    )
+
 
 @router.post("", response_model=SunoPromptResponse, status_code=status.HTTP_201_CREATED)
 def create_prompt(
     body: SunoPromptCreate,
-    user_id: str = Depends(get_current_user_id),
+    request: Request,
+    response: Response,
     db: Session = Depends(get_db),
 ):
-    """Save a new Suno prompt as a favorite."""
+    """
+    Save a new Suno prompt as a favorite.
+    Works for both Spotify-authenticated users and guests (via device token).
+    If guest and no device_token cookie, creates a new guest user and sets cookie.
+    """
+    settings = get_settings()
+
+    # Try Spotify session first
+    spotify_user_id = get_current_user_id_optional(request)
+
+    if spotify_user_id:
+        user_id = spotify_user_id
+    else:
+        # Fall back to device token (create guest user if needed)
+        user, created = get_or_create_device_user(request, db)
+        user_id = user.id
+
+        if created:
+            # Set device_token cookie for new guest users
+            response.set_cookie(
+                key="device_token",
+                value=user.device_token,
+                httponly=True,
+                secure=settings.session_cookie_secure,
+                samesite=settings.session_cookie_samesite,
+                max_age=DEVICE_TOKEN_MAX_AGE,
+            )
+
     prompt = SunoPrompt(
         owner_user_id=user_id,
         suno_prompt=body.suno_prompt,
@@ -42,12 +103,16 @@ def create_prompt(
 
 @router.get("", response_model=SunoPromptListResponse)
 def list_prompts(
-    user_id: str = Depends(get_current_user_id),
+    request: Request,
     db: Session = Depends(get_db),
+    device_user: User | None = Depends(get_device_user),
     limit: int = 50,
     offset: int = 0,
 ):
-    """List the current user's saved prompts."""
+    """List the current user's saved prompts (Spotify or guest)."""
+    spotify_user_id = get_current_user_id_optional(request)
+    user_id = _get_user_id_or_raise(spotify_user_id, device_user)
+
     query = (
         select(SunoPrompt)
         .where(SunoPrompt.owner_user_id == user_id)
@@ -70,17 +135,23 @@ def list_prompts(
 @router.get("/{prompt_id}", response_model=SunoPromptResponse)
 def get_prompt(
     prompt_id: int,
-    user_id: str = Depends(get_current_user_id),
+    request: Request,
     db: Session = Depends(get_db),
+    device_user: User | None = Depends(get_device_user),
 ):
     """Get a single saved prompt by ID (owner only)."""
+    spotify_user_id = get_current_user_id_optional(request)
+    user_id = _get_user_id_or_raise(spotify_user_id, device_user)
+
     prompt = db.get(SunoPrompt, prompt_id)
 
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
 
     if prompt.owner_user_id != user_id:
-        raise HTTPException(status_code=403, detail="Not authorized to access this prompt")
+        raise HTTPException(
+            status_code=403, detail="Not authorized to access this prompt"
+        )
 
     return prompt
 
@@ -89,17 +160,23 @@ def get_prompt(
 def update_prompt(
     prompt_id: int,
     body: SunoPromptUpdate,
-    user_id: str = Depends(get_current_user_id),
+    request: Request,
     db: Session = Depends(get_db),
+    device_user: User | None = Depends(get_device_user),
 ):
     """Update a saved prompt's title, notes, or visibility (owner only)."""
+    spotify_user_id = get_current_user_id_optional(request)
+    user_id = _get_user_id_or_raise(spotify_user_id, device_user)
+
     prompt = db.get(SunoPrompt, prompt_id)
 
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
 
     if prompt.owner_user_id != user_id:
-        raise HTTPException(status_code=403, detail="Not authorized to update this prompt")
+        raise HTTPException(
+            status_code=403, detail="Not authorized to update this prompt"
+        )
 
     update_data = body.model_dump(exclude_unset=True)
     for key, value in update_data.items():
@@ -113,17 +190,23 @@ def update_prompt(
 @router.delete("/{prompt_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_prompt(
     prompt_id: int,
-    user_id: str = Depends(get_current_user_id),
+    request: Request,
     db: Session = Depends(get_db),
+    device_user: User | None = Depends(get_device_user),
 ):
     """Delete a saved prompt (owner only)."""
+    spotify_user_id = get_current_user_id_optional(request)
+    user_id = _get_user_id_or_raise(spotify_user_id, device_user)
+
     prompt = db.get(SunoPrompt, prompt_id)
 
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
 
     if prompt.owner_user_id != user_id:
-        raise HTTPException(status_code=403, detail="Not authorized to delete this prompt")
+        raise HTTPException(
+            status_code=403, detail="Not authorized to delete this prompt"
+        )
 
     db.delete(prompt)
     db.commit()
@@ -138,9 +221,7 @@ def get_shared_prompt(
     Get a prompt by its share_id (public access).
     Only returns prompts with visibility != 'private'.
     """
-    prompt = db.scalar(
-        select(SunoPrompt).where(SunoPrompt.share_id == share_id)
-    )
+    prompt = db.scalar(select(SunoPrompt).where(SunoPrompt.share_id == share_id))
 
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
@@ -149,4 +230,3 @@ def get_shared_prompt(
         raise HTTPException(status_code=404, detail="Prompt not found")
 
     return prompt
-

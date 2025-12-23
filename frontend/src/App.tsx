@@ -277,23 +277,20 @@ function App() {
           {advancedResult && (
             <AdvancedResultsDisplay
               result={advancedResult}
-              isAuthenticated={authStatus.authenticated}
               onPromptSaved={() => setSavedPromptsRefresh((n) => n + 1)}
             />
           )}
 
-          {/* Saved Prompts Library */}
-          {authStatus.authenticated && (
-            <Box
-              bg="gray.800"
-              borderRadius="lg"
-              p={6}
-              borderWidth="1px"
-              borderColor="gray.700"
-            >
-              <SavedPromptsLibrary refreshTrigger={savedPromptsRefresh} />
-            </Box>
-          )}
+          {/* Saved Prompts Library - shown for all users (guest or authenticated) */}
+          <Box
+            bg="gray.800"
+            borderRadius="lg"
+            p={6}
+            borderWidth="1px"
+            borderColor="gray.700"
+          >
+            <SavedPromptsLibrary refreshTrigger={savedPromptsRefresh} />
+          </Box>
 
           {/* Privacy Note */}
           <PrivacyNote />

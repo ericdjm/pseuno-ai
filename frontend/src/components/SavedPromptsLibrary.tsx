@@ -31,6 +31,7 @@ import {
   listSavedPrompts,
   deleteSavedPrompt,
   updateSavedPrompt,
+  ApiError,
 } from '../api';
 
 interface SavedPromptsLibraryProps {
@@ -168,11 +169,16 @@ export default function SavedPromptsLibrary({ refreshTrigger }: SavedPromptsLibr
       const data = await listSavedPrompts();
       setPrompts(data.prompts);
     } catch (e) {
-      toast({
-        title: 'Failed to load prompts',
-        status: 'error',
-        duration: 4000,
-      });
+      // 401 means no auth (new user) - treat as empty, not error
+      if (e instanceof ApiError && e.status === 401) {
+        setPrompts([]);
+      } else {
+        toast({
+          title: 'Failed to load prompts',
+          status: 'error',
+          duration: 4000,
+        });
+      }
     } finally {
       setLoading(false);
     }

@@ -5,7 +5,7 @@ Schemas for saved Suno prompts (favorites).
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class SunoPromptCreate(BaseModel):
@@ -27,6 +27,18 @@ class SunoPromptUpdate(BaseModel):
     visibility: Optional[str] = Field(
         default=None, pattern="^(private|unlisted|public)$"
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_null_visibility(cls, data):
+        """Reject explicit null for visibility (DB column is NOT NULL)."""
+        if (
+            isinstance(data, dict)
+            and "visibility" in data
+            and data["visibility"] is None
+        ):
+            raise ValueError("visibility cannot be set to null")
+        return data
 
 
 class SunoPromptResponse(BaseModel):

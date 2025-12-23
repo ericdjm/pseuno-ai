@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -18,10 +18,22 @@ def _share_id() -> str:
     return secrets.token_urlsafe(12)
 
 
+def _device_token() -> str:
+    """Generate a long, secure device token (32 bytes = 43 chars base64)."""
+    return secrets.token_urlsafe(32)
+
+
 class User(Base):
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+
+    # Guest/device identification
+    device_token: Mapped[Optional[str]] = mapped_column(
+        String(64), unique=True, index=True, nullable=True
+    )
+    is_guest: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

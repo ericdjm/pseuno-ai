@@ -14,8 +14,10 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
+from sqlalchemy import update
+
 from app.config import Settings
-from app.db.models import ExternalAccount, User
+from app.db.models import ExternalAccount, SunoPrompt, User
 from app.db.session import SessionLocal
 from app.services.session_store import session_store
 
@@ -76,8 +78,14 @@ async def handle_spotify_callback(
     code: Optional[str],
     state: Optional[str],
     error: Optional[str],
+    device_token: Optional[str] = None,
 ) -> str:
-    """Process the callback and return a redirect URL."""
+    """
+    Process the callback and return a redirect URL.
+
+    If device_token is provided, merges any guest user prompts into the
+    Spotify-linked user account.
+    """
     frontend_url = settings.frontend_origin
 
     if error:
@@ -152,7 +160,9 @@ async def handle_spotify_callback(
                     if user_data.get("images")
                     else None
                 )
-                user_id = _upsert_spotify_account(tokens, user_data)
+                user_id = _upsert_spotify_account(
+                    tokens, user_data, device_token=device_token
+                )
                 session_store.set_user_data(
                     session_id,
                     user_name=user_name,
@@ -174,7 +184,17 @@ async def handle_spotify_callback(
     return f"{frontend_url}?success=true"
 
 
-def _upsert_spotify_account(tokens: dict, user_data: dict) -> Optional[str]:
+def _upsert_spotify_account(
+    tokens: dict,
+    user_data: dict,
+    device_token: Optional[str] = None,
+) -> Optional[str]:
+    """
+    Create or update a Spotify-linked user account.
+
+    If device_token is provided and belongs to a guest user, merges their
+    saved prompts into the Spotify user and removes the guest user.
+    """
     provider_user_id = user_data.get("id")
     if not provider_user_id:
         return None
@@ -195,6 +215,7 @@ def _upsert_spotify_account(tokens: dict, user_data: dict) -> Optional[str]:
             )
         )
         if account:
+            # Existing Spotify user - update tokens
             account.access_token = tokens.get("access_token")
             if tokens.get("refresh_token") is not None:
                 account.refresh_token = tokens.get("refresh_token")
@@ -205,7 +226,8 @@ def _upsert_spotify_account(tokens: dict, user_data: dict) -> Optional[str]:
             account.profile_image_url = user_image
             user = account.user
         else:
-            user = User()
+            # New Spotify user
+            user = User(is_guest=False)
             account = ExternalAccount(
                 user=user,
                 provider="spotify",
@@ -220,6 +242,34 @@ def _upsert_spotify_account(tokens: dict, user_data: dict) -> Optional[str]:
             )
             db.add(user)
             db.add(account)
+
+        # Mark user as non-guest since they've linked Spotify
+        user.is_guest = False
+
+        db.flush()  # Ensure user.id is available
+
+        # Merge guest prompts if device_token provided
+        if device_token:
+            guest_user = db.scalar(
+                select(User).where(
+                    User.device_token == device_token,
+                    User.is_guest == True,  # noqa: E712
+                    User.id != user.id,  # Don't match self
+                )
+            )
+            if guest_user:
+                # Transfer prompts from guest to Spotify user
+                prompt_count = _merge_guest_prompts(db, guest_user.id, user.id)
+                if prompt_count > 0:
+                    logger.info(
+                        "Merged %d prompts from guest %s to user %s",
+                        prompt_count,
+                        guest_user.id,
+                        user.id,
+                    )
+                # Delete the guest user (cascade will clean up, but prompts are moved)
+                db.delete(guest_user)
+
         db.commit()
         db.refresh(user)
         return user.id
@@ -229,3 +279,16 @@ def _upsert_spotify_account(tokens: dict, user_data: dict) -> Optional[str]:
         return None
     finally:
         db.close()
+
+
+def _merge_guest_prompts(db, guest_user_id: str, target_user_id: str) -> int:
+    """
+    Transfer all prompts from guest user to target user.
+    Returns the number of prompts transferred.
+    """
+    result = db.execute(
+        update(SunoPrompt)
+        .where(SunoPrompt.owner_user_id == guest_user_id)
+        .values(owner_user_id=target_user_id)
+    )
+    return result.rowcount
