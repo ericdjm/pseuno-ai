@@ -169,7 +169,9 @@ def test_suno_prompt_over_500_triggers_repair_and_then_error():
     assert llm.calls == 3  # initial + 2 repairs (default)
     assert result["success"] is False
     assert "issues" in result and result["issues"]
-    assert any("SUNO PROMPT exceeds 500 characters" in issue for issue in result["issues"])
+    assert any(
+        "SUNO PROMPT exceeds 500 characters" in issue for issue in result["issues"]
+    )
 
 
 def test_weirdness_out_of_range_triggers_repair_and_then_error():
@@ -184,7 +186,9 @@ def test_weirdness_out_of_range_triggers_repair_and_then_error():
 
     assert llm.calls == 3
     assert result["success"] is False
-    assert any("WEIRDNESS must be between 0 and 100" in issue for issue in result["issues"])
+    assert any(
+        "WEIRDNESS must be between 0 and 100" in issue for issue in result["issues"]
+    )
 
 
 def test_style_influence_out_of_range_triggers_repair_and_then_error():
@@ -198,7 +202,10 @@ def test_style_influence_out_of_range_triggers_repair_and_then_error():
 
     assert llm.calls == 3
     assert result["success"] is False
-    assert any("STYLE INFLUENCE must be between 0 and 100" in issue for issue in result["issues"])
+    assert any(
+        "STYLE INFLUENCE must be between 0 and 100" in issue
+        for issue in result["issues"]
+    )
 
 
 def test_tags_are_passed_through():
