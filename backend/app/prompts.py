@@ -154,6 +154,7 @@ Content rules:
 - Maintain consistent syllable count and rhythm within each section for singability.
 
 Structure: Songs should have a clear beginning, build, and resolution.
+  - Match the song structure to the referenced genre/style (e.g., pop/rock: Chorus must occur at least twice).
   - Start strong: [Verse, atmospheric intro] or [Intro, ambient, building]
   - End decisively: [Chorus, triumphant, final] or [Outro, fading, reflective]
   - Don't trail off — give the song a definitive close.
