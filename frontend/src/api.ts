@@ -67,6 +67,15 @@ export interface AdvancedGenerateResponse {
   };
 }
 
+export interface LyricsOnlyRequest {
+  suno_prompt: string;
+  lyrics_about: string;
+}
+
+export interface LyricsOnlyResponse {
+  lyrics: string;
+}
+
 export type TimeRange = 'short_term' | 'medium_term' | 'long_term';
 
 // === Saved Prompts Types ===
@@ -221,6 +230,23 @@ export async function generateAdvanced(
     body: JSON.stringify(payload),
   });
   return handleResponse<AdvancedGenerateResponse>(response);
+}
+
+/**
+ * Generate lyrics only using a saved Suno prompt as style context
+ */
+export async function generateLyricsOnly(
+  payload: LyricsOnlyRequest
+): Promise<LyricsOnlyResponse> {
+  const response = await fetch(`${API_BASE}/generate/lyrics-only`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  return handleResponse<LyricsOnlyResponse>(response);
 }
 
 // === Saved Prompts Functions ===

@@ -2,7 +2,7 @@
  * Main App Component for Pseuno AI
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Container,
@@ -37,6 +37,8 @@ import AdvancedGenerationControls from './components/AdvancedGenerationControls'
 import AdvancedResultsDisplay from './components/AdvancedResultsDisplay';
 import SavedPromptsLibrary from './components/SavedPromptsLibrary';
 
+type StyleMode = 'songStylePrompt' | 'savedSunoPrompt';
+
 function App() {
   const toast = useToast();
   const { settings, updateSettings } = usePersistedSettings();
@@ -56,6 +58,12 @@ function App() {
 
   // Saved prompts state
   const [savedPromptsRefresh, setSavedPromptsRefresh] = useState(0);
+  const [savedPrompts, setSavedPrompts] = useState<api.SavedSunoPrompt[]>([]);
+  const [selectedSavedPrompt, setSelectedSavedPrompt] = useState<api.SavedSunoPrompt | null>(null);
+  const [styleMode, setStyleMode] = useState<StyleMode>('songStylePrompt');
+
+  // Ref to scroll to generation controls
+  const generationControlsRef = useRef<HTMLDivElement>(null);
 
   // Check for OAuth callback
   useEffect(() => {
@@ -151,6 +159,25 @@ function App() {
 
   const handleAdvancedGenerate = (result: api.AdvancedGenerateResponse) => {
     setAdvancedResult(result);
+  };
+
+  const handleReuse = (prompt: api.SavedSunoPrompt) => {
+    setStyleMode('savedSunoPrompt');
+    setSelectedSavedPrompt(prompt);
+
+    // Scroll to generation controls
+    generationControlsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    toast({
+      title: 'Prompt selected',
+      description: `"${prompt.title || 'Untitled'}" is ready to reuse. Enter a lyrics topic and generate!`,
+      status: 'info',
+      duration: 4000,
+    });
+  };
+
+  const handlePromptsLoaded = (prompts: api.SavedSunoPrompt[]) => {
+    setSavedPrompts(prompts);
   };
 
   return (
@@ -264,12 +291,17 @@ function App() {
           )}
 
           {/* Generation Controls */}
-          <Box>
+          <Box ref={generationControlsRef}>
             <AdvancedGenerationControls
               onGenerate={handleAdvancedGenerate}
               isLoading={generating}
               setIsLoading={setGenerating}
               profile={profile}
+              savedPrompts={savedPrompts}
+              selectedSavedPrompt={selectedSavedPrompt}
+              onSelectSavedPrompt={setSelectedSavedPrompt}
+              styleMode={styleMode}
+              onStyleModeChange={setStyleMode}
             />
           </Box>
 
@@ -277,19 +309,16 @@ function App() {
           {advancedResult && (
             <AdvancedResultsDisplay
               result={advancedResult}
-              onPromptSaved={() => setSavedPromptsRefresh((n) => n + 1)}
+              onPromptSaved={() => setSavedPromptsRefresh((n: number) => n + 1)}
             />
           )}
 
-          {/* Saved Prompts Library - shown for all users (guest or authenticated) */}
-          <Box
-            bg="gray.800"
-            borderRadius="lg"
-            p={6}
-            borderWidth="1px"
-            borderColor="gray.700"
-          >
-            <SavedPromptsLibrary refreshTrigger={savedPromptsRefresh} />
+          {/* Hidden SavedPromptsLibrary - just for loading data */}
+          <Box display="none">
+            <SavedPromptsLibrary
+              refreshTrigger={savedPromptsRefresh}
+              onPromptsLoaded={handlePromptsLoaded}
+            />
           </Box>
 
           {/* Privacy Note */}

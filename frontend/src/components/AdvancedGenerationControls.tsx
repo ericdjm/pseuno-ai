@@ -1,6 +1,7 @@
 import {
   Box,
   Button,
+  ButtonGroup,
   VStack,
   HStack,
   Text,
@@ -12,19 +13,31 @@ import {
   Wrap,
   WrapItem,
   useToast,
+  Collapse,
 } from '@chakra-ui/react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import type { ChangeEvent } from 'react';
 import {
   generateAdvanced,
+  generateLyricsOnly,
   AdvancedGenerateRequest,
   SpotifyProfileResponse,
+  SavedSunoPrompt,
 } from '../api';
+
+type StyleMode = 'songStylePrompt' | 'savedSunoPrompt';
+type LyricsMode = 'lyricsTopic' | 'lyricsEditable';
 
 interface AdvancedGenerationControlsProps {
   onGenerate: (result: any) => void;
   isLoading: boolean;
   setIsLoading: (loading: boolean) => void;
   profile?: SpotifyProfileResponse | null;
+  savedPrompts: SavedSunoPrompt[];
+  selectedSavedPrompt: SavedSunoPrompt | null;
+  onSelectSavedPrompt: (prompt: SavedSunoPrompt | null) => void;
+  styleMode: StyleMode;
+  onStyleModeChange: (mode: StyleMode) => void;
 }
 
 export default function AdvancedGenerationControls({
@@ -32,21 +45,30 @@ export default function AdvancedGenerationControls({
   isLoading,
   setIsLoading,
   profile,
+  savedPrompts,
+  selectedSavedPrompt,
+  onSelectSavedPrompt,
+  styleMode,
+  onStyleModeChange,
 }: AdvancedGenerationControlsProps) {
   const toast = useToast();
 
   const MAX_STYLE_PROMPT_LEN = 500;
   const MAX_LYRICS_ABOUT_LEN = 500;
+  const MAX_LYRICS_TEXT_LEN = 4000;
   const MAX_ARTISTS_INPUT_LEN = 300;
   const MAX_TAGS_INPUT_LEN = 300;
   const MAX_ARTISTS_COUNT = 20;
   const MAX_TAGS_COUNT = 25;
   const MAX_ARTIST_NAME_LEN = 60;
   const MAX_TAG_LEN = 40;
+
   const [artistInput, setArtistInput] = useState('');
   const [songPrompt, setSongPrompt] = useState('');
   const [lyricsAbout, setLyricsAbout] = useState('');
+  const [lyricsEditable, setLyricsEditable] = useState('');
   const [tagsInput, setTagsInput] = useState('');
+  const [lyricsMode, setLyricsMode] = useState<LyricsMode>('lyricsTopic');
 
   const parseList = (value: string) =>
     value
@@ -55,10 +77,31 @@ export default function AdvancedGenerationControls({
       .filter(Boolean);
 
   const handleGenerate = async () => {
-    if (!songPrompt.trim() || !lyricsAbout.trim()) {
+    // Validation based on modes
+    if (styleMode === 'songStylePrompt' && !songPrompt.trim()) {
       toast({
         title: 'Missing input',
-        description: 'Please fill the song prompt and lyrics topic',
+        description: 'Please fill the song style prompt',
+        status: 'error',
+        duration: 3000,
+      });
+      return;
+    }
+
+    if (styleMode === 'savedSunoPrompt' && !selectedSavedPrompt) {
+      toast({
+        title: 'No prompt selected',
+        description: 'Please select a saved prompt from your library',
+        status: 'error',
+        duration: 3000,
+      });
+      return;
+    }
+
+    if (lyricsMode === 'lyricsTopic' && !lyricsAbout.trim()) {
+      toast({
+        title: 'Missing input',
+        description: 'Please fill the lyrics topic',
         status: 'error',
         duration: 3000,
       });
@@ -67,29 +110,94 @@ export default function AdvancedGenerationControls({
 
     setIsLoading(true);
     try {
-      const artists = parseList(artistInput)
-        .map((a) => a.slice(0, MAX_ARTIST_NAME_LEN))
-        .slice(0, MAX_ARTISTS_COUNT);
-      const tags = parseList(tagsInput)
-        .map((t) => t.slice(0, MAX_TAG_LEN))
-        .slice(0, MAX_TAGS_COUNT);
+      if (styleMode === 'savedSunoPrompt') {
+        // Use lyrics-only generation + copy saved prompt
+        const sunoPrompt = selectedSavedPrompt!.suno_prompt.slice(0, MAX_STYLE_PROMPT_LEN);
 
-      const request: AdvancedGenerateRequest = {
-        user_prompt: songPrompt.trim(),
-        lyrics_about: lyricsAbout.trim(),
-        selected_artists: artists.length > 0 ? artists : undefined,
-        tags: tags.length > 0 ? tags : undefined,
-      };
+        if (lyricsMode === 'lyricsTopic') {
+          // Generate lyrics using the saved prompt as style context
+          const lyricsResult = await generateLyricsOnly({
+            suno_prompt: sunoPrompt,
+            lyrics_about: lyricsAbout.trim(),
+          });
 
-      const result = await generateAdvanced(request);
-      onGenerate(result);
+          // Build a result object that matches AdvancedGenerateResponse shape
+          const result = {
+            generation_id: `reuse-${Date.now()}`,
+            concept_title: selectedSavedPrompt!.title || 'Reused Prompt',
+            suno_prompt: sunoPrompt,
+            lyrics: lyricsResult.lyrics,
+            exclude: selectedSavedPrompt!.exclude,
+            weirdness: selectedSavedPrompt!.weirdness,
+            style_influence: selectedSavedPrompt!.style_influence,
+          };
 
-      toast({
-        title: 'Generation complete',
-        description: `Created: ${result.concept_title}`,
-        status: 'success',
-        duration: 5000,
-      });
+          onGenerate(result);
+
+          toast({
+            title: 'Lyrics generated!',
+            status: 'success',
+            duration: 3000,
+          });
+        } else {
+          // Lyrics editable mode - just copy the package
+          const packageText = [
+            `SUNO PROMPT:\n${sunoPrompt}`,
+            '',
+            `EXCLUDE: ${selectedSavedPrompt!.exclude || 'None'}`,
+            `WEIRDNESS: ${selectedSavedPrompt!.weirdness}%`,
+            `STYLE INFLUENCE: ${selectedSavedPrompt!.style_influence}%`,
+            '',
+            `LYRICS:\n${lyricsEditable || '(paste your lyrics here)'}`,
+          ].join('\n');
+
+          navigator.clipboard.writeText(packageText);
+
+          toast({
+            title: 'Package copied!',
+            description: 'Suno prompt and your lyrics have been copied to clipboard.',
+            status: 'success',
+            duration: 5000,
+          });
+
+          // Build a result for display
+          const result = {
+            generation_id: `reuse-${Date.now()}`,
+            concept_title: selectedSavedPrompt!.title || 'Reused Prompt',
+            suno_prompt: sunoPrompt,
+            lyrics: lyricsEditable,
+            exclude: selectedSavedPrompt!.exclude,
+            weirdness: selectedSavedPrompt!.weirdness,
+            style_influence: selectedSavedPrompt!.style_influence,
+          };
+          onGenerate(result);
+        }
+      } else {
+        // Standard full generation
+        const artists = parseList(artistInput)
+          .map((a) => a.slice(0, MAX_ARTIST_NAME_LEN))
+          .slice(0, MAX_ARTISTS_COUNT);
+        const tags = parseList(tagsInput)
+          .map((t) => t.slice(0, MAX_TAG_LEN))
+          .slice(0, MAX_TAGS_COUNT);
+
+        const request: AdvancedGenerateRequest = {
+          user_prompt: songPrompt.trim(),
+          lyrics_about: lyricsAbout.trim(),
+          selected_artists: artists.length > 0 ? artists : undefined,
+          tags: tags.length > 0 ? tags : undefined,
+        };
+
+        const result = await generateAdvanced(request);
+        onGenerate(result);
+
+        toast({
+          title: 'Generation complete',
+          description: `Created: ${result.concept_title}`,
+          status: 'success',
+          duration: 5000,
+        });
+      }
     } catch (error) {
       toast({
         title: 'Generation failed',
@@ -116,106 +224,277 @@ export default function AdvancedGenerationControls({
     }
   };
 
+
+  const getButtonLabel = () => {
+    if (styleMode === 'savedSunoPrompt') {
+      if (lyricsMode === 'lyricsTopic') {
+        return 'Generate Lyrics';
+      }
+      return 'Copy Package';
+    }
+    return 'Generate Song';
+  };
+
   return (
     <Box>
       <VStack spacing={6} align="stretch">
-        <FormControl>
-          <FormLabel>Artist Influence (Optional)</FormLabel>
-          <Input
-            placeholder="Comma-separated artist references"
-            value={artistInput}
-            maxLength={MAX_ARTISTS_INPUT_LEN}
-            onChange={(e) =>
+        {/* Artist Influence - only show for Song Style Prompt mode */}
+        <Collapse in={styleMode === 'songStylePrompt'} animateOpacity>
+          <FormControl>
+            <FormLabel>Artist Influence (Optional)</FormLabel>
+            <Input
+              placeholder="Comma-separated artist references"
+              value={artistInput}
+              maxLength={MAX_ARTISTS_INPUT_LEN}
+            onChange={(e: ChangeEvent<HTMLInputElement>) =>
               setArtistInput(e.target.value.slice(0, MAX_ARTISTS_INPUT_LEN))
             }
-          />
-          {artistInput.trim() ? (
-            <Wrap mt={2}>
-              {parseList(artistInput)
-                .map((a) => a.slice(0, MAX_ARTIST_NAME_LEN))
-                .slice(0, MAX_ARTISTS_COUNT)
-                .map((artist) => (
-                <WrapItem key={artist}>
-                  <Badge colorScheme="green">{artist}</Badge>
-                </WrapItem>
-              ))}
-            </Wrap>
-          ) : null}
-          {profile?.top_artists?.length ? (
-            <>
-              <Text fontSize="sm" color="gray.500" mt={3}>
-                Quick pick from your top artists
-              </Text>
-              <Wrap mt={1}>
-                {profile.top_artists.slice(0, 10).map((artist) => (
-                  <WrapItem key={`artist-${artist.name}`}>
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      onClick={() => addArtist(artist.name)}
-                    >
-                      {artist.name.slice(0, MAX_ARTIST_NAME_LEN)}
-                    </Button>
-                  </WrapItem>
-                ))}
+            />
+            {artistInput.trim() ? (
+              <Wrap mt={2}>
+                {parseList(artistInput)
+                  .map((a) => a.slice(0, MAX_ARTIST_NAME_LEN))
+                  .slice(0, MAX_ARTISTS_COUNT)
+                  .map((artist) => (
+                    <WrapItem key={artist}>
+                      <Badge colorScheme="green">{artist}</Badge>
+                    </WrapItem>
+                  ))}
               </Wrap>
-            </>
-          ) : null}
-        </FormControl>
+            ) : null}
+            {profile?.top_artists?.length ? (
+              <>
+                <Text fontSize="sm" color="gray.500" mt={3}>
+                  Quick pick from your top artists
+                </Text>
+                <Wrap mt={1}>
+                  {profile.top_artists.slice(0, 10).map((artist) => (
+                    <WrapItem key={`artist-${artist.name}`}>
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        onClick={() => addArtist(artist.name)}
+                      >
+                        {artist.name.slice(0, MAX_ARTIST_NAME_LEN)}
+                      </Button>
+                    </WrapItem>
+                  ))}
+                </Wrap>
+              </>
+            ) : null}
+          </FormControl>
+        </Collapse>
 
-        <FormControl isRequired>
-          <FormLabel>Song Style Prompt</FormLabel>
-          <Textarea
-            placeholder="Describe the style or sound you want"
-            value={songPrompt}
-            maxLength={MAX_STYLE_PROMPT_LEN}
-            onChange={(e) => setSongPrompt(e.target.value.slice(0, MAX_STYLE_PROMPT_LEN))}
-          />
-          <HStack justify="space-between" mt={1}>
-            <Text fontSize="xs" color="gray.500">
-              Max {MAX_STYLE_PROMPT_LEN} characters
-            </Text>
-            <Text
-              fontSize="xs"
-              color={songPrompt.length >= MAX_STYLE_PROMPT_LEN ? 'orange.300' : 'gray.500'}
-            >
-              {songPrompt.length}/{MAX_STYLE_PROMPT_LEN}
-            </Text>
-          </HStack>
-        </FormControl>
-
-        <FormControl isRequired>
-          <FormLabel>Lyrics Topic</FormLabel>
-          <Input
-            placeholder="What should the lyrics be about?"
-            value={lyricsAbout}
-            maxLength={MAX_LYRICS_ABOUT_LEN}
-            onChange={(e) =>
-              setLyricsAbout(e.target.value.slice(0, MAX_LYRICS_ABOUT_LEN))
-            }
-          />
-          <HStack justify="space-between" mt={1}>
-            <Text fontSize="xs" color="gray.500">
-              Max {MAX_LYRICS_ABOUT_LEN} characters
-            </Text>
-            <Text
-              fontSize="xs"
-              color={lyricsAbout.length >= MAX_LYRICS_ABOUT_LEN ? 'orange.300' : 'gray.500'}
-            >
-              {lyricsAbout.length}/{MAX_LYRICS_ABOUT_LEN}
-            </Text>
-          </HStack>
-        </FormControl>
-
+        {/* Style Mode Toggle */}
         <FormControl>
-          <FormLabel>Tags (Optional)</FormLabel>
-          <Input
-            placeholder="Comma-separated tags (e.g., dubstep, airy, 90s)"
-            value={tagsInput}
-            maxLength={MAX_TAGS_INPUT_LEN}
-            onChange={(e) => setTagsInput(e.target.value.slice(0, MAX_TAGS_INPUT_LEN))}
-          />
+          <FormLabel>Style Source</FormLabel>
+          <ButtonGroup size="sm" isAttached variant="outline" width="100%">
+            <Button
+              flex={1}
+              colorScheme={styleMode === 'songStylePrompt' ? 'green' : 'gray'}
+              variant={styleMode === 'songStylePrompt' ? 'solid' : 'outline'}
+              onClick={() => {
+                onStyleModeChange('songStylePrompt');
+                onSelectSavedPrompt(null);
+              }}
+            >
+              Song Style Prompt
+            </Button>
+            <Button
+              flex={1}
+              colorScheme={styleMode === 'savedSunoPrompt' ? 'green' : 'gray'}
+              variant={styleMode === 'savedSunoPrompt' ? 'solid' : 'outline'}
+              onClick={() => onStyleModeChange('savedSunoPrompt')}
+            >
+              Saved Suno Prompt
+            </Button>
+          </ButtonGroup>
         </FormControl>
+
+        {/* Song Style Prompt (editable) */}
+        <Collapse in={styleMode === 'songStylePrompt'} animateOpacity>
+          <FormControl isRequired>
+            <FormLabel>Song Style Prompt</FormLabel>
+            <Textarea
+              placeholder="Describe the style or sound you want"
+              value={songPrompt}
+              maxLength={MAX_STYLE_PROMPT_LEN}
+              onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setSongPrompt(e.target.value.slice(0, MAX_STYLE_PROMPT_LEN))}
+            />
+            <HStack justify="space-between" mt={1}>
+              <Text fontSize="xs" color="gray.500">
+                Max {MAX_STYLE_PROMPT_LEN} characters
+              </Text>
+              <Text
+                fontSize="xs"
+                color={songPrompt.length >= MAX_STYLE_PROMPT_LEN ? 'orange.300' : 'gray.500'}
+              >
+                {songPrompt.length}/{MAX_STYLE_PROMPT_LEN}
+              </Text>
+            </HStack>
+          </FormControl>
+        </Collapse>
+
+        {/* Saved Prompt Selector */}
+        <Collapse in={styleMode === 'savedSunoPrompt'} animateOpacity>
+          <FormControl isRequired>
+            <FormLabel>Select a Saved Prompt</FormLabel>
+            {savedPrompts.length === 0 ? (
+              <Box
+                p={4}
+                bg="gray.800"
+                borderRadius="md"
+                borderWidth="1px"
+                borderColor="gray.600"
+                textAlign="center"
+              >
+                <Text color="gray.500">No saved prompts yet.</Text>
+                <Text color="gray.600" fontSize="sm" mt={1}>
+                  Generate and save a prompt first.
+                </Text>
+              </Box>
+            ) : (
+              <VStack spacing={2} align="stretch" maxH="300px" overflowY="auto">
+                {savedPrompts.map((prompt) => (
+                  <Box
+                    key={prompt.id}
+                    p={3}
+                    bg="gray.800"
+                    borderRadius="md"
+                    borderWidth="2px"
+                    borderColor={
+                      selectedSavedPrompt?.id === prompt.id ? 'green.400' : 'gray.600'
+                    }
+                    cursor="pointer"
+                    onClick={() => onSelectSavedPrompt(prompt)}
+                    _hover={{
+                      borderColor:
+                        selectedSavedPrompt?.id === prompt.id ? 'green.300' : 'gray.500',
+                    }}
+                    transition="border-color 0.2s"
+                  >
+                    <HStack justify="space-between" align="start">
+                      <VStack align="start" spacing={1}>
+                        <Text fontWeight="semibold" fontSize="sm">
+                          {prompt.title || 'Untitled'}
+                        </Text>
+                        <HStack spacing={2} flexWrap="wrap">
+                          <Badge colorScheme="blue" fontSize="xs">
+                            Weirdness: {prompt.weirdness}%
+                          </Badge>
+                          <Badge colorScheme="purple" fontSize="xs">
+                            Style: {prompt.style_influence}%
+                          </Badge>
+                        </HStack>
+                      </VStack>
+                      {selectedSavedPrompt?.id === prompt.id && (
+                        <Badge colorScheme="green">Selected</Badge>
+                      )}
+                    </HStack>
+                    <Text
+                      fontSize="xs"
+                      color="gray.400"
+                      mt={2}
+                      noOfLines={2}
+                      fontFamily="monospace"
+                    >
+                      {prompt.suno_prompt}
+                    </Text>
+                  </Box>
+                ))}
+              </VStack>
+            )}
+          </FormControl>
+        </Collapse>
+
+        {/* Lyrics Mode Toggle */}
+        <FormControl>
+          <FormLabel>Lyrics Input</FormLabel>
+          <ButtonGroup size="sm" isAttached variant="outline" width="100%">
+            <Button
+              flex={1}
+              colorScheme={lyricsMode === 'lyricsTopic' ? 'green' : 'gray'}
+              variant={lyricsMode === 'lyricsTopic' ? 'solid' : 'outline'}
+              onClick={() => setLyricsMode('lyricsTopic')}
+            >
+              Lyrics Topic
+            </Button>
+            <Button
+              flex={1}
+              colorScheme={lyricsMode === 'lyricsEditable' ? 'green' : 'gray'}
+              variant={lyricsMode === 'lyricsEditable' ? 'solid' : 'outline'}
+              onClick={() => setLyricsMode('lyricsEditable')}
+            >
+              Custom Lyrics
+            </Button>
+          </ButtonGroup>
+        </FormControl>
+
+        {/* Lyrics Topic */}
+        <Collapse in={lyricsMode === 'lyricsTopic'} animateOpacity>
+          <FormControl isRequired>
+            <FormLabel>Lyrics Topic</FormLabel>
+            <Input
+              placeholder="What should the lyrics be about?"
+              value={lyricsAbout}
+              maxLength={MAX_LYRICS_ABOUT_LEN}
+              onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                setLyricsAbout(e.target.value.slice(0, MAX_LYRICS_ABOUT_LEN))
+              }
+            />
+            <HStack justify="space-between" mt={1}>
+              <Text fontSize="xs" color="gray.500">
+                Max {MAX_LYRICS_ABOUT_LEN} characters
+              </Text>
+              <Text
+                fontSize="xs"
+                color={lyricsAbout.length >= MAX_LYRICS_ABOUT_LEN ? 'orange.300' : 'gray.500'}
+              >
+                {lyricsAbout.length}/{MAX_LYRICS_ABOUT_LEN}
+              </Text>
+            </HStack>
+          </FormControl>
+        </Collapse>
+
+        {/* Custom Lyrics */}
+        <Collapse in={lyricsMode === 'lyricsEditable'} animateOpacity>
+          <FormControl>
+            <FormLabel>Custom Lyrics</FormLabel>
+            <Textarea
+              placeholder="Paste or write your own lyrics here..."
+              value={lyricsEditable}
+              maxLength={MAX_LYRICS_TEXT_LEN}
+              minH="200px"
+              onChange={(e: ChangeEvent<HTMLTextAreaElement>) =>
+                setLyricsEditable(e.target.value.slice(0, MAX_LYRICS_TEXT_LEN))
+              }
+            />
+            <HStack justify="space-between" mt={1}>
+              <Text fontSize="xs" color="gray.500">
+                Max {MAX_LYRICS_TEXT_LEN} characters
+              </Text>
+              <Text
+                fontSize="xs"
+                color={lyricsEditable.length >= MAX_LYRICS_TEXT_LEN ? 'orange.300' : 'gray.500'}
+              >
+                {lyricsEditable.length}/{MAX_LYRICS_TEXT_LEN}
+              </Text>
+            </HStack>
+          </FormControl>
+        </Collapse>
+
+        {/* Tags - only show for Song Style Prompt mode */}
+        <Collapse in={styleMode === 'songStylePrompt'} animateOpacity>
+          <FormControl>
+            <FormLabel>Tags (Optional)</FormLabel>
+            <Input
+              placeholder="Comma-separated tags (e.g., dubstep, airy, 90s)"
+              value={tagsInput}
+              maxLength={MAX_TAGS_INPUT_LEN}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => setTagsInput(e.target.value.slice(0, MAX_TAGS_INPUT_LEN))}
+            />
+          </FormControl>
+        </Collapse>
       </VStack>
 
       <Button
@@ -225,9 +504,9 @@ export default function AdvancedGenerationControls({
         mt={6}
         onClick={handleGenerate}
         isLoading={isLoading}
-        loadingText="Generating..."
+        loadingText={styleMode === 'savedSunoPrompt' ? 'Processing...' : 'Generating...'}
       >
-        Generate Song
+        {getButtonLabel()}
       </Button>
     </Box>
   );

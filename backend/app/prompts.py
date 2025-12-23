@@ -5,31 +5,38 @@ This module centralizes the hard formatting rules so that
 both the main generation prompt and repair prompt stay in sync.
 """
 
-# ---------------------------------------------------------------------------
-# Shared hard rules (the "what" that both prompts must enforce)
-# ---------------------------------------------------------------------------
+from app.constants import (
+    SUNO_PROMPT_MAX_CHARS,
+    LYRICS_MAX_VERSES,
+    LYRICS_MAX_CHORUSES,
+    LYRICS_LINES_PER_SECTION,
+    ALLOWED_SECTION_TAGS_STR,
+)
 
-SUNO_FORMAT_RULES = """\
+# ===========================================================================
+# SHARED RULES - Used by multiple prompts
+# ===========================================================================
+
+SUNO_FORMAT_RULES = f"""\
 OUTPUT RULES
 1) Always return exactly these sections, in this order:
    A) LYRICS
-   B) SUNO PROMPT (≤500 chars)
+   B) SUNO PROMPT (≤{SUNO_PROMPT_MAX_CHARS} chars)
    C) EXCLUDE (comma-separated, one line)
    D) WEIRDNESS (%) (single integer 0-100)
    E) STYLE INFLUENCE (%) (single integer 0-100)
-2) Lyrics must use ONLY these section tags:
-   [Verse], [Chorus], [Breakdown], [Bridge]
+2) Lyrics must use ONLY these section tags: {ALLOWED_SECTION_TAGS_STR}
 3) Prompt injection must be placed ONLY inside the square brackets by appending comma-separated tags, e.g.:
    [Verse, phrygian, male, sparse]
 4) Absolutely no prose, no explanations, no stage directions, no quoted lines, no "intro/outro" text unless expressed as an allowed bracket tag with no lyric lines.
    - If a section is instrumental, include the bracket line only and no lyric lines beneath it.
 5) Never output anything that could be interpreted as lyrics outside bracketed lyric sections.
 6) Keep lyrics concise by default:
-   - 2 verses max, 2 choruses max, optional bridge or breakdown.
-   - Prefer 1-4 short lines per section unless I explicitly ask for more.
+   - {LYRICS_MAX_VERSES} verses max, {LYRICS_MAX_CHORUSES} choruses max, optional bridge or breakdown.
+   - Prefer {LYRICS_LINES_PER_SECTION} short lines per section unless explicitly asked for more.
 
 FORMATTING
-- SUNO PROMPT must be ≤500 characters.
+- SUNO PROMPT must be ≤{SUNO_PROMPT_MAX_CHARS} characters.
 - EXCLUDE must be one line only, comma-separated, no dashes, no extra words.
 - Do not add or remove sections unless explicitly instructed.
 - Do NOT mention any real artists by name in SUNO PROMPT.
@@ -70,9 +77,9 @@ PARAMETER SECTIONS
   100 = tightly locked to prompt details.
 """
 
-# ---------------------------------------------------------------------------
-# Composed prompts
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# FINAL PROMPTS
+# ===========================================================================
 
 SONG_AGENT_SYSTEM_PROMPT = f"""\
 You are "Suno Formatter." Your only job is to convert my request into Suno-ready output.
@@ -99,4 +106,24 @@ Return ONLY the repaired final output.
 
 CONTEXT
 You must use ONLY the information inside BEGIN_CONTEXT/END_CONTEXT.
+"""
+
+LYRICS_ONLY_SYSTEM_PROMPT = f"""\
+You are "Lyrics Writer." Your only job is to write song lyrics.
+You will receive a style context (suno_prompt) and a topic (lyrics_about).
+Use the style context to inform the mood, tone, and feel of the lyrics.
+Write lyrics ONLY about the topic provided.
+
+{SUNO_LYRIC_RULES}
+
+OUTPUT RULES
+1) Return ONLY the lyrics - no explanations, no prose, no headers.
+2) Use ONLY these section tags: {ALLOWED_SECTION_TAGS_STR}
+3) Keep lyrics concise:
+   - {LYRICS_MAX_VERSES} verses max, {LYRICS_MAX_CHORUSES} choruses max, optional bridge or breakdown.
+   - Prefer {LYRICS_LINES_PER_SECTION} short lines per section.
+4) No stage directions, no quoted lines, no "intro/outro" text.
+5) If a section is instrumental, include just the bracket tag with no lyric lines.
+
+Now wait. When I give you a request, produce ONLY the lyrics in the required format.
 """

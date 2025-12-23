@@ -7,24 +7,31 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.constants import (
+    SUNO_PROMPT_MAX_CHARS,
+    SUNO_EXCLUDE_MAX_CHARS,
+    SAVED_PROMPT_TITLE_MAX_CHARS,
+    SAVED_PROMPT_NOTES_MAX_CHARS,
+)
+
 
 class SunoPromptCreate(BaseModel):
     """Request to save a new Suno prompt."""
 
-    # Suno hard cap: prompts cannot exceed 500 chars
-    suno_prompt: str = Field(..., min_length=1, max_length=500)
-    exclude: str = Field(default="", max_length=500)
+    # Suno hard cap: prompts cannot exceed SUNO_PROMPT_MAX_CHARS
+    suno_prompt: str = Field(..., min_length=1, max_length=SUNO_PROMPT_MAX_CHARS)
+    exclude: str = Field(default="", max_length=SUNO_EXCLUDE_MAX_CHARS)
     weirdness: int = Field(default=50, ge=0, le=100)
     style_influence: int = Field(default=50, ge=0, le=100)
-    title: Optional[str] = Field(default=None, max_length=255)
-    notes: Optional[str] = Field(default=None, max_length=2000)
+    title: Optional[str] = Field(default=None, max_length=SAVED_PROMPT_TITLE_MAX_CHARS)
+    notes: Optional[str] = Field(default=None, max_length=SAVED_PROMPT_NOTES_MAX_CHARS)
 
 
 class SunoPromptUpdate(BaseModel):
     """Request to update a saved Suno prompt (partial update)."""
 
-    title: Optional[str] = Field(default=None, max_length=255)
-    notes: Optional[str] = Field(default=None, max_length=2000)
+    title: Optional[str] = Field(default=None, max_length=SAVED_PROMPT_TITLE_MAX_CHARS)
+    notes: Optional[str] = Field(default=None, max_length=SAVED_PROMPT_NOTES_MAX_CHARS)
     visibility: Optional[str] = Field(
         default=None, pattern="^(private|unlisted|public)$"
     )

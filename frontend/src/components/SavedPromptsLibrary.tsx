@@ -11,16 +11,6 @@ import {
   Badge,
   Collapse,
   useDisclosure,
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalBody,
-  ModalFooter,
-  ModalCloseButton,
-  Textarea,
-  FormControl,
-  FormLabel,
   AlertDialog,
   AlertDialogOverlay,
   AlertDialogContent,
@@ -29,50 +19,38 @@ import {
   AlertDialogFooter,
   Spinner,
   Center,
-  Input,
   Editable,
   EditableInput,
   EditablePreview,
 } from '@chakra-ui/react';
 import { ChevronDownIcon, ChevronUpIcon, DeleteIcon, CopyIcon } from '@chakra-ui/icons';
 import { useRef } from 'react';
-import type { ChangeEvent } from 'react';
 import {
   SavedSunoPrompt,
   listSavedPrompts,
   deleteSavedPrompt,
   updateSavedPrompt,
-  generateAdvanced,
   ApiError,
 } from '../api';
 
 interface SavedPromptsLibraryProps {
   refreshTrigger?: number;
+  onReuse?: (prompt: SavedSunoPrompt) => void;
+  onPromptsLoaded?: (prompts: SavedSunoPrompt[]) => void;
 }
 
 interface PromptCardProps {
-  // React `key` isn't actually passed as a prop at runtime, but including it here
-  // prevents TS from complaining in environments where React types aren't fully resolved.
   key?: number;
   prompt: SavedSunoPrompt;
   onDelete: (id: number) => void;
   onUpdate: (id: number, title: string) => void;
+  onReuse?: (prompt: SavedSunoPrompt) => void;
 }
 
-function PromptCard({ prompt, onDelete, onUpdate }: PromptCardProps) {
+function PromptCard({ prompt, onDelete, onUpdate, onReuse }: PromptCardProps) {
   const { isOpen, onToggle } = useDisclosure();
   const toast = useToast();
-  const {
-    isOpen: isReuseOpen,
-    onOpen: onReuseOpen,
-    onClose: onReuseClose,
-  } = useDisclosure();
 
-  const [reuseLyricsAbout, setReuseLyricsAbout] = useState('');
-  const [reuseLyrics, setReuseLyrics] = useState<string>('');
-  const [reuseLoading, setReuseLoading] = useState(false);
-  const MAX_LYRICS_TOPIC_LEN = 500;
-  const MAX_LYRICS_TEXT_LEN = 4000;
   const MAX_TITLE_LEN = 255;
 
   const copyToClipboard = (text: string) => {
@@ -90,73 +68,6 @@ function PromptCard({ prompt, onDelete, onUpdate }: PromptCardProps) {
       day: 'numeric',
       year: 'numeric',
     });
-  };
-
-  const handleGenerateNewLyrics = async () => {
-    if (!reuseLyricsAbout.trim()) {
-      toast({
-        title: 'Missing lyrics topic',
-        description: 'Enter what the new lyrics should be about.',
-        status: 'error',
-        duration: 3000,
-      });
-      return;
-    }
-
-    setReuseLoading(true);
-    try {
-      // Use a Suno-compliant style seed (<= 500 chars)
-      const styleSeed =
-        prompt.suno_prompt.length > 500
-          ? prompt.suno_prompt.slice(0, 500)
-          : prompt.suno_prompt;
-
-      const result = await generateAdvanced({
-        user_prompt: styleSeed,
-        lyrics_about: reuseLyricsAbout.trim(),
-        selected_artists: [],
-        tags: [],
-      });
-      setReuseLyrics(result.lyrics);
-      toast({
-        title: 'Lyrics generated',
-        status: 'success',
-        duration: 2000,
-      });
-    } catch (e) {
-      toast({
-        title: 'Failed to generate lyrics',
-        description: e instanceof Error ? e.message : 'Unknown error',
-        status: 'error',
-        duration: 4000,
-      });
-    } finally {
-      setReuseLoading(false);
-    }
-  };
-
-  const copySunoPackage = () => {
-    const sunoPrompt =
-      prompt.suno_prompt.length > 500
-        ? prompt.suno_prompt.slice(0, 500)
-        : prompt.suno_prompt;
-    const packageText = [
-      `TITLE: ${prompt.title || 'Untitled'}`,
-      '',
-      'SUNO PROMPT:',
-      sunoPrompt,
-      '',
-      'EXCLUDE:',
-      prompt.exclude || '',
-      '',
-      `WEIRDNESS: ${prompt.weirdness}`,
-      `STYLE_INFLUENCE: ${prompt.style_influence}`,
-      '',
-      'LYRICS:',
-      reuseLyrics || '(generate or paste your own lyrics here)',
-    ].join('\n');
-
-    copyToClipboard(packageText);
   };
 
   const copyPromptOnly = () => {
@@ -209,9 +120,11 @@ function PromptCard({ prompt, onDelete, onUpdate }: PromptCardProps) {
           </HStack>
         </VStack>
         <HStack spacing={1}>
-          <Button size="sm" variant="outline" onClick={onReuseOpen}>
-            Reuse
-          </Button>
+          {onReuse && (
+            <Button size="sm" variant="outline" onClick={() => onReuse(prompt)}>
+              Reuse
+            </Button>
+          )}
           <IconButton
             aria-label="Copy prompt"
             icon={<CopyIcon />}
@@ -266,75 +179,15 @@ function PromptCard({ prompt, onDelete, onUpdate }: PromptCardProps) {
           )}
         </Box>
       </Collapse>
-
-      <Modal isOpen={isReuseOpen} onClose={onReuseClose} size="xl">
-        <ModalOverlay />
-        <ModalContent bg="gray.800" borderColor="gray.700">
-          <ModalHeader>Reuse prompt with new lyrics</ModalHeader>
-          <ModalCloseButton />
-          <ModalBody>
-            <VStack spacing={4} align="stretch">
-              <FormControl isRequired>
-                <FormLabel>New lyrics topic</FormLabel>
-                <Input
-                  placeholder="What should the new lyrics be about?"
-                  value={reuseLyricsAbout}
-                  maxLength={MAX_LYRICS_TOPIC_LEN}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                    setReuseLyricsAbout(e.target.value.slice(0, MAX_LYRICS_TOPIC_LEN))
-                  }
-                />
-              </FormControl>
-
-              <Button
-                colorScheme="green"
-                variant="outline"
-                onClick={handleGenerateNewLyrics}
-                isLoading={reuseLoading}
-                loadingText="Generating..."
-              >
-                Generate new lyrics
-              </Button>
-
-              <FormControl>
-                <FormLabel>Lyrics (editable)</FormLabel>
-                <Textarea
-                  minH="200px"
-                  placeholder="Generated lyrics will appear here, or paste your own."
-                  value={reuseLyrics}
-                  maxLength={MAX_LYRICS_TEXT_LEN}
-                  onChange={(e: ChangeEvent<HTMLTextAreaElement>) =>
-                    setReuseLyrics(e.target.value.slice(0, MAX_LYRICS_TEXT_LEN))
-                  }
-                />
-              </FormControl>
-
-              <HStack>
-                <Button onClick={copySunoPackage} colorScheme="yellow">
-                  Copy full Suno package
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={copyPromptOnly}
-                >
-                  Copy prompt only
-                </Button>
-              </HStack>
-            </VStack>
-          </ModalBody>
-
-          <ModalFooter>
-            <Button onClick={onReuseClose} variant="ghost">
-              Close
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
     </Box>
   );
 }
 
-export default function SavedPromptsLibrary({ refreshTrigger }: SavedPromptsLibraryProps) {
+export default function SavedPromptsLibrary({
+  refreshTrigger,
+  onReuse,
+  onPromptsLoaded,
+}: SavedPromptsLibraryProps) {
   const toast = useToast();
   const [prompts, setPrompts] = useState<SavedSunoPrompt[]>([]);
   const [loading, setLoading] = useState(true);
@@ -347,10 +200,12 @@ export default function SavedPromptsLibrary({ refreshTrigger }: SavedPromptsLibr
     try {
       const data = await listSavedPrompts();
       setPrompts(data.prompts);
+      onPromptsLoaded?.(data.prompts);
     } catch (e) {
       // 401 means no auth (new user) - treat as empty, not error
       if (e instanceof ApiError && e.status === 401) {
         setPrompts([]);
+        onPromptsLoaded?.([]);
       } else {
         toast({
           title: 'Failed to load prompts',
@@ -372,9 +227,9 @@ export default function SavedPromptsLibrary({ refreshTrigger }: SavedPromptsLibr
     setDeleting(true);
     try {
       await deleteSavedPrompt(deleteId);
-      setPrompts((prev: SavedSunoPrompt[]) =>
-        prev.filter((p: SavedSunoPrompt) => p.id !== deleteId)
-      );
+      const newPrompts = prompts.filter((p: SavedSunoPrompt) => p.id !== deleteId);
+      setPrompts(newPrompts);
+      onPromptsLoaded?.(newPrompts);
       toast({
         title: 'Prompt deleted',
         status: 'success',
@@ -395,11 +250,11 @@ export default function SavedPromptsLibrary({ refreshTrigger }: SavedPromptsLibr
   const handleUpdate = async (id: number, title: string) => {
     try {
       const updated = await updateSavedPrompt(id, { title });
-      setPrompts((prev: SavedSunoPrompt[]) =>
-        prev.map((p: SavedSunoPrompt) =>
-          p.id === id ? { ...p, title: updated.title } : p
-        )
+      const newPrompts = prompts.map((p: SavedSunoPrompt) =>
+        p.id === id ? { ...p, title: updated.title } : p
       );
+      setPrompts(newPrompts);
+      onPromptsLoaded?.(newPrompts);
     } catch (e) {
       toast({
         title: 'Failed to update',
@@ -442,6 +297,7 @@ export default function SavedPromptsLibrary({ refreshTrigger }: SavedPromptsLibr
             prompt={prompt}
             onDelete={setDeleteId}
             onUpdate={handleUpdate}
+            onReuse={onReuse}
           />
         ))}
       </VStack>
@@ -478,4 +334,3 @@ export default function SavedPromptsLibrary({ refreshTrigger }: SavedPromptsLibr
     </Box>
   );
 }
-

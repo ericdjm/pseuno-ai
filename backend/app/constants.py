@@ -1,0 +1,49 @@
+"""
+Shared constants for the Pseuno AI application.
+
+This module contains tunable values that are used across multiple modules
+(prompts, schemas, frontend caps, etc.) to ensure consistency.
+"""
+
+# ===========================================================================
+# Suno API Limits
+# ===========================================================================
+
+# Maximum characters for a Suno prompt (hard limit from Suno)
+SUNO_PROMPT_MAX_CHARS = 500
+
+# Maximum characters for the exclude field
+SUNO_EXCLUDE_MAX_CHARS = 500
+
+# ===========================================================================
+# Lyrics Generation Limits
+# ===========================================================================
+
+LYRICS_MAX_VERSES = 2
+LYRICS_MAX_CHORUSES = 2
+LYRICS_LINES_PER_SECTION = "1-4"
+LYRICS_TOPIC_MAX_CHARS = 500
+
+# ===========================================================================
+# Allowed Section Tags
+# ===========================================================================
+
+ALLOWED_SECTION_TAGS = ["[Verse]", "[Chorus]", "[Breakdown]", "[Bridge]"]
+ALLOWED_SECTION_TAGS_STR = ", ".join(ALLOWED_SECTION_TAGS)
+
+# ===========================================================================
+# List Size Limits (for abuse prevention)
+# ===========================================================================
+
+MAX_ARTISTS_COUNT = 20
+MAX_ARTIST_NAME_CHARS = 60
+MAX_TAGS_COUNT = 25
+MAX_TAG_CHARS = 40
+
+# ===========================================================================
+# Saved Prompt Limits
+# ===========================================================================
+
+SAVED_PROMPT_TITLE_MAX_CHARS = 255
+SAVED_PROMPT_NOTES_MAX_CHARS = 2000
+
