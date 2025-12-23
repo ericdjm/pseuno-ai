@@ -1,0 +1,359 @@
+[
+  {
+    "name": "Style leakage: bass drops",
+    "description": "Should NOT mention 'bass', 'drop', 'beat' literally in lyrics",
+    "user_prompt": "Heavy dubstep with massive bass drops",
+    "lyrics_about": "overcoming fear",
+    "selected_artists": ["Skrillex", "Excision"],
+    "tags": ["dubstep", "heavy", "bass"],
+    "lyric_red_flags": ["bass", "drop", "beat", "wub", "synth"]
+  },
+  {
+    "name": "Style leakage: guitar riffs",
+    "description": "Should NOT mention 'guitar', 'riff', 'shred' literally in lyrics",
+    "user_prompt": "Crunchy guitar riffs, 80s metal shredding",
+    "lyrics_about": "a lone wolf surviving in the wilderness",
+    "selected_artists": ["Metallica", "Van Halen"],
+    "tags": ["metal", "80s", "shred"],
+    "lyric_red_flags": ["guitar", "riff", "shred", "solo", "amp"]
+  },
+  {
+    "name": "Style leakage: electronic production",
+    "description": "Should NOT mention production terms in lyrics",
+    "user_prompt": "Glitchy IDM with polyrhythmic percussion",
+    "lyrics_about": "existential dread in a corporate office",
+    "selected_artists": ["Aphex Twin", "Autechre"],
+    "tags": ["IDM", "glitch", "experimental"],
+    "lyric_red_flags": ["glitch", "synth", "electronic", "beat", "rhythm", "polyrhythm"]
+  },
+  {
+    "name": "Style leakage: orchestral",
+    "description": "Should NOT mention instruments unless narratively relevant",
+    "user_prompt": "Epic orchestral with soaring strings and brass",
+    "lyrics_about": "saying goodbye to a childhood home",
+    "selected_artists": ["Hans Zimmer"],
+    "tags": ["orchestral", "cinematic", "epic"],
+    "lyric_red_flags": ["orchestra", "strings", "brass", "symphony", "crescendo"]
+  },
+  {
+    "name": "Style leakage: firefighter + production",
+    "description": "Classic test case - firefighter theme should not reference production",
+    "user_prompt": "Aggressive drum and bass with heavy sub bass",
+    "lyrics_about": "the daily life of a firefighter",
+    "selected_artists": ["Noisia", "Pendulum"],
+    "tags": ["dnb", "heavy"],
+    "lyric_red_flags": ["bass", "drum", "beat", "drop", "sub"]
+  },
+  {
+    "name": "Meta lyrics: dancing",
+    "description": "Common trap - should not just be 'dance to the beat'",
+    "user_prompt": "Funky disco house with groovy basslines",
+    "lyrics_about": "reconnecting with an old friend",
+    "selected_artists": ["Daft Punk", "Nile Rodgers"],
+    "tags": ["disco", "house", "funk"],
+    "lyric_red_flags": ["dance to the", "feel the beat", "groove to", "move your body"]
+  },
+  {
+    "name": "Meta lyrics: singing about singing",
+    "description": "Should not be self-referential about music",
+    "user_prompt": "Soulful R&B with smooth vocals",
+    "lyrics_about": "healing after a breakup",
+    "selected_artists": ["Frank Ocean", "SZA"],
+    "tags": ["rnb", "soul"],
+    "lyric_red_flags": ["sing this song", "hear my voice", "listen to me sing", "this melody"]
+  },
+  {
+    "name": "Allowed context: band/music narrative",
+    "description": "Music references ARE okay when the topic is about music",
+    "user_prompt": "Indie rock, raw and emotional",
+    "lyrics_about": "being in a struggling garage band",
+    "selected_artists": ["The Strokes", "Arctic Monkeys"],
+    "tags": ["indie", "rock"],
+    "lyric_red_flags": [],
+    "lyric_green_flags": ["guitar", "band", "stage", "song"]
+  },
+  {
+    "name": "Imagery over literalism: space",
+    "description": "Should use imagery, not just list space things",
+    "user_prompt": "Ethereal ambient with cosmic textures",
+    "lyrics_about": "loneliness",
+    "selected_artists": ["Brian Eno"],
+    "tags": ["ambient", "space"],
+    "lyric_red_flags": ["ambient", "texture", "ethereal", "cosmic sound"]
+  },
+  {
+    "name": "Emotional depth test",
+    "description": "Should have emotional content, not just surface description",
+    "user_prompt": "Melancholic piano ballad",
+    "lyrics_about": "losing a parent",
+    "selected_artists": ["Radiohead", "Bon Iver"],
+    "tags": ["sad", "piano", "emotional"],
+    "lyric_red_flags": ["piano", "ballad", "sad song", "melancholy"]
+  },
+  {
+    "name": "Style leakage: trap hi-hats",
+    "description": "Should NOT reference production elements like hi-hats, 808s",
+    "user_prompt": "Hard trap with rolling hi-hats and 808 kicks",
+    "lyrics_about": "grinding through poverty to success",
+    "selected_artists": ["Travis Scott", "Future"],
+    "tags": ["trap", "hip-hop", "hard"],
+    "lyric_red_flags": ["hi-hat", "808", "kick", "snare", "trap beat"]
+  },
+  {
+    "name": "Style leakage: acoustic fingerpicking",
+    "description": "Should NOT mention picking technique in lyrics",
+    "user_prompt": "Delicate acoustic fingerpicking, folk style",
+    "lyrics_about": "a letter to a younger self",
+    "selected_artists": ["Iron & Wine", "Nick Drake"],
+    "tags": ["folk", "acoustic", "intimate"],
+    "lyric_red_flags": ["fingerpick", "acoustic", "strum", "fret", "capo"]
+  },
+  {
+    "name": "Style leakage: synth-wave production",
+    "description": "Should NOT mention synth/retro production terms",
+    "user_prompt": "80s synthwave with arpeggiated synths and gated reverb",
+    "lyrics_about": "chasing a dream that keeps slipping away",
+    "selected_artists": ["The Midnight", "Kavinsky"],
+    "tags": ["synthwave", "80s", "retro"],
+    "lyric_red_flags": ["synth", "arpeggio", "reverb", "retro sound", "80s vibe"]
+  },
+  {
+    "name": "Style leakage: jazz improvisation",
+    "description": "Should NOT mention jazz technique unless topic is jazz",
+    "user_prompt": "Smooth jazz with saxophone solos and walking bass",
+    "lyrics_about": "late night in a city that never sleeps",
+    "selected_artists": ["Kamasi Washington"],
+    "tags": ["jazz", "smooth", "nocturnal"],
+    "lyric_red_flags": ["saxophone", "solo", "jazz", "improvise", "walking bass"]
+  },
+  {
+    "name": "Style leakage: lo-fi production",
+    "description": "Should NOT mention lo-fi aesthetic in lyrics",
+    "user_prompt": "Lo-fi hip hop with vinyl crackle and mellow samples",
+    "lyrics_about": "studying alone at 3am",
+    "selected_artists": ["Nujabes"],
+    "tags": ["lofi", "chill", "study"],
+    "lyric_red_flags": ["lo-fi", "vinyl", "crackle", "sample", "beat tape"]
+  },
+  {
+    "name": "Style leakage: punk energy",
+    "description": "Should NOT describe the music's energy in lyrics",
+    "user_prompt": "Fast punk rock with aggressive energy and distortion",
+    "lyrics_about": "fighting against corporate greed",
+    "selected_artists": ["Dead Kennedys", "Bad Religion"],
+    "tags": ["punk", "fast", "aggressive"],
+    "lyric_red_flags": ["distortion", "punk rock", "mosh", "loud guitars"]
+  },
+  {
+    "name": "Style leakage: country twang",
+    "description": "Should NOT mention country instrumentation literally",
+    "user_prompt": "Traditional country with steel guitar and fiddle",
+    "lyrics_about": "missing home while traveling for work",
+    "selected_artists": ["Chris Stapleton", "Sturgill Simpson"],
+    "tags": ["country", "traditional", "heartfelt"],
+    "lyric_red_flags": ["steel guitar", "fiddle", "twang", "country song"]
+  },
+  {
+    "name": "Style leakage: reggae rhythm",
+    "description": "Should NOT mention reggae production terms",
+    "user_prompt": "Classic reggae with offbeat rhythm and dub effects",
+    "lyrics_about": "unity and community strength",
+    "selected_artists": ["Bob Marley"],
+    "tags": ["reggae", "roots", "positive"],
+    "lyric_red_flags": ["reggae", "offbeat", "dub", "skank", "riddim"]
+  },
+  {
+    "name": "Meta lyrics: the music speaks",
+    "description": "Should NOT have lyrics about the music itself speaking",
+    "user_prompt": "Powerful gospel-influenced soul",
+    "lyrics_about": "finding hope in dark times",
+    "selected_artists": ["Aretha Franklin", "Mavis Staples"],
+    "tags": ["soul", "gospel", "powerful"],
+    "lyric_red_flags": ["this song", "the music", "these notes", "this tune"]
+  },
+  {
+    "name": "Meta lyrics: feel the rhythm",
+    "description": "Should NOT have generic 'feel the rhythm' type lyrics",
+    "user_prompt": "Afrobeat with complex polyrhythms",
+    "lyrics_about": "celebrating a wedding",
+    "selected_artists": ["Fela Kuti", "Burna Boy"],
+    "tags": ["afrobeat", "celebratory"],
+    "lyric_red_flags": ["feel the rhythm", "let the beat", "move to the", "polyrhythm"]
+  },
+  {
+    "name": "Allowed context: DJ narrative",
+    "description": "Music references ARE okay when topic is about DJing",
+    "user_prompt": "High energy EDM festival banger",
+    "lyrics_about": "a DJ playing their first big festival set",
+    "selected_artists": ["Tiesto", "Martin Garrix"],
+    "tags": ["edm", "festival", "high-energy"],
+    "lyric_red_flags": [],
+    "lyric_green_flags": ["crowd", "stage", "lights", "drop", "hands up"]
+  },
+  {
+    "name": "Allowed context: record store",
+    "description": "Vinyl references ARE okay when topic is about records",
+    "user_prompt": "Nostalgic indie pop",
+    "lyrics_about": "finding a rare vinyl at a record store",
+    "selected_artists": ["Mac DeMarco", "Tame Impala"],
+    "tags": ["indie", "nostalgic"],
+    "lyric_red_flags": [],
+    "lyric_green_flags": ["vinyl", "record", "needle", "album"]
+  },
+  {
+    "name": "Contrast test: upbeat production + sad topic",
+    "description": "Lyrics should match topic (sad) not production (upbeat)",
+    "user_prompt": "Upbeat dance pop with major key synths",
+    "lyrics_about": "hiding depression behind a smile",
+    "selected_artists": ["Robyn", "Carly Rae Jepsen"],
+    "tags": ["pop", "dance", "upbeat"],
+    "lyric_red_flags": ["dance floor", "party all night", "feel so good", "synth"]
+  },
+  {
+    "name": "Contrast test: dark production + hopeful topic",
+    "description": "Lyrics should match topic (hopeful) not production (dark)",
+    "user_prompt": "Dark industrial with distorted vocals",
+    "lyrics_about": "recovery from addiction and finding light",
+    "selected_artists": ["Nine Inch Nails"],
+    "tags": ["industrial", "dark", "intense"],
+    "lyric_red_flags": ["industrial", "distorted", "dark sound", "machine"]
+  },
+  {
+    "name": "Style leakage: BPM reference",
+    "description": "Should NOT mention tempo or BPM in lyrics",
+    "user_prompt": "170 BPM drum and bass, high energy",
+    "lyrics_about": "running a marathon",
+    "selected_artists": ["Chase & Status"],
+    "tags": ["dnb", "fast", "energetic"],
+    "lyric_red_flags": ["bpm", "tempo", "fast beat", "170"]
+  },
+  {
+    "name": "Style leakage: key/mode reference",
+    "description": "Should NOT mention musical modes in lyrics",
+    "user_prompt": "Dark phrygian metal with middle eastern influences",
+    "lyrics_about": "ancient warriors preparing for battle",
+    "selected_artists": ["Gojira", "Meshuggah"],
+    "tags": ["metal", "phrygian", "epic"],
+    "lyric_red_flags": ["phrygian", "minor key", "mode", "scale"]
+  },
+  {
+    "name": "Style leakage: mixing/mastering terms",
+    "description": "Should NOT mention production/mixing terms",
+    "user_prompt": "Crisp pop production with wide stereo image",
+    "lyrics_about": "first day at a new job",
+    "selected_artists": ["Dua Lipa", "The Weeknd"],
+    "tags": ["pop", "polished", "modern"],
+    "lyric_red_flags": ["stereo", "mix", "crisp", "produced", "mastered"]
+  },
+  {
+    "name": "Emotional nuance: anger",
+    "description": "Should express anger through narrative, not describe the music",
+    "user_prompt": "Aggressive hardcore with breakdowns",
+    "lyrics_about": "betrayal by a close friend",
+    "selected_artists": ["Knocked Loose", "Code Orange"],
+    "tags": ["hardcore", "aggressive", "heavy"],
+    "lyric_red_flags": ["breakdown", "heavy riff", "mosh pit", "hardcore"]
+  },
+  {
+    "name": "Emotional nuance: joy",
+    "description": "Should express joy through imagery, not music description",
+    "user_prompt": "Bright, bouncy indie pop",
+    "lyrics_about": "adopting a rescue dog",
+    "selected_artists": ["Vampire Weekend", "MGMT"],
+    "tags": ["indie", "happy", "bright"],
+    "lyric_red_flags": ["bouncy", "bright sound", "happy song", "upbeat tune"]
+  },
+  {
+    "name": "Emotional nuance: nostalgia",
+    "description": "Should evoke nostalgia through story, not production references",
+    "user_prompt": "Warm analog synths with tape saturation",
+    "lyrics_about": "childhood summers at grandparents house",
+    "selected_artists": ["Boards of Canada"],
+    "tags": ["electronic", "nostalgic", "warm"],
+    "lyric_red_flags": ["analog", "tape", "warm sound", "vintage synth"]
+  },
+  {
+    "name": "Specific imagery: ocean",
+    "description": "Ocean topic should have ocean imagery, not style references",
+    "user_prompt": "Ambient post-rock with swelling dynamics",
+    "lyrics_about": "the vastness of the ocean",
+    "selected_artists": ["Sigur Ros", "Explosions in the Sky"],
+    "tags": ["post-rock", "ambient", "expansive"],
+    "lyric_red_flags": ["swell", "crescendo", "ambient", "post-rock"],
+    "lyric_green_flags": ["wave", "sea", "deep", "shore", "salt"]
+  },
+  {
+    "name": "Specific imagery: city",
+    "description": "City topic should have urban imagery",
+    "user_prompt": "Gritty boom-bap hip hop",
+    "lyrics_about": "walking through NYC at night",
+    "selected_artists": ["Nas", "Wu-Tang Clan"],
+    "tags": ["hip-hop", "boom-bap", "gritty"],
+    "lyric_red_flags": ["boom-bap", "sample", "gritty beat"],
+    "lyric_green_flags": ["street", "light", "corner", "skyline", "neon"]
+  },
+  {
+    "name": "Specific imagery: nature",
+    "description": "Nature topic should have natural imagery",
+    "user_prompt": "Cinematic neo-classical with full orchestra",
+    "lyrics_about": "watching the seasons change",
+    "selected_artists": ["Olafur Arnalds", "Max Richter"],
+    "tags": ["neo-classical", "cinematic"],
+    "lyric_red_flags": ["orchestra", "cinematic", "score", "strings"],
+    "lyric_green_flags": ["leaf", "snow", "bloom", "wind", "sun"]
+  },
+  {
+    "name": "Edge case: slow + fast contrast",
+    "description": "Should focus on topic despite tempo changes",
+    "user_prompt": "Starts slow and builds to intense climax",
+    "lyrics_about": "stages of grief",
+    "selected_artists": ["Godspeed You! Black Emperor"],
+    "tags": ["post-rock", "dynamic", "emotional"],
+    "lyric_red_flags": ["slow build", "climax", "tempo", "crescendo"]
+  },
+  {
+    "name": "Edge case: minimal lyrics request",
+    "description": "Even minimal lyrics should not reference the music",
+    "user_prompt": "Mostly instrumental with sparse vocals",
+    "lyrics_about": "meditation and inner peace",
+    "selected_artists": ["Sigur Ros"],
+    "tags": ["ambient", "minimal", "peaceful"],
+    "lyric_red_flags": ["instrumental", "sparse", "minimal sound"]
+  },
+  {
+    "name": "Artist leak prevention: explicit name",
+    "description": "Should NOT mention the artist even when asked to sound like them",
+    "user_prompt": "Make it sound exactly like Beyonce",
+    "lyrics_about": "female empowerment",
+    "selected_artists": ["Beyonce"],
+    "tags": ["pop", "rnb", "powerful"],
+    "lyric_red_flags": ["beyonce", "queen b"]
+  },
+  {
+    "name": "Artist leak prevention: multiple artists",
+    "description": "Should NOT mention any of the reference artists",
+    "user_prompt": "Blend of Kendrick Lamar and Radiohead",
+    "lyrics_about": "systemic inequality",
+    "selected_artists": ["Kendrick Lamar", "Radiohead"],
+    "tags": ["hip-hop", "alternative", "conscious"],
+    "lyric_red_flags": ["kendrick", "lamar", "radiohead", "thom yorke"]
+  },
+  {
+    "name": "Genre cliche: love song trap",
+    "description": "Love song should have depth, not just 'love you baby'",
+    "user_prompt": "Smooth R&B slow jam",
+    "lyrics_about": "long-term love that has weathered storms",
+    "selected_artists": ["D'Angelo", "Erykah Badu"],
+    "tags": ["rnb", "slow jam", "sensual"],
+    "lyric_red_flags": ["smooth jam", "slow groove", "baby girl", "sexy beat"]
+  },
+  {
+    "name": "Genre cliche: party song trap",
+    "description": "Party topic can be fun but should not be self-referential about the song",
+    "user_prompt": "High energy house music for clubs",
+    "lyrics_about": "celebrating a promotion with friends",
+    "selected_artists": ["Fisher", "Chris Lake"],
+    "tags": ["house", "club", "party"],
+    "lyric_red_flags": ["this song", "dj play", "club banger", "dance anthem"]
+  }
+]

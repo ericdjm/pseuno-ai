@@ -1,0 +1,705 @@
+[
+  {
+    "name": "Rush 70s - selected_artists method",
+    "selected_artists": ["Rush (1970s era)"],
+    "song_prompt": "epic progressive rock journey",
+    "lyrics_about": "a voyage through space and time",
+    "tags": ["prog rock", "70s"],
+    "suno_green_flags": [
+      "progressive",
+      "complex",
+      "synthesizer",
+      "time signature",
+      "epic",
+      "virtuoso",
+      "bass",
+      "dynamic"
+    ],
+    "suno_red_flags": [
+      "Rush",
+      "Geddy",
+      "Neil Peart",
+      "Lifeson",
+      "synth-pop",
+      "power ballad",
+      "80s production"
+    ],
+    "notes": "70s Rush = raw prog, less synth-heavy than 80s, complex arrangements, Hemispheres/2112 era"
+  },
+  {
+    "name": "Rush 80s - selected_artists method",
+    "selected_artists": ["Rush (1980s era)"],
+    "song_prompt": "synth-driven progressive rock anthem",
+    "lyrics_about": "the pressure of modern life",
+    "tags": ["prog rock", "80s", "synth"],
+    "suno_green_flags": [
+      "synthesizer",
+      "keyboard",
+      "polished",
+      "anthem",
+      "progressive",
+      "melodic",
+      "driving",
+      "power"
+    ],
+    "suno_red_flags": [
+      "Rush",
+      "Geddy",
+      "Neil Peart",
+      "raw",
+      "lo-fi",
+      "garage"
+    ],
+    "notes": "80s Rush = Moving Pictures/Signals era, prominent synths, polished production, still complex but more accessible"
+  },
+  {
+    "name": "Rush 70s - user prompt method",
+    "selected_artists": [],
+    "song_prompt": "I want something that sounds like 1970s Rush - epic progressive rock with complex time signatures",
+    "lyrics_about": "an ancient temple discovered in the mountains",
+    "tags": [],
+    "suno_green_flags": [
+      "progressive",
+      "complex",
+      "time signature",
+      "epic",
+      "70s",
+      "rock",
+      "virtuoso"
+    ],
+    "suno_red_flags": [
+      "Rush",
+      "Geddy Lee",
+      "synth-pop"
+    ],
+    "notes": "Artist mentioned in prompt - should extract style without naming the band"
+  },
+  {
+    "name": "Tool - selected_artists method",
+    "selected_artists": ["Tool"],
+    "song_prompt": "dark progressive metal with odd time signatures",
+    "lyrics_about": "confronting inner demons and shadow self",
+    "tags": ["prog metal", "alternative metal"],
+    "suno_green_flags": [
+      "progressive metal",
+      "odd time",
+      "polyrhythm",
+      "heavy",
+      "atmospheric",
+      "dark",
+      "brooding",
+      "bass-driven",
+      "tribal",
+      "hypnotic"
+    ],
+    "suno_red_flags": [
+      "Tool",
+      "Maynard",
+      "Adam Jones",
+      "Danny Carey",
+      "nu-metal",
+      "pop",
+      "upbeat",
+      "cheerful"
+    ],
+    "notes": "Tool = hypnotic prog metal, polyrhythmic, dark atmosphere, tribal elements, long song structures"
+  },
+  {
+    "name": "Tool - user prompt method",
+    "selected_artists": [],
+    "song_prompt": "something like Tool - heavy, introspective, with complex drumming",
+    "lyrics_about": "the spiral of consciousness",
+    "tags": ["metal"],
+    "suno_green_flags": [
+      "progressive",
+      "metal",
+      "heavy",
+      "introspective",
+      "complex",
+      "drums",
+      "dark"
+    ],
+    "suno_red_flags": [
+      "Tool",
+      "Maynard James Keenan"
+    ],
+    "notes": "Artist in prompt - extract Tool's essence without naming"
+  },
+  {
+    "name": "Dire Straits - selected_artists method",
+    "selected_artists": ["Dire Straits"],
+    "song_prompt": "laid-back guitar-driven rock with storytelling",
+    "lyrics_about": "a musician playing in empty bars",
+    "tags": ["rock", "80s"],
+    "suno_green_flags": [
+      "fingerpicking",
+      "clean guitar",
+      "laid-back",
+      "groove",
+      "storytelling",
+      "British",
+      "melodic",
+      "sophisticated",
+      "warm",
+      "Stratocaster"
+    ],
+    "suno_red_flags": [
+      "Dire Straits",
+      "Mark Knopfler",
+      "Knopfler",
+      "distorted",
+      "aggressive",
+      "punk",
+      "thrash"
+    ],
+    "notes": "Dire Straits = clean Strat tone, fingerpicking, laid-back groove, sophisticated arrangements"
+  },
+  {
+    "name": "Dire Straits - user prompt method",
+    "selected_artists": [],
+    "song_prompt": "Mark Knopfler style guitar, like Sultans of Swing",
+    "lyrics_about": "old jazz musicians in a small club",
+    "tags": [],
+    "suno_green_flags": [
+      "fingerpicking",
+      "clean",
+      "guitar",
+      "jazz influence",
+      "melodic",
+      "groove"
+    ],
+    "suno_red_flags": [
+      "Knopfler",
+      "Dire Straits",
+      "Sultans of Swing"
+    ],
+    "notes": "Specific song reference in prompt - should capture style, not name"
+  },
+  {
+    "name": "Skrillex 2012 - selected_artists method",
+    "selected_artists": ["Skrillex (2012 era)"],
+    "song_prompt": "aggressive dubstep with massive drops",
+    "lyrics_about": "chaos and energy of a festival crowd",
+    "tags": ["dubstep", "EDM", "brostep"],
+    "suno_green_flags": [
+      "dubstep",
+      "wobble bass",
+      "drop",
+      "aggressive",
+      "glitch",
+      "distorted",
+      "synth",
+      "build-up",
+      "heavy bass",
+      "electronic"
+    ],
+    "suno_red_flags": [
+      "Skrillex",
+      "Sonny Moore",
+      "future bass",
+      "melodic dubstep",
+      "chill",
+      "ambient"
+    ],
+    "notes": "2012 Skrillex = Bangarang era, aggressive brostep, massive drops, wobble bass, glitchy"
+  },
+  {
+    "name": "Skrillex 2012 - user prompt method",
+    "selected_artists": [],
+    "song_prompt": "dirty dubstep like early Skrillex, Scary Monsters era",
+    "lyrics_about": "losing yourself on the dance floor",
+    "tags": ["EDM"],
+    "suno_green_flags": [
+      "dubstep",
+      "bass",
+      "drop",
+      "aggressive",
+      "electronic",
+      "dirty"
+    ],
+    "suno_red_flags": [
+      "Skrillex",
+      "Scary Monsters"
+    ],
+    "notes": "Era-specific reference - should capture 2012 brostep sound"
+  },
+  {
+    "name": "Polyphia - selected_artists method",
+    "selected_artists": ["Polyphia"],
+    "song_prompt": "technical progressive rock with hip-hop influences",
+    "lyrics_about": null,
+    "tags": ["prog", "instrumental", "math rock"],
+    "suno_green_flags": [
+      "technical",
+      "guitar",
+      "instrumental",
+      "clean tone",
+      "hip-hop",
+      "trap",
+      "808",
+      "progressive",
+      "virtuoso",
+      "modern",
+      "fusion"
+    ],
+    "suno_red_flags": [
+      "Polyphia",
+      "Tim Henson",
+      "Scott LePage",
+      "metal",
+      "distorted",
+      "screaming"
+    ],
+    "notes": "Polyphia = clean guitar virtuosity, trap/hip-hop drums, modern prog, no distortion"
+  },
+  {
+    "name": "Polyphia - user prompt method",
+    "selected_artists": [],
+    "song_prompt": "instrumental prog like Polyphia with trap beats and clean guitars",
+    "lyrics_about": null,
+    "tags": [],
+    "suno_green_flags": [
+      "instrumental",
+      "clean guitar",
+      "trap",
+      "technical",
+      "progressive"
+    ],
+    "suno_red_flags": [
+      "Polyphia",
+      "Tim Henson"
+    ],
+    "notes": "Artist + style description in prompt"
+  },
+  {
+    "name": "Megadeth - selected_artists method",
+    "selected_artists": ["Megadeth"],
+    "song_prompt": "fast thrash metal with technical riffs",
+    "lyrics_about": "political corruption and war",
+    "tags": ["thrash metal", "80s metal"],
+    "suno_green_flags": [
+      "thrash",
+      "metal",
+      "fast",
+      "technical",
+      "riff",
+      "aggressive",
+      "shred",
+      "palm mute",
+      "double bass",
+      "precision"
+    ],
+    "suno_red_flags": [
+      "Megadeth",
+      "Dave Mustaine",
+      "Mustaine",
+      "Metallica",
+      "nu-metal",
+      "groove metal",
+      "djent"
+    ],
+    "notes": "Megadeth = technical thrash, precise riffing, political themes, faster than Metallica"
+  },
+  {
+    "name": "Megadeth - user prompt method",
+    "selected_artists": [],
+    "song_prompt": "thrash metal like Megadeth's Rust in Peace album",
+    "lyrics_about": "nuclear annihilation",
+    "tags": ["metal"],
+    "suno_green_flags": [
+      "thrash",
+      "technical",
+      "fast",
+      "metal",
+      "shred"
+    ],
+    "suno_red_flags": [
+      "Megadeth",
+      "Rust in Peace",
+      "Mustaine"
+    ],
+    "notes": "Album-specific reference - Rust in Peace is peak technical thrash"
+  },
+  {
+    "name": "Hiromi - selected_artists method",
+    "selected_artists": ["Hiromi Uehara"],
+    "song_prompt": "virtuosic jazz piano with explosive energy",
+    "lyrics_about": null,
+    "tags": ["jazz", "piano", "fusion"],
+    "suno_green_flags": [
+      "jazz",
+      "piano",
+      "virtuoso",
+      "explosive",
+      "dynamic",
+      "fusion",
+      "technical",
+      "fast",
+      "energetic",
+      "improvisation",
+      "acoustic"
+    ],
+    "suno_red_flags": [
+      "Hiromi",
+      "Uehara",
+      "smooth jazz",
+      "elevator music",
+      "ambient",
+      "new age"
+    ],
+    "notes": "Hiromi = explosive jazz piano, incredible dynamics, fusion elements, NOT smooth jazz"
+  },
+  {
+    "name": "Hiromi - user prompt method",
+    "selected_artists": [],
+    "song_prompt": "jazz piano in the style of Hiromi - wild, energetic, technical",
+    "lyrics_about": null,
+    "tags": [],
+    "suno_green_flags": [
+      "jazz",
+      "piano",
+      "energetic",
+      "technical",
+      "wild"
+    ],
+    "suno_red_flags": [
+      "Hiromi"
+    ],
+    "notes": "Artist named in prompt with style descriptors"
+  },
+  {
+    "name": "Tupac - selected_artists method",
+    "selected_artists": ["Tupac", "2Pac"],
+    "song_prompt": "west coast hip-hop with emotional depth",
+    "lyrics_about": "growing up in the struggle, hope despite hardship",
+    "tags": ["hip-hop", "90s", "west coast"],
+    "suno_green_flags": [
+      "west coast",
+      "hip-hop",
+      "90s",
+      "g-funk",
+      "conscious",
+      "emotional",
+      "street",
+      "piano",
+      "synth",
+      "boom bap"
+    ],
+    "suno_red_flags": [
+      "Tupac",
+      "2Pac",
+      "Shakur",
+      "trap",
+      "autotune",
+      "mumble rap",
+      "drill"
+    ],
+    "notes": "Tupac = 90s west coast, g-funk influences, conscious lyrics, emotional delivery"
+  },
+  {
+    "name": "Tupac - user prompt method",
+    "selected_artists": [],
+    "song_prompt": "90s west coast hip-hop like Tupac, with that California Love vibe",
+    "lyrics_about": "life on the streets and dreams of something better",
+    "tags": [],
+    "suno_green_flags": [
+      "west coast",
+      "90s",
+      "hip-hop",
+      "g-funk"
+    ],
+    "suno_red_flags": [
+      "Tupac",
+      "2Pac",
+      "California Love"
+    ],
+    "notes": "Song reference in prompt - capture g-funk era sound"
+  },
+  {
+    "name": "Tears for Fears - selected_artists method",
+    "selected_artists": ["Tears for Fears"],
+    "song_prompt": "atmospheric 80s synth-pop with emotional depth",
+    "lyrics_about": "the weight of the world and cathartic release",
+    "tags": ["synth-pop", "80s", "new wave"],
+    "suno_green_flags": [
+      "synth-pop",
+      "80s",
+      "atmospheric",
+      "emotional",
+      "new wave",
+      "synthesizer",
+      "reverb",
+      "anthemic",
+      "melodic",
+      "lush"
+    ],
+    "suno_red_flags": [
+      "Tears for Fears",
+      "Roland Orzabal",
+      "Curt Smith",
+      "disco",
+      "punk",
+      "grunge"
+    ],
+    "notes": "Tears for Fears = lush 80s synth-pop, emotional depth, anthemic, reverb-heavy"
+  },
+  {
+    "name": "Tears for Fears - user prompt method",
+    "selected_artists": [],
+    "song_prompt": "something like Tears for Fears, Everybody Wants to Rule the World vibes",
+    "lyrics_about": "ambition and the cost of success",
+    "tags": ["80s"],
+    "suno_green_flags": [
+      "synth",
+      "80s",
+      "melodic",
+      "atmospheric"
+    ],
+    "suno_red_flags": [
+      "Tears for Fears",
+      "Everybody Wants to Rule the World"
+    ],
+    "notes": "Iconic song reference - capture that specific 80s synth-pop feel"
+  },
+  {
+    "name": "Rush 70s vs 80s contrast - multiple artists",
+    "selected_artists": ["Rush (1970s era)", "Rush (1980s era)"],
+    "song_prompt": "blend of raw prog and polished synth rock",
+    "lyrics_about": "evolution and change over time",
+    "tags": ["prog rock"],
+    "suno_green_flags": [
+      "progressive",
+      "synthesizer",
+      "complex",
+      "dynamic",
+      "rock"
+    ],
+    "suno_red_flags": [
+      "Rush",
+      "Geddy Lee",
+      "Neil Peart"
+    ],
+    "notes": "Testing multi-era artist handling - should blend both styles"
+  },
+  {
+    "name": "Cross-genre fusion - Polyphia meets Skrillex",
+    "selected_artists": ["Polyphia", "Skrillex (2012 era)"],
+    "song_prompt": "technical guitar with dubstep drops",
+    "lyrics_about": null,
+    "tags": ["electronic", "prog"],
+    "suno_green_flags": [
+      "technical",
+      "guitar",
+      "dubstep",
+      "electronic",
+      "drop",
+      "fusion"
+    ],
+    "suno_red_flags": [
+      "Polyphia",
+      "Skrillex",
+      "Tim Henson"
+    ],
+    "notes": "Testing fusion of two distinct styles"
+  },
+  {
+    "name": "Metal fusion - Tool meets Megadeth",
+    "selected_artists": ["Tool", "Megadeth"],
+    "song_prompt": "progressive thrash with hypnotic grooves",
+    "lyrics_about": "war and the psychology of violence",
+    "tags": ["metal", "prog metal"],
+    "suno_green_flags": [
+      "progressive",
+      "thrash",
+      "metal",
+      "heavy",
+      "complex",
+      "groove"
+    ],
+    "suno_red_flags": [
+      "Tool",
+      "Megadeth",
+      "Maynard",
+      "Mustaine"
+    ],
+    "notes": "Testing metal subgenre fusion"
+  },
+  {
+    "name": "Jazz-Rock fusion - Hiromi meets Dire Straits",
+    "selected_artists": ["Hiromi Uehara", "Dire Straits"],
+    "song_prompt": "sophisticated jazz-rock with virtuosic piano and guitar",
+    "lyrics_about": null,
+    "tags": ["jazz", "rock", "fusion"],
+    "suno_green_flags": [
+      "jazz",
+      "rock",
+      "piano",
+      "guitar",
+      "virtuoso",
+      "sophisticated",
+      "fusion"
+    ],
+    "suno_red_flags": [
+      "Hiromi",
+      "Dire Straits",
+      "Knopfler"
+    ],
+    "notes": "Testing jazz-rock fusion with two distinct artists"
+  },
+  {
+    "name": "Hip-hop meets synth-pop - Tupac meets Tears for Fears",
+    "selected_artists": ["Tupac", "Tears for Fears"],
+    "song_prompt": "emotional 90s hip-hop with lush synth production",
+    "lyrics_about": "inner turmoil and societal pressure",
+    "tags": ["hip-hop", "synth"],
+    "suno_green_flags": [
+      "hip-hop",
+      "synth",
+      "emotional",
+      "90s",
+      "atmospheric"
+    ],
+    "suno_red_flags": [
+      "Tupac",
+      "2Pac",
+      "Tears for Fears"
+    ],
+    "notes": "Testing unusual cross-genre fusion"
+  },
+  {
+    "name": "Complex prompt - Rush 70s with specific descriptors",
+    "selected_artists": ["Rush (1970s era)"],
+    "song_prompt": "I want 2112-era progressive rock with complex 7/8 time signatures, extended instrumental sections, and that classic analog synth sound mixed with heavy bass",
+    "lyrics_about": "a dystopian society controlled by priests of technology",
+    "tags": ["prog rock", "concept album"],
+    "suno_green_flags": [
+      "progressive",
+      "7/8",
+      "complex",
+      "instrumental",
+      "analog",
+      "synth",
+      "bass",
+      "epic",
+      "dystopian"
+    ],
+    "suno_red_flags": [
+      "Rush",
+      "2112",
+      "Geddy"
+    ],
+    "notes": "Testing detailed prompt with album reference - should NOT mention 2112 in output"
+  },
+  {
+    "name": "Minimal prompt - Tool",
+    "selected_artists": ["Tool"],
+    "song_prompt": "make it heavy",
+    "lyrics_about": "spirals",
+    "tags": [],
+    "suno_green_flags": [
+      "heavy",
+      "metal",
+      "dark"
+    ],
+    "suno_red_flags": [
+      "Tool"
+    ],
+    "notes": "Testing minimal user input - should still capture Tool essence"
+  },
+  {
+    "name": "Vague era reference - 80s Rush without explicit era tag",
+    "selected_artists": ["Rush"],
+    "song_prompt": "synth-heavy prog like Signals or Power Windows",
+    "lyrics_about": "the digital age and human connection",
+    "tags": [],
+    "suno_green_flags": [
+      "synth",
+      "progressive",
+      "80s",
+      "keyboard"
+    ],
+    "suno_red_flags": [
+      "Rush",
+      "Signals",
+      "Power Windows"
+    ],
+    "notes": "Album names in prompt should inform style but not appear in output"
+  },
+  {
+    "name": "Artist comparison in prompt",
+    "selected_artists": [],
+    "song_prompt": "something between Megadeth's technicality and Tool's atmosphere",
+    "lyrics_about": "the cycle of destruction",
+    "tags": ["metal"],
+    "suno_green_flags": [
+      "technical",
+      "atmospheric",
+      "metal",
+      "progressive",
+      "heavy"
+    ],
+    "suno_red_flags": [
+      "Megadeth",
+      "Tool",
+      "Mustaine",
+      "Maynard"
+    ],
+    "notes": "Testing artist comparison phrasing - extract blend of styles"
+  },
+  {
+    "name": "Skrillex with soft lyrics topic",
+    "selected_artists": ["Skrillex (2012 era)"],
+    "song_prompt": "aggressive dubstep production",
+    "lyrics_about": "a peaceful meadow at sunset",
+    "tags": ["dubstep"],
+    "suno_green_flags": [
+      "dubstep",
+      "aggressive",
+      "bass",
+      "drop"
+    ],
+    "suno_red_flags": [
+      "Skrillex"
+    ],
+    "lyric_red_flags": [
+      "drop",
+      "bass",
+      "wobble",
+      "dubstep"
+    ],
+    "lyric_green_flags": [
+      "meadow",
+      "sunset",
+      "peaceful",
+      "sky",
+      "grass"
+    ],
+    "notes": "Testing separation of aggressive production style from peaceful lyric content"
+  },
+  {
+    "name": "Tupac with party topic",
+    "selected_artists": ["Tupac"],
+    "song_prompt": "west coast g-funk vibes",
+    "lyrics_about": "celebrating with friends at a beach party",
+    "tags": ["hip-hop"],
+    "suno_green_flags": [
+      "west coast",
+      "g-funk",
+      "hip-hop",
+      "90s"
+    ],
+    "suno_red_flags": [
+      "Tupac",
+      "2Pac"
+    ],
+    "lyric_green_flags": [
+      "beach",
+      "party",
+      "friends",
+      "celebrate",
+      "sun"
+    ],
+    "notes": "Lighter lyric topic with Tupac production style"
+  }
+]
+
