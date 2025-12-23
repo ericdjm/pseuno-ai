@@ -153,11 +153,10 @@ def test_generation_id_is_unique():
     assert result1["generation_id"] != result2["generation_id"]
 
 
-def test_suno_prompt_over_500_triggers_repair_or_fallback():
-    """SUNO PROMPT >500 chars is invalid and triggers repair/fallback."""
+def test_suno_prompt_over_500_triggers_repair_and_then_error():
+    """SUNO PROMPT >500 chars is invalid; after repairs are exhausted we return an error (no fallback)."""
     long_prompt = "A" * 600
     output = _valid_output(suno_prompt=long_prompt)
-    # Provide only one invalid output → will repair once, then fallback
     llm = FakeLLM([output, output, output])
     builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(
@@ -167,13 +166,14 @@ def test_suno_prompt_over_500_triggers_repair_or_fallback():
 
     result = asyncio.run(builder.generate(req))
 
-    # Should have triggered repairs and ultimately fallback
-    assert result["debug_info"]["repaired"] is True
-    assert len(result["suno_prompt"]) <= 500
+    assert llm.calls == 3  # initial + 2 repairs (default)
+    assert result["success"] is False
+    assert "issues" in result and result["issues"]
+    assert any("SUNO PROMPT exceeds 500 characters" in issue for issue in result["issues"])
 
 
-def test_weirdness_out_of_range_triggers_repair_or_fallback():
-    """Weirdness values outside 0-100 are invalid and trigger repair/fallback."""
+def test_weirdness_out_of_range_triggers_repair_and_then_error():
+    """Weirdness values outside 0-100 are invalid; after repairs we return an error (no fallback)."""
     # Value > 100 is invalid per validator
     output_high = _valid_output(weirdness=150)
     llm = FakeLLM([output_high, output_high, output_high])
@@ -182,13 +182,13 @@ def test_weirdness_out_of_range_triggers_repair_or_fallback():
 
     result = asyncio.run(builder.generate(req))
 
-    # Should have triggered repairs and ultimately fallback (which uses 50)
-    assert result["debug_info"]["repaired"] is True
-    assert 0 <= result["weirdness"] <= 100
+    assert llm.calls == 3
+    assert result["success"] is False
+    assert any("WEIRDNESS must be between 0 and 100" in issue for issue in result["issues"])
 
 
-def test_style_influence_out_of_range_triggers_repair_or_fallback():
-    """Style influence values outside 0-100 are invalid and trigger repair/fallback."""
+def test_style_influence_out_of_range_triggers_repair_and_then_error():
+    """Style influence values outside 0-100 are invalid; after repairs we return an error (no fallback)."""
     output = _valid_output(style_influence=200)
     llm = FakeLLM([output, output, output])
     builder = AgentPromptGraph(_settings(), llm=llm)
@@ -196,9 +196,9 @@ def test_style_influence_out_of_range_triggers_repair_or_fallback():
 
     result = asyncio.run(builder.generate(req))
 
-    # Should have triggered repairs and ultimately fallback (which uses 50)
-    assert result["debug_info"]["repaired"] is True
-    assert 0 <= result["style_influence"] <= 100
+    assert llm.calls == 3
+    assert result["success"] is False
+    assert any("STYLE INFLUENCE must be between 0 and 100" in issue for issue in result["issues"])
 
 
 def test_tags_are_passed_through():
@@ -313,7 +313,7 @@ def test_repairs_when_artist_name_leaks_in_suno_prompt_only():
 
 
 def test_falls_back_after_two_failed_repairs():
-    # Provide three invalid outputs (initial + 2 repairs). Builder should fallback deterministically.
+    # Provide three invalid outputs (initial + 2 repairs). Builder should return an error (no fallback).
     invalid = "SUNO PROMPT\nblah\n"
     llm = FakeLLM([invalid, invalid, invalid])
     builder = AgentPromptGraph(_settings(), llm=llm)
@@ -326,12 +326,8 @@ def test_falls_back_after_two_failed_repairs():
 
     result = asyncio.run(builder.generate(req))
     assert llm.calls == 3  # initial + 2 repairs
-    assert result["debug_info"]["repaired"] is True
-    # Fallback should respect <=500 and scrub artist name from SUNO PROMPT.
-    assert "will" not in result["suno_prompt"].lower()
-    assert len(result["suno_prompt"]) <= 500
-    assert isinstance(result["weirdness"], int)
-    assert isinstance(result["style_influence"], int)
+    assert result["success"] is False
+    assert "issues" in result and result["issues"]
 
 
 # ---------------------------------------------------------------------------
@@ -357,12 +353,10 @@ def test_repair_disabled_skips_repair_attempts():
 
     result = asyncio.run(builder.generate(req))
 
-    # Should only call LLM once (no repairs), then immediately fallback
+    # Should only call LLM once (no repairs), then return error
     assert llm.calls == 1
-    # Fallback is used, so repaired=True (fallback counts as repaired)
-    assert result["debug_info"]["repaired"] is True
-    assert result["debug_info"]["repair_enabled"] is False
-    assert result["debug_info"]["max_repairs"] == 2  # config default
+    assert result["success"] is False
+    assert "issues" in result and result["issues"]
 
 
 def test_custom_max_repairs_is_respected():
@@ -386,12 +380,12 @@ def test_custom_max_repairs_is_respected():
 
     # Should call LLM 6 times: initial + 5 repairs
     assert llm.calls == 6
-    assert result["debug_info"]["repaired"] is True
-    assert result["debug_info"]["max_repairs"] == 5
+    assert result["success"] is False
+    assert "issues" in result and result["issues"]
 
 
 def test_zero_max_repairs_goes_straight_to_fallback():
-    """When agent_max_repairs=0, invalid output immediately falls back."""
+    """When agent_max_repairs=0, invalid output immediately returns error (no fallback)."""
     invalid = "SUNO PROMPT\nblah\n"
     llm = FakeLLM([invalid])
     settings = Settings(
@@ -408,10 +402,10 @@ def test_zero_max_repairs_goes_straight_to_fallback():
 
     result = asyncio.run(builder.generate(req))
 
-    # Only 1 LLM call (initial), then immediate fallback
+    # Only 1 LLM call (initial), then immediate error
     assert llm.calls == 1
-    assert result["debug_info"]["repaired"] is True
-    assert result["debug_info"]["max_repairs"] == 0
+    assert result["success"] is False
+    assert "issues" in result and result["issues"]
 
 
 def test_debug_info_includes_repair_config():
