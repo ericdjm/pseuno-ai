@@ -116,7 +116,7 @@ Process:
 2. Identify 3 evocative adjectives for the target sound.
 3. Generate LYRICS about lyrics_about using metaphor/imagery only.
 4. Generate SUNO PROMPT as: [Era/Location] + [Genre] + [Adjectives] + [Vocals] + [Production].
-5. Generate EXCLUDE as opposite of target style.
+5. Generate EXCLUDE as opposite of target style and those that lead to genre drift.
 6. Set WEIRDNESS/STYLE INFLUENCE based on genre conventions.
 """
 
@@ -196,7 +196,8 @@ EXCLUDE_SPEC = """\
 ═══════════════════════════════════════════════════════════════════════════════
 EXCLUDE SPEC
 ═══════════════════════════════════════════════════════════════════════════════
-List sounds that are the OPPOSITE of target style.
+List sounds that are the OPPOSITE of target style and those that lead to genre drift.
+If the request includes explicit constraints (only/purely/no X), include disallowed instruments/sounds in EXCLUDE.
 Rock → exclude: synth, pop, auto-tune, acoustic, electronic
 Folk → exclude: electric guitar, heavy drums, distortion
 Metal → exclude: gentle, soft, acoustic, jazz, whispering
@@ -207,10 +208,10 @@ PARAMETER_SPEC = """\
 PARAMETER SPEC
 ═══════════════════════════════════════════════════════════════════════════════
 WEIRDNESS:
-- 30-40: Radio-friendly (pop, rock, country)
-- 50-65: Balanced (alternative, indie)
-- 66-79: Experimental (prog, avant-garde)
-- 80+: Chaos (use sparingly)
+- 20-30: Radio-friendly (pop, rock, country)
+- 30-55: Balanced (alternative, indie)
+- 55-75: Experimental (prog, avant-garde)
+- 75+: Chaos (use sparingly)
 
 STYLE INFLUENCE:
 - 90-95: Strict adherence (when style is specific)
