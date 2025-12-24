@@ -79,42 +79,52 @@ def upgrade() -> None:
     op.create_index(
         "ix_external_accounts_provider", "external_accounts", ["provider"]
     )
-    op.execute(
-        """
-        CREATE OR REPLACE FUNCTION set_updated_at_timestamp()
-        RETURNS TRIGGER AS $$
-        BEGIN
-            NEW.updated_at = NOW();
-            RETURN NEW;
-        END;
-        $$ LANGUAGE plpgsql;
-        """
-    )
-    op.execute(
-        """
-        CREATE TRIGGER set_users_updated_at
-        BEFORE UPDATE ON users
-        FOR EACH ROW
-        EXECUTE FUNCTION set_updated_at_timestamp();
-        """
-    )
-    op.execute(
-        """
-        CREATE TRIGGER set_external_accounts_updated_at
-        BEFORE UPDATE ON external_accounts
-        FOR EACH ROW
-        EXECUTE FUNCTION set_updated_at_timestamp();
-        """
-    )
+
+    # Postgres-only: create trigger function and triggers for updated_at
+    # SQLite doesn't support triggers in the same way, so we skip this
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        op.execute(
+            """
+            CREATE OR REPLACE FUNCTION set_updated_at_timestamp()
+            RETURNS TRIGGER AS $$
+            BEGIN
+                NEW.updated_at = NOW();
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+            """
+        )
+        op.execute(
+            """
+            CREATE TRIGGER set_users_updated_at
+            BEFORE UPDATE ON users
+            FOR EACH ROW
+            EXECUTE FUNCTION set_updated_at_timestamp();
+            """
+        )
+        op.execute(
+            """
+            CREATE TRIGGER set_external_accounts_updated_at
+            BEFORE UPDATE ON external_accounts
+            FOR EACH ROW
+            EXECUTE FUNCTION set_updated_at_timestamp();
+            """
+        )
 
 
 def downgrade() -> None:
     op.drop_index("ix_external_accounts_provider", table_name="external_accounts")
     op.drop_index("ix_external_accounts_user_id", table_name="external_accounts")
-    op.execute(
-        "DROP TRIGGER IF EXISTS set_external_accounts_updated_at ON external_accounts"
-    )
-    op.execute("DROP TRIGGER IF EXISTS set_users_updated_at ON users")
-    op.execute("DROP FUNCTION IF EXISTS set_updated_at_timestamp")
+
+    # Postgres-only: drop triggers and function
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        op.execute(
+            "DROP TRIGGER IF EXISTS set_external_accounts_updated_at ON external_accounts"
+        )
+        op.execute("DROP TRIGGER IF EXISTS set_users_updated_at ON users")
+        op.execute("DROP FUNCTION IF EXISTS set_updated_at_timestamp")
+
     op.drop_table("external_accounts")
     op.drop_table("users")

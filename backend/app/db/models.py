@@ -135,6 +135,127 @@ class SunoPrompt(Base):
     )
 
     owner: Mapped[User] = relationship(back_populates="suno_prompts")
+    term_links: Mapped[list["PromptTermLink"]] = relationship(
+        back_populates="prompt", cascade="all, delete-orphan"
+    )
 
 
-__all__ = ["Base", "User", "ExternalAccount", "SunoPrompt"]
+# =============================================================================
+# Phase 1: Term Registry
+# =============================================================================
+
+
+class Term(Base):
+    """Canonical term in the term registry (genre, mood, era, etc.)."""
+
+    __tablename__ = "terms"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    canonical: Mapped[str] = mapped_column(
+        String(100), nullable=False, unique=True, index=True
+    )
+    display_name: Mapped[Optional[str]] = mapped_column(String(100))
+    term_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="other", index=True
+    )  # artist|genre|mood|instrument|era|production|other
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    aliases: Mapped[list["TermAlias"]] = relationship(
+        back_populates="term", cascade="all, delete-orphan"
+    )
+    prompt_links: Mapped[list["PromptTermLink"]] = relationship(
+        back_populates="term", cascade="all, delete-orphan"
+    )
+
+
+class TermAlias(Base):
+    """Alternate spelling/variant that maps to a canonical term."""
+
+    __tablename__ = "term_aliases"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    alias: Mapped[str] = mapped_column(
+        String(100), nullable=False, unique=True, index=True
+    )
+    term_id: Mapped[int] = mapped_column(
+        ForeignKey("terms.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    term: Mapped[Term] = relationship(back_populates="aliases")
+
+
+class TermEvent(Base):
+    """Log of user interactions with terms (for learning co-occurrence)."""
+
+    __tablename__ = "term_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    event_type: Mapped[str] = mapped_column(
+        String(30), nullable=False, index=True
+    )  # query|select|save_prompt|spotify_seed|model_extracted
+    term_id: Mapped[int] = mapped_column(
+        ForeignKey("terms.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    candidate_term_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("terms.id", ondelete="CASCADE"), nullable=True
+    )  # for co-occurrence events
+    source_metadata: Mapped[Optional[str]] = mapped_column(Text)  # JSON blob
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+    )
+
+
+class PromptTermLink(Base):
+    """Link between a saved prompt and a term (for learning from saves)."""
+
+    __tablename__ = "prompt_term_links"
+    __table_args__ = (
+        UniqueConstraint("prompt_id", "term_id", name="uq_prompt_term_links_prompt_term"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    prompt_id: Mapped[int] = mapped_column(
+        ForeignKey("suno_prompts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    term_id: Mapped[int] = mapped_column(
+        ForeignKey("terms.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    source: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="user"
+    )  # user|model_extracted|spotify
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    prompt: Mapped[SunoPrompt] = relationship(back_populates="term_links")
+    term: Mapped[Term] = relationship(back_populates="prompt_links")
+
+
+__all__ = [
+    "Base",
+    "User",
+    "ExternalAccount",
+    "SunoPrompt",
+    "Term",
+    "TermAlias",
+    "TermEvent",
+    "PromptTermLink",
+]
