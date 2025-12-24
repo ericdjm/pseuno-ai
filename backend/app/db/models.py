@@ -240,13 +240,6 @@ class PromptTermLink(Base):
     source: Mapped[str] = mapped_column(
         String(20), nullable=False, default="user"
     )  # user|model_extracted|spotify
-    # Intent metadata (so we can distinguish mashups/contrast from “coherent style” later)
-    # Examples:
-    # - intent: coherent | mashup | contrast | transition | unknown
-    # - role: primary | secondary | side_a | side_b | unknown
-    intent: Mapped[str] = mapped_column(String(20), nullable=False, default="coherent")
-    role: Mapped[str] = mapped_column(String(20), nullable=False, default="primary")
-    confidence: Mapped[Optional[float]] = mapped_column(nullable=True)  # 0..1
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
