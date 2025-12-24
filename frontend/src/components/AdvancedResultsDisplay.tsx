@@ -93,10 +93,21 @@ export default function AdvancedResultsDisplay({
       {/* Title and ID */}
       <Box>
         <HStack justify="space-between" align="start">
-          <VStack align="start" spacing={1}>
-            <Text fontSize="2xl" fontWeight="bold">
-              {result.concept_title}
-            </Text>
+          <VStack align="start" spacing={1} flex={1}>
+            <HStack spacing={2} align="center">
+              <Text fontSize="2xl" fontWeight="bold">
+                {result.concept_title}
+              </Text>
+              <Button
+                size="xs"
+                leftIcon={<CopyIcon />}
+                onClick={() => copyToClipboard(result.concept_title, 'Title')}
+                colorScheme="green"
+                variant="ghost"
+              >
+                Copy
+              </Button>
+            </HStack>
             <Text fontSize="sm" color="gray.500">
               ID: {result.generation_id}
             </Text>
@@ -168,27 +179,6 @@ export default function AdvancedResultsDisplay({
 
       <Divider />
 
-      {/* Parameters */}
-      <Box>
-        <Text fontWeight="bold" mb={3}>Parameters</Text>
-        <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4}>
-          <Stat size="sm">
-            <StatLabel>Exclude</StatLabel>
-            <StatNumber fontSize="sm">{result.exclude || 'None'}</StatNumber>
-          </Stat>
-          <Stat size="sm">
-            <StatLabel>Weirdness</StatLabel>
-            <StatNumber>{result.weirdness}%</StatNumber>
-          </Stat>
-          <Stat size="sm">
-            <StatLabel>Style Influence</StatLabel>
-            <StatNumber>{result.style_influence}%</StatNumber>
-          </Stat>
-        </SimpleGrid>
-      </Box>
-
-      <Divider />
-
       {/* Suno Prompt */}
       <Box>
         <HStack justify="space-between" mb={2}>
@@ -249,6 +239,53 @@ export default function AdvancedResultsDisplay({
         >
           {result.lyrics}
         </Box>
+      </Box>
+
+      {/* Exclude - positioned after lyrics for easy copy-paste */}
+      {result.exclude && (
+        <>
+          <Divider />
+          <Box>
+            <HStack justify="space-between" mb={2}>
+              <Text fontWeight="bold">Exclude</Text>
+              <Button
+                size="sm"
+                leftIcon={<CopyIcon />}
+                onClick={() => copyToClipboard(result.exclude, 'Exclude')}
+                colorScheme="green"
+              >
+                Copy
+              </Button>
+            </HStack>
+            <Box
+              p={4}
+              bg="gray.800"
+              borderRadius="md"
+              whiteSpace="pre-wrap"
+              fontFamily="monospace"
+              fontSize="sm"
+            >
+              {result.exclude}
+            </Box>
+          </Box>
+        </>
+      )}
+
+      <Divider />
+
+      {/* Parameters */}
+      <Box>
+        <Text fontWeight="bold" mb={3}>Parameters</Text>
+        <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+          <Stat size="sm">
+            <StatLabel>Weirdness</StatLabel>
+            <StatNumber>{result.weirdness}%</StatNumber>
+          </Stat>
+          <Stat size="sm">
+            <StatLabel>Style Influence</StatLabel>
+            <StatNumber>{result.style_influence}%</StatNumber>
+          </Stat>
+        </SimpleGrid>
       </Box>
     </VStack>
   );
