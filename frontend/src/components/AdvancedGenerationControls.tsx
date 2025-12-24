@@ -124,7 +124,7 @@ export default function AdvancedGenerationControls({
           // Build a result object that matches AdvancedGenerateResponse shape
           const result = {
             generation_id: `reuse-${Date.now()}`,
-            concept_title: selectedSavedPrompt!.title || 'Reused Prompt',
+            concept_title: lyricsResult.song_title || selectedSavedPrompt!.title || 'Reused Prompt',
             suno_prompt: sunoPrompt,
             lyrics: lyricsResult.lyrics,
             exclude: selectedSavedPrompt!.exclude,

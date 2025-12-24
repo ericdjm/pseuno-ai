@@ -47,9 +47,27 @@ lyrics_about: {body.lyrics_about}
 END_CONTEXT"""
 
     # Use the agent's LLM client directly for a simpler call
-    lyrics = await agent._call_llm(LYRICS_SYSTEM_PROMPT, context_text)
+    raw_output = await agent._call_llm(LYRICS_SYSTEM_PROMPT, context_text)
 
-    # Clean up the response (remove any accidental headers/prose)
-    lyrics = lyrics.strip()
+    # Parse the output to extract SONG TITLE and LYRICS sections
+    # (The LLM returns section headers that must be stripped)
+    _, sections = agent._extract_sections(raw_output)
 
-    return LyricsOnlyResponse(lyrics=lyrics)
+    song_title = _first_non_empty_line(sections.get("SONG TITLE", ""))
+    lyrics = sections.get("LYRICS", "").strip()
+
+    # Fallback if parsing fails (raw output had no headers)
+    if not lyrics:
+        lyrics = raw_output.strip()
+    if not song_title:
+        song_title = "Untitled"
+
+    return LyricsOnlyResponse(song_title=song_title, lyrics=lyrics)
+
+
+def _first_non_empty_line(text: str) -> str:
+    """Extract the first non-empty line from text."""
+    for line in text.splitlines():
+        if line.strip():
+            return line.strip()
+    return ""

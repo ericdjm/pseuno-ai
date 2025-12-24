@@ -73,6 +73,7 @@ export interface LyricsOnlyRequest {
 }
 
 export interface LyricsOnlyResponse {
+  song_title: string;
   lyrics: string;
 }
 

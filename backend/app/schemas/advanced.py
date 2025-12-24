@@ -93,7 +93,8 @@ class LyricsOnlyRequest(BaseModel):
 
 class LyricsOnlyResponse(BaseModel):
     """
-    Response with just the generated lyrics.
+    Response with generated lyrics and song title.
     """
 
+    song_title: str = Field(description="Generated song title")
     lyrics: str = Field(description="Generated lyrics")
