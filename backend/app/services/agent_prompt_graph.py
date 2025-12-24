@@ -17,6 +17,7 @@ from langgraph.graph import END, StateGraph
 from app.config import Settings
 from app.schemas.advanced import AdvancedGenerateRequest
 from app.prompts import REPAIR_AGENT_SYSTEM_PROMPT
+from app.services.term_normalizer import normalize_tags
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ class _ParsedAgentOutput:
     song_title: str
     lyrics: str
     suno_prompt: str
+    terms_extracted: Tuple[str, ...]  # Phase 0: model-extracted terms (may be empty)
     exclude: str
     weirdness: int
     style_influence: int
@@ -429,6 +431,7 @@ class AgentPromptGraph:
             if len(parsed.suno_prompt) > 200
             else f"suno_prompt: {parsed.suno_prompt}"
         )
+        self._debug_log(f"terms_extracted: {parsed.terms_extracted}")
         self._debug_log(f"exclude: {parsed.exclude}")
         self._debug_log(f"weirdness: {parsed.weirdness}")
         self._debug_log(f"style_influence: {parsed.style_influence}")
@@ -529,6 +532,19 @@ class AgentPromptGraph:
         generation_id = self._create_generation_id(song_prompt, lyrics_about)
         context_hash = self._hash_context(context_pack)
 
+        # Phase 0: deterministic artists_used and tags_used from request
+        # terms_extracted from model output (may be empty)
+        # Artists: keep original display strings (UX), no normalization yet
+        artists_used = [
+            a.strip()
+            for a in (context_pack.get("selected_artists") or [])
+            if a and a.strip()
+        ]
+        # Tags: normalize to snake_case
+        tags_used = normalize_tags(context_pack.get("tags") or [])
+        # Terms: already normalized in _parse_terms_section
+        terms_extracted = list(parsed.terms_extracted)
+
         result = {
             "concept_title": concept_title,
             "lyrics": lyrics,
@@ -537,6 +553,10 @@ class AgentPromptGraph:
             "weirdness": weirdness,
             "style_influence": style_influence,
             "generation_id": generation_id,
+            # Phase 0 term outputs
+            "artists_used": artists_used,
+            "tags_used": tags_used,
+            "terms_extracted": terms_extracted,
             "debug_info": {
                 "agent_model": self.settings.llm_model,
                 "context_hash": context_hash,
@@ -588,6 +608,7 @@ class AgentPromptGraph:
         song_title = self._first_non_empty_line(sections.get("SONG TITLE", ""))
         lyrics = sections.get("LYRICS", "").strip()
         suno_prompt = sections.get("SUNO PROMPT", "").strip()
+        terms_extracted = self._parse_terms_section(sections.get("TERMS", ""))
         exclude = self._first_non_empty_line(sections.get("EXCLUDE", ""))
         weirdness = self._parse_percent(sections.get("WEIRDNESS", ""))
         style_influence = self._parse_percent(sections.get("STYLE INFLUENCE", ""))
@@ -598,10 +619,50 @@ class AgentPromptGraph:
             song_title=song_title,
             lyrics=lyrics,
             suno_prompt=suno_prompt,
+            terms_extracted=terms_extracted,
             exclude=exclude,
             weirdness=weirdness,
             style_influence=style_influence,
         )
+
+    def _parse_terms_section(self, raw: str) -> Tuple[str, ...]:
+        """
+        Parse the TERMS section into a tuple of lowercase_snake_case terms.
+        Phase 0: non-blocking — returns empty tuple if missing/malformed.
+        """
+        if not raw or not raw.strip():
+            return ()
+
+        # Split by commas or newlines
+        raw_terms = re.split(r"[,\n]+", raw)
+        terms: List[str] = []
+
+        for t in raw_terms:
+            # Strip whitespace
+            t = t.strip()
+            if not t:
+                continue
+            # Skip obvious prose/junk (too long, contains multiple spaces)
+            if len(t) > 50 or "  " in t:
+                continue
+            # Basic normalization: lowercase, replace spaces/hyphens with underscores
+            normalized = re.sub(r"[\s\-]+", "_", t.lower())
+            # Remove non-alphanumeric except underscores
+            normalized = re.sub(r"[^a-z0-9_]", "", normalized)
+            # Collapse multiple underscores
+            normalized = re.sub(r"_+", "_", normalized).strip("_")
+            if normalized and len(normalized) >= 2:
+                terms.append(normalized)
+
+        # Dedupe while preserving order
+        seen: set = set()
+        deduped: List[str] = []
+        for term in terms:
+            if term not in seen:
+                seen.add(term)
+                deduped.append(term)
+
+        return tuple(deduped)
 
     def _extract_sections(self, text: str) -> Tuple[Tuple[str, ...], Dict[str, str]]:
         """
@@ -640,7 +701,18 @@ class AgentPromptGraph:
         self, parsed: _ParsedAgentOutput, context_pack: Dict[str, Any]
     ) -> List[str]:
         issues: List[str] = []
-        required = (
+        # Phase 0: TERMS is optional in validation (non-blocking).
+        # We accept two valid orders: with TERMS or without TERMS.
+        required_with_terms = (
+            "SONG TITLE",
+            "LYRICS",
+            "SUNO PROMPT",
+            "TERMS",
+            "EXCLUDE",
+            "WEIRDNESS",
+            "STYLE INFLUENCE",
+        )
+        required_without_terms = (
             "SONG TITLE",
             "LYRICS",
             "SUNO PROMPT",
@@ -648,13 +720,40 @@ class AgentPromptGraph:
             "WEIRDNESS",
             "STYLE INFLUENCE",
         )
+        # Also accept order where TERMS appears but in different position (graceful)
+        core_required = {
+            "SONG TITLE",
+            "LYRICS",
+            "SUNO PROMPT",
+            "EXCLUDE",
+            "WEIRDNESS",
+            "STYLE INFLUENCE",
+        }
 
-        # Sections must exist, and appear in the required order (no missing / re-ordered).
-        if parsed.order != required:
-            issues.append(
-                f"Sections must be exactly {list(required)} in order; got {list(parsed.order)}."
-            )
-        for key in required:
+        # Check if order matches either valid pattern
+        order_valid = (
+            parsed.order == required_with_terms
+            or parsed.order == required_without_terms
+        )
+        # Also allow order with TERMS as long as all core sections are present and in relative order
+        if not order_valid:
+            # Check if all core required sections are present
+            order_set = set(parsed.order)
+            missing_core = core_required - order_set
+            if missing_core:
+                issues.append(f"Missing required sections: {list(missing_core)}.")
+            else:
+                # Check relative order of core sections (ignoring TERMS)
+                core_order = [s for s in parsed.order if s in core_required]
+                expected_core_order = [s for s in required_without_terms]
+                if core_order != expected_core_order:
+                    issues.append(
+                        f"Core sections must be in order {list(required_without_terms)}; "
+                        f"got {list(core_order)}."
+                    )
+
+        # Check for missing core sections
+        for key in core_required:
             if key not in parsed.sections:
                 issues.append(f"Missing required section: {key}.")
 
@@ -796,13 +895,15 @@ class AgentPromptGraph:
 
     def _normalize_header(self, line: str) -> Optional[str]:
         normalized = line.strip().upper().rstrip(":")
-        normalized = re.sub(r"^[A-F]\)\s*", "", normalized)
+        normalized = re.sub(r"^[A-G]\)\s*", "", normalized)
         if "SONG TITLE" in normalized or normalized == "TITLE":
             return "SONG TITLE"
         if normalized == "LYRICS":
             return "LYRICS"
         if "SUNO PROMPT" in normalized:
             return "SUNO PROMPT"
+        if normalized == "TERMS" or "TERMS" in normalized:
+            return "TERMS"
         if "EXCLUDE" in normalized:
             return "EXCLUDE"
         if "WEIRDNESS" in normalized:

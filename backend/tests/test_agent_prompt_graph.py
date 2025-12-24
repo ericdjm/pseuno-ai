@@ -38,13 +38,15 @@ def _settings() -> Settings:
 
 
 def _valid_output(
+    song_title: str = "Hello World",
     lyrics: str = "[Verse]\nhello world\n",
     suno_prompt: str = "Funky pop, crisp drums, bright bass",
     exclude: str = "cheesy, country",
-    weirdness: int = 50,
+    weirdness: int = 55,
     style_influence: int = 60,
 ) -> str:
     return (
+        f"SONG TITLE\n{song_title}\n\n"
         f"LYRICS\n{lyrics}\n\n"
         f"SUNO PROMPT\n{suno_prompt}\n\n"
         f"EXCLUDE\n{exclude}\n\n"
@@ -77,7 +79,7 @@ def test_valid_output_no_repairs_needed():
     assert result["lyrics"] == "[Verse]\nhello world"
     assert result["suno_prompt"] == "Funky pop, crisp drums, bright bass"
     assert result["exclude"] == "cheesy, country"
-    assert result["weirdness"] == 50
+    assert result["weirdness"] == 55
     assert result["style_influence"] == 60
 
 
@@ -106,9 +108,9 @@ def test_extracts_all_response_fields():
     assert "repaired" in result["debug_info"]
 
 
-def test_concept_title_derived_from_lyrics_about():
-    """Concept title is derived from lyrics_about when provided."""
-    output = _valid_output()
+def test_concept_title_from_llm_output():
+    """Concept title is taken from LLM output when provided."""
+    output = _valid_output(song_title="Ants On The Red Planet")
     llm = FakeLLM([output])
     builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(
@@ -118,13 +120,13 @@ def test_concept_title_derived_from_lyrics_about():
 
     result = asyncio.run(builder.generate(req))
 
-    # Title should be derived from first few words of lyrics_about
-    assert result["concept_title"] == "Ants Marching On Mars"
+    # Title should come from the LLM output
+    assert result["concept_title"] == "Ants On The Red Planet"
 
 
 def test_concept_title_falls_back_to_user_prompt():
-    """When lyrics_about is empty, concept title is derived from user_prompt."""
-    output = _valid_output()
+    """When LLM output has no title and lyrics_about is empty, concept title is derived from user_prompt."""
+    output = _valid_output(song_title="")  # Empty title triggers fallback
     llm = FakeLLM([output])
     builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(
@@ -247,6 +249,8 @@ def test_repairs_when_missing_sections():
     # First output is missing sections and order (invalid), second output is valid.
     bad = "LYRICS\n" "[Verse]\nhello\n" "\n" "SUNO PROMPT\n" "some prompt\n"
     good = (
+        "SONG TITLE\n"
+        "Ants On Mars\n\n"
         "LYRICS\n"
         "[Verse]\nhello\n\n"
         "SUNO PROMPT\n"
@@ -280,6 +284,8 @@ def test_repairs_when_missing_sections():
 def test_repairs_when_artist_name_leaks_in_suno_prompt_only():
     # First output leaks an artist name in SUNO PROMPT; second output fixes it.
     bad = (
+        "SONG TITLE\n"
+        "Dancing Alone\n\n"
         "LYRICS\n"
         "[Verse]\nhello\n\n"
         "SUNO PROMPT\n"
@@ -287,11 +293,13 @@ def test_repairs_when_artist_name_leaks_in_suno_prompt_only():
         "EXCLUDE\n"
         "cheesy\n\n"
         "WEIRDNESS\n"
-        "50\n\n"
+        "55\n\n"
         "STYLE INFLUENCE\n"
         "60\n"
     )
     good = (
+        "SONG TITLE\n"
+        "Dancing Alone\n\n"
         "LYRICS\n"
         "[Verse]\nhello\n\n"
         "SUNO PROMPT\n"
@@ -299,7 +307,7 @@ def test_repairs_when_artist_name_leaks_in_suno_prompt_only():
         "EXCLUDE\n"
         "cheesy\n\n"
         "WEIRDNESS\n"
-        "50\n\n"
+        "55\n\n"
         "STYLE INFLUENCE\n"
         "60\n"
     )

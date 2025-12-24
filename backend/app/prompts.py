@@ -84,14 +84,44 @@ Sections in exact order:
 1. SONG TITLE
 2. LYRICS
 3. SUNO PROMPT
-4. EXCLUDE
-5. WEIRDNESS
-6. STYLE INFLUENCE
+4. TERMS
+5. EXCLUDE
+6. WEIRDNESS
+7. STYLE INFLUENCE
 
 Constraints:
 - SONG TITLE: 1-5 words, evocative, no quotes. Derived from lyrics theme.
 - LYRICS: section tags required, usually 4 lines per section.
 - SUNO PROMPT: ≤{SUNO_PROMPT_MAX_CHARS} chars, flowing prose, no brackets.
+- TERMS: 8-20 comma-separated lowercase_snake_case descriptors. No artist names. No duplicates.
+- EXCLUDE: 1 line, comma-separated, ≥2 items, no trailing period.
+- WEIRDNESS: Single integer 0-100.
+- STYLE INFLUENCE: Single integer 0-100.
+
+Failure modes:
+- If style_request is empty: output `INSUFFICIENT_DATA`.
+- If artist reference unclear: describe generic era/production instead.
+"""
+
+# Output contract for repair agent - TERMS is NOT required here (Phase 0: optional in code)
+OUTPUT_CONTRACT_REPAIR = f"""\
+═══════════════════════════════════════════════════════════════════════════════
+OUTPUT CONTRACT
+═══════════════════════════════════════════════════════════════════════════════
+Sections in exact order:
+1. SONG TITLE
+2. LYRICS
+3. SUNO PROMPT
+4. TERMS (optional)
+5. EXCLUDE
+6. WEIRDNESS
+7. STYLE INFLUENCE
+
+Constraints:
+- SONG TITLE: 1-5 words, evocative, no quotes. Derived from lyrics theme.
+- LYRICS: section tags required, usually 4 lines per section.
+- SUNO PROMPT: ≤{SUNO_PROMPT_MAX_CHARS} chars, flowing prose, no brackets.
+- TERMS: If present, 8-20 comma-separated lowercase_snake_case descriptors. No artist names. No duplicates.
 - EXCLUDE: 1 line, comma-separated, ≥2 items, no trailing period.
 - WEIRDNESS: Single integer 0-100.
 - STYLE INFLUENCE: Single integer 0-100.
@@ -116,8 +146,9 @@ Process:
 2. Identify 3 evocative adjectives for the target sound.
 3. Generate LYRICS about lyrics_about using metaphor/imagery only.
 4. Generate SUNO PROMPT as: [Era/Location] + [Genre] + [Adjectives] + [Vocals] + [Production].
-5. Generate EXCLUDE as opposite of target style.
-6. Set WEIRDNESS/STYLE INFLUENCE based on genre conventions.
+5. Generate TERMS: extract 8-20 lowercase_snake_case tags describing the song's style, mood, era, and production.
+6. Generate EXCLUDE as opposite of target style.
+7. Set WEIRDNESS/STYLE INFLUENCE based on genre conventions.
 """
 
 LYRICS_SPEC = """\
@@ -192,6 +223,29 @@ Required components:
 5. Production: Recording context (live arena, polished studio, lo-fi tape)
 """
 
+TERMS_SPEC = """\
+═══════════════════════════════════════════════════════════════════════════════
+TERMS SPEC
+═══════════════════════════════════════════════════════════════════════════════
+Extract 8-20 descriptive terms that characterize the song's genre, mood, era, and production style.
+
+Format:
+- Comma-separated list on a single line
+- All lowercase_snake_case (e.g., classic_rock, analog_warmth, arena_drums)
+- No artist names (those come from user input, not here)
+- No duplicates
+
+Include a mix of:
+- Genre/subgenre: prog_rock, trip_hop, neo_soul, shoegaze
+- Era/location: late_90s_bristol, 80s_la, nordic_folk
+- Mood/energy: melancholic, upbeat, aggressive, dreamy
+- Production/texture: analog_warmth, lo_fi_tape, polished_studio, wall_of_sound
+- Instrumentation: synth_heavy, acoustic_guitar, orchestral, heavy_drums
+
+Example:
+classic_rock, prog, upbeat, analog_warmth, arena_drums, male_vocals, anthemic, 70s_stadium, guitar_driven, powerful_chorus
+"""
+
 EXCLUDE_SPEC = """\
 ═══════════════════════════════════════════════════════════════════════════════
 EXCLUDE SPEC
@@ -221,7 +275,7 @@ STYLE INFLUENCE:
 # COMPOSED PROMPTS
 # ===========================================================================
 
-# Full agent: generates all 6 sections (title, lyrics, suno prompt, exclude, weirdness, style influence)
+# Full agent: generates all 7 sections (title, lyrics, suno prompt, terms, exclude, weirdness, style influence)
 SONG_AGENT_SYSTEM_PROMPT = f"""\
 {POLICY}
 {OUTPUT_CONTRACT}
@@ -229,21 +283,24 @@ SONG_AGENT_SYSTEM_PROMPT = f"""\
 {LYRICS_SPEC}
 {SONG_TITLE_SPEC}
 {SUNO_PROMPT_SPEC}
+{TERMS_SPEC}
 {EXCLUDE_SPEC}
 {PARAMETER_SPEC}
 """
 
 # Repair agent: fixes structural issues in existing output
 # Needs: output format, all content specs to validate repairs
+# Note: Uses OUTPUT_CONTRACT_REPAIR which makes TERMS optional (Phase 0 policy)
 REPAIR_AGENT_SYSTEM_PROMPT = f"""\
 You are "Suno Formatter (Repair)."
 Your job is to repair the previous output so it strictly follows the required format.
 Return ONLY the repaired final output — no explanations.
 
-{OUTPUT_CONTRACT}
+{OUTPUT_CONTRACT_REPAIR}
 {LYRICS_SPEC}
 {SONG_TITLE_SPEC}
 {SUNO_PROMPT_SPEC}
+{TERMS_SPEC}
 {EXCLUDE_SPEC}
 {PARAMETER_SPEC}
 """

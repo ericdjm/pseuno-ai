@@ -71,6 +71,21 @@ class AdvancedGenerateResponse(BaseModel):
         description="Style influence percent (0-100)", ge=0, le=100
     )
     generation_id: str = Field(description="Reference ID for this generation")
+
+    # Phase 0 term outputs (deterministic artists/tags from request + model-extracted terms)
+    artists_used: list[str] = Field(
+        default_factory=list,
+        description="Artists used for style reference (deterministic, from request)",
+    )
+    tags_used: list[str] = Field(
+        default_factory=list,
+        description="Tags used for style hints (deterministic, from request)",
+    )
+    terms_extracted: list[str] = Field(
+        default_factory=list,
+        description="Model-extracted descriptive terms (may be empty)",
+    )
+
     debug_info: Optional[dict] = None
 
 
