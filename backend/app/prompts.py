@@ -215,7 +215,7 @@ WEIRDNESS:
 
 STYLE INFLUENCE:
 - 90-95: Strict adherence (when style is specific)
-- 70-85: Looser interpretation (when style is vague)
+- 70-90: Looser interpretation (when style is vague)
 """
 
 # ===========================================================================
