@@ -10,7 +10,7 @@ from typing import Optional
 from pydantic import ConfigDict, Field, model_validator
 from pydantic_settings import BaseSettings
 
-from app.prompts import SONG_AGENT_SYSTEM_PROMPT
+from app.prompts import SONG_AGENT_SYSTEM_PROMPT, REPAIR_AGENT_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     model_config = ConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
+        extra="ignore",  # Ignore extra env vars not defined in Settings
     )
 
     # Spotify OAuth (optional)
@@ -71,9 +72,17 @@ class Settings(BaseSettings):
         description="LLM model for song agent (e.g., gpt-5-nano, gemini-3-flash-preview)",
     )
     llm_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    prompt_variant: Optional[str] = Field(
+        default=None,
+        description="Prompt variant for A/B testing (e.g., 'v1', 'v2_reddit_tricks')",
+    )
     song_agent_prompt: str = Field(
         default=SONG_AGENT_SYSTEM_PROMPT,
         description="System prompt for the song agent",
+    )
+    repair_agent_prompt: str = Field(
+        default=REPAIR_AGENT_SYSTEM_PROMPT,
+        description="System prompt for the repair agent",
     )
 
     # Agent repair settings (will eventually be managed via Redis)

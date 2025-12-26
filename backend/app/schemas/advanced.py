@@ -2,7 +2,7 @@
 Minimal generation models for the Suno formatter agent.
 """
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -14,6 +14,9 @@ from app.constants import (
     MAX_TAGS_COUNT,
     MAX_TAG_CHARS,
 )
+
+# Available prompt variants for A/B testing
+PromptVariant = Literal["v1", "v2_reddit_tricks"]
 
 
 class AdvancedGenerateRequest(BaseModel):
@@ -41,6 +44,14 @@ class AdvancedGenerateRequest(BaseModel):
         default_factory=list,
         max_length=MAX_TAGS_COUNT,
         description="Optional style tags",
+    )
+    prompt_variant: Optional[PromptVariant] = Field(
+        default=None,
+        description="Prompt variant to use (v1=baseline, v2_reddit_tricks=advanced). Uses server default if not specified.",
+    )
+    model: Optional[str] = Field(
+        default=None,
+        description="LLM model to use (e.g., gpt-4.1, gemini-3-flash-preview). Uses server default if not specified.",
     )
 
     @model_validator(mode="after")

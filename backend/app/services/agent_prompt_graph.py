@@ -15,8 +15,8 @@ import httpx
 from langgraph.graph import END, StateGraph
 
 from app.config import Settings
+from app.prompts import PROMPT_VARIANTS
 from app.schemas.advanced import AdvancedGenerateRequest
-from app.prompts import REPAIR_AGENT_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -362,9 +362,63 @@ class AgentPromptGraph:
 
     async def generate(self, request: AdvancedGenerateRequest) -> Dict[str, Any]:
         logger.info("AgentPromptGraph.generate start")
+
+        # Check for per-request variant override
+        request_variant = getattr(request, "prompt_variant", None)
+        if request_variant and request_variant in PROMPT_VARIANTS:
+            variant_prompts = PROMPT_VARIANTS[request_variant]
+            self._active_song_prompt = variant_prompts["song_agent"]
+            self._active_repair_prompt = variant_prompts["repair_agent"]
+            self._active_variant = request_variant
+            logger.info("Using per-request prompt variant: %s", request_variant)
+        else:
+            self._active_song_prompt = self.settings.song_agent_prompt
+            self._active_repair_prompt = self.settings.repair_agent_prompt
+            self._active_variant = self.settings.prompt_variant
+
+        # Check for per-request model override
+        request_model = getattr(request, "model", None)
+        if request_model:
+            self._active_llm = self._get_or_create_llm(request_model)
+            self._active_model = request_model
+            logger.info("Using per-request model: %s", request_model)
+        else:
+            self._active_llm = self.llm
+            self._active_model = self.settings.llm_model
+
         state = await self._graph.ainvoke({"request": request})
         logger.info("AgentPromptGraph.generate complete")
         return state["result"]
+
+    def _get_or_create_llm(self, model: str):
+        """Get or create an LLM client for the specified model."""
+        # Cache LLM clients by model name
+        if not hasattr(self, "_llm_cache"):
+            self._llm_cache = {}
+
+        if model not in self._llm_cache:
+            # Create a temporary settings-like object with the new model
+            from dataclasses import dataclass
+
+            @dataclass
+            class ModelSettings:
+                llm_model: str
+                openai_api_key: str
+                gemini_api_key: str
+                llm_temperature: float
+                http_timeout: int
+
+            temp_settings = ModelSettings(
+                llm_model=model,
+                openai_api_key=self.settings.openai_api_key,
+                gemini_api_key=self.settings.gemini_api_key,
+                llm_temperature=self.settings.llm_temperature,
+                http_timeout=self.settings.http_timeout,
+            )
+            self._llm_cache[model] = self._create_llm_client(temp_settings)
+            logger.info("Created LLM client for model: %s", model)
+
+        return self._llm_cache[model]
 
     async def _node_build_context(self, state: _AgentState) -> _AgentState:
         request = state["request"]
@@ -390,24 +444,27 @@ class AgentPromptGraph:
     async def _node_generate(self, state: _AgentState) -> _AgentState:
         logger.info("agent.generate calling LLM (model=%s)", self.settings.llm_model)
 
+        # Use the active prompt (may be per-request override or settings default)
+        song_prompt = getattr(
+            self, "_active_song_prompt", self.settings.song_agent_prompt
+        )
+        active_variant = getattr(self, "_active_variant", self.settings.prompt_variant)
+
         # DEBUG: Write full request to log file
         self._debug_log("=" * 80)
         self._debug_log(f"MODEL: {self.settings.llm_model}")
+        self._debug_log(f"PROMPT VARIANT: {active_variant}")
         self._debug_log("=" * 80)
         self._debug_log("\n--- SYSTEM PROMPT ---")
         self._debug_log(
-            self.settings.song_agent_prompt[:500] + "..."
-            if len(self.settings.song_agent_prompt) > 500
-            else self.settings.song_agent_prompt
+            song_prompt[:500] + "..." if len(song_prompt) > 500 else song_prompt
         )
         self._debug_log("\n--- USER CONTEXT ---")
         self._debug_log(state["context_text"])
         self._debug_log("\n--- END REQUEST ---\n")
 
         logger.info("agent.generate calling LLM (model=%s)", self.settings.llm_model)
-        raw_output = await self._call_llm(
-            self.settings.song_agent_prompt, state["context_text"]
-        )
+        raw_output = await self._call_llm(song_prompt, state["context_text"])
 
         # DEBUG: Write raw response
         self._debug_log("\n--- RAW LLM RESPONSE ---")
@@ -473,8 +530,12 @@ class AgentPromptGraph:
             f"{issues_text}\n"
             "END_ISSUES\n"
         )
+        # Use the active repair prompt (may be per-request override or settings default)
+        repair_prompt = getattr(
+            self, "_active_repair_prompt", self.settings.repair_agent_prompt
+        )
         raw_output = await self._call_llm(
-            REPAIR_AGENT_SYSTEM_PROMPT,
+            repair_prompt,
             repair_input,
             temperature=0.0,
         )
@@ -539,6 +600,9 @@ class AgentPromptGraph:
             "generation_id": generation_id,
             "debug_info": {
                 "agent_model": self.settings.llm_model,
+                "prompt_variant": getattr(
+                    self, "_active_variant", self.settings.prompt_variant
+                ),
                 "context_hash": context_hash,
                 "repaired": state.get("repaired", False),
                 "repair_enabled": self.settings.agent_repair_enabled,
@@ -555,11 +619,14 @@ class AgentPromptGraph:
             {"role": "user", "content": user_prompt},
         ]
 
+        # Use active LLM (may be variant-specific) or fall back to default
+        llm = getattr(self, "_active_llm", self.llm)
+
         try:
-            response = await self.llm.ainvoke(messages, temperature=temperature)
+            response = await llm.ainvoke(messages, temperature=temperature)
         except TypeError:
             # Compatibility with stubs or older clients without temperature kwarg.
-            response = await self.llm.ainvoke(messages)
+            response = await llm.ainvoke(messages)
 
         return response.content or ""
 

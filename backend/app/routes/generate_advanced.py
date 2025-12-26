@@ -2,7 +2,10 @@
 Minimal generation routes for the Suno formatter agent.
 """
 
+from typing import List
+
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 
 from app.schemas.advanced import (
     AdvancedGenerateRequest,
@@ -12,9 +15,76 @@ from app.schemas.advanced import (
 )
 from app.deps import get_song_agent
 from app.services.agent_prompt_graph import AgentPromptGraph
-from app.prompts import LYRICS_SYSTEM_PROMPT
+from app.prompts import LYRICS_SYSTEM_PROMPT, PROMPT_VARIANTS, AVAILABLE_MODELS
+from app.config import get_settings
 
 router = APIRouter()
+
+
+class PromptVariantInfo(BaseModel):
+    """Info about an available prompt variant."""
+
+    id: str
+    description: str
+    is_default: bool = False
+    prompt_length: int = 0  # Length of the system prompt in characters
+
+
+class PromptVariantsResponse(BaseModel):
+    """List of available prompt variants for A/B testing."""
+
+    variants: List[PromptVariantInfo]
+
+
+@router.get("/prompt-variants", response_model=PromptVariantsResponse)
+async def list_prompt_variants():
+    """
+    List available prompt variants for A/B testing.
+    """
+    variants = [
+        PromptVariantInfo(
+            id=variant_id,
+            description=variant_data["description"],
+            is_default=(variant_id == "v1"),
+            prompt_length=len(variant_data["song_agent"]),
+        )
+        for variant_id, variant_data in PROMPT_VARIANTS.items()
+    ]
+    return PromptVariantsResponse(variants=variants)
+
+
+class ModelInfo(BaseModel):
+    """Info about an available LLM model."""
+
+    id: str
+    name: str
+    provider: str
+    is_default: bool = False
+
+
+class ModelsResponse(BaseModel):
+    """List of available LLM models."""
+
+    models: List[ModelInfo]
+    default_model: str
+
+
+@router.get("/models", response_model=ModelsResponse)
+async def list_models():
+    """
+    List available LLM models for generation.
+    """
+    settings = get_settings()
+    models = [
+        ModelInfo(
+            id=model["id"],
+            name=model["name"],
+            provider=model["provider"],
+            is_default=(model["id"] == settings.llm_model),
+        )
+        for model in AVAILABLE_MODELS
+    ]
+    return ModelsResponse(models=models, default_model=settings.llm_model)
 
 
 @router.post("/advanced", response_model=AdvancedGenerateResponse)
@@ -25,8 +95,15 @@ async def generate_advanced(
     """
     Minimal Suno formatter generation (no auth required).
     """
+    from fastapi import HTTPException
+
     # Reuse the startup-initialized agent to avoid per-request graph compilation.
     result = await agent.generate(body)
+
+    # Handle agent errors
+    if not result.get("success", True):
+        error_msg = result.get("error", "Generation failed")
+        raise HTTPException(status_code=500, detail=error_msg)
 
     return AdvancedGenerateResponse(**result)
 

@@ -46,11 +46,38 @@ export interface AuthStatus {
 
 // === Generation Types ===
 
+export type PromptVariant = 'v1' | 'v2_reddit_tricks';
+
 export interface AdvancedGenerateRequest {
   user_prompt: string;
   lyrics_about: string;
   selected_artists?: string[];
   tags?: string[];
+  prompt_variant?: PromptVariant;
+  model?: string;
+}
+
+export interface PromptVariantInfo {
+  id: string;
+  description: string;
+  is_default: boolean;
+  prompt_length: number;
+}
+
+export interface PromptVariantsResponse {
+  variants: PromptVariantInfo[];
+}
+
+export interface ModelInfo {
+  id: string;
+  name: string;
+  provider: string;
+  is_default: boolean;
+}
+
+export interface ModelsResponse {
+  models: ModelInfo[];
+  default_model: string;
 }
 
 export interface AdvancedGenerateResponse {
@@ -231,6 +258,26 @@ export async function generateAdvanced(
     body: JSON.stringify(payload),
   });
   return handleResponse<AdvancedGenerateResponse>(response);
+}
+
+/**
+ * Get available prompt variants for A/B testing
+ */
+export async function getPromptVariants(): Promise<PromptVariantsResponse> {
+  const response = await fetch(`${API_BASE}/generate/prompt-variants`, {
+    credentials: 'include',
+  });
+  return handleResponse<PromptVariantsResponse>(response);
+}
+
+/**
+ * Get available LLM models
+ */
+export async function getModels(): Promise<ModelsResponse> {
+  const response = await fetch(`${API_BASE}/generate/models`, {
+    credentials: 'include',
+  });
+  return handleResponse<ModelsResponse>(response);
 }
 
 /**

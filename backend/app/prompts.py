@@ -249,6 +249,110 @@ Return ONLY the repaired final output — no explanations.
 {PARAMETER_SPEC}
 """
 
+# ===========================================================================
+# V2: V1 + Reddit MAX Mode Format
+# ===========================================================================
+# Only change: SUNO_PROMPT_SPEC uses structured metadata format with MAX headers.
+# This prevents prompt-bleed and may improve quality for organic/acoustic genres.
+
+SUNO_PROMPT_SPEC_V2 = f"""\
+═══════════════════════════════════════════════════════════════════════════════
+SUNO PROMPT SPEC
+═══════════════════════════════════════════════════════════════════════════════
+CRITICAL: Total prompt must be ≤{SUNO_PROMPT_MAX_CHARS} characters including headers.
+
+Use this structured format (prevents prompt from bleeding into vocals):
+
+[Is_MAX_MODE: MAX](MAX)
+[QUALITY: MAX](MAX)
+genre: "era + subgenre"
+instruments: "key instruments, vocal descriptors"
+style tags: "texture, recording style"
+recording: "context, dynamics"
+
+For organic/acoustic genres, add these headers (skip for electronic):
+[REALISM: MAX](MAX)
+[REAL_INSTRUMENTS: MAX](MAX)
+genre: "[era] [subgenre], [additional style descriptors]"
+instruments: "[all instruments], [detailed vocal descriptors]"
+style tags: "[texture], [recording character], [spatial], [production qualities]"
+recording: "[performance context], [dynamics], [mic placement]"
+
+Each line should be RICH and DETAILED — multiple comma-separated descriptors.
+Use professional audio terminology. Example of a good full prompt:
+
+genre: "mid-2010s Pacific Northwest indie rock, folk-infused stargaze, cascading, nostalgic"
+instruments: "dry acoustic guitar, lush analog synths, polyrhythmic drums, male high-tenor vocals, soaring emotional delivery, gritty rasp, intimate whispers to powerful belting"
+style tags: "tape warmth, wide stereo imaging, shimmering textures"
+recording: "studio session, close mic presence, subtle room tone"
+
+Guidelines:
+- BE CONCISE. Headers use ~100 chars; content must fit in remaining ~400 chars.
+- Use noun phrases, not sentences.
+- Professional terms (tape saturation, room tone) over vague descriptions.
+"""
+
+# V2 COMPOSED PROMPT: V1 base with Reddit-style SUNO_PROMPT_SPEC
+SONG_AGENT_SYSTEM_PROMPT_V2 = f"""\
+{POLICY}
+{OUTPUT_CONTRACT}
+{TASK}
+{LYRICS_SPEC}
+{SONG_TITLE_SPEC}
+{SUNO_PROMPT_SPEC_V2}
+{EXCLUDE_SPEC}
+{PARAMETER_SPEC}
+"""
+
+# Repair agent V2
+REPAIR_AGENT_SYSTEM_PROMPT_V2 = f"""\
+You are "Suno Formatter (Repair) V2."
+Your job is to repair the previous output so it strictly follows the required format.
+Return ONLY the repaired final output — no explanations.
+
+{OUTPUT_CONTRACT}
+{LYRICS_SPEC}
+{SONG_TITLE_SPEC}
+{SUNO_PROMPT_SPEC_V2}
+{EXCLUDE_SPEC}
+{PARAMETER_SPEC}
+"""
+
+# ===========================================================================
+# PROMPT VARIANTS REGISTRY (for A/B testing)
+# ===========================================================================
+
+PROMPT_VARIANTS = {
+    "v1": {
+        "song_agent": SONG_AGENT_SYSTEM_PROMPT,
+        "repair_agent": REPAIR_AGENT_SYSTEM_PROMPT,
+        "description": "Original modular prompt (baseline)",
+    },
+    "v2_reddit_tricks": {
+        "song_agent": SONG_AGENT_SYSTEM_PROMPT_V2,
+        "repair_agent": REPAIR_AGENT_SYSTEM_PROMPT_V2,
+        "description": "V2 with MAX mode headers, realism tags, metadata format",
+    },
+}
+
+# Available models for UI selection
+AVAILABLE_MODELS = [
+    {"id": "gemini-3-flash-preview", "name": "Gemini 3 Flash", "provider": "google"},
+    {"id": "gpt-5.2-chat-latest", "name": "GPT-5.2 Chat", "provider": "openai"},
+    {"id": "gpt-4.1-mini", "name": "GPT-4.1 Mini", "provider": "openai"},
+    {"id": "gpt-4o-mini", "name": "GPT-4o Mini", "provider": "openai"},
+]
+
+
+def get_prompt_variant(variant: str = "v1") -> dict:
+    """Get a specific prompt variant for A/B testing."""
+    if variant not in PROMPT_VARIANTS:
+        raise ValueError(
+            f"Unknown prompt variant: {variant}. Available: {list(PROMPT_VARIANTS.keys())}"
+        )
+    return PROMPT_VARIANTS[variant]
+
+
 # Lyrics + Title agent: generates just lyrics and song title (used when suno_prompt already exists)
 # Input: suno_prompt (style context) + lyrics_about (topic)
 # Output: SONG TITLE + LYRICS only

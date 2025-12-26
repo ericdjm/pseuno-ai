@@ -14,15 +14,22 @@ import {
   WrapItem,
   useToast,
   Collapse,
+  Select,
+  Tooltip,
 } from '@chakra-ui/react';
 import { useState, useEffect } from 'react';
 import type { ChangeEvent } from 'react';
 import {
   generateAdvanced,
   generateLyricsOnly,
+  getPromptVariants,
+  getModels,
   AdvancedGenerateRequest,
   SpotifyProfileResponse,
   SavedSunoPrompt,
+  PromptVariantInfo,
+  PromptVariant,
+  ModelInfo,
 } from '../api';
 
 type StyleMode = 'songStylePrompt' | 'savedSunoPrompt';
@@ -69,6 +76,41 @@ export default function AdvancedGenerationControls({
   const [lyricsEditable, setLyricsEditable] = useState('');
   const [tagsInput, setTagsInput] = useState('');
   const [lyricsMode, setLyricsMode] = useState<LyricsMode>('lyricsTopic');
+
+  // Prompt variant and model selection state
+  const [promptVariants, setPromptVariants] = useState<PromptVariantInfo[]>([]);
+  const [selectedVariant, setSelectedVariant] = useState<PromptVariant | ''>('');
+  const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>('');
+
+  // Fetch available prompt variants and models on mount
+  useEffect(() => {
+    const fetchVariants = async () => {
+      try {
+        const response = await getPromptVariants();
+        setPromptVariants(response.variants);
+        const defaultVariant = response.variants.find((v: PromptVariantInfo) => v.is_default);
+        if (defaultVariant) {
+          setSelectedVariant(defaultVariant.id as PromptVariant);
+        }
+      } catch (error) {
+        console.error('Failed to fetch prompt variants:', error);
+      }
+    };
+    
+    const fetchModels = async () => {
+      try {
+        const response = await getModels();
+        setAvailableModels(response.models);
+        setSelectedModel(response.default_model);
+      } catch (error) {
+        console.error('Failed to fetch models:', error);
+      }
+    };
+    
+    fetchVariants();
+    fetchModels();
+  }, []);
 
   const parseList = (value: string) =>
     value
@@ -186,6 +228,8 @@ export default function AdvancedGenerationControls({
           lyrics_about: lyricsAbout.trim(),
           selected_artists: artists.length > 0 ? artists : undefined,
           tags: tags.length > 0 ? tags : undefined,
+          prompt_variant: selectedVariant || undefined,
+          model: selectedModel || undefined,
         };
 
         const result = await generateAdvanced(request);
@@ -493,6 +537,75 @@ export default function AdvancedGenerationControls({
               maxLength={MAX_TAGS_INPUT_LEN}
               onChange={(e: ChangeEvent<HTMLInputElement>) => setTagsInput(e.target.value.slice(0, MAX_TAGS_INPUT_LEN))}
             />
+          </FormControl>
+        </Collapse>
+
+        {/* Prompt Variant Selector - only show for Song Style Prompt mode */}
+        <Collapse in={styleMode === 'songStylePrompt' && promptVariants.length > 1} animateOpacity>
+          <FormControl>
+            <FormLabel>
+              <HStack spacing={2}>
+                <Text>Prompt Engine</Text>
+                <Tooltip 
+                  label="Choose which AI prompt style to use. V2 uses Reddit MAX mode format."
+                  placement="top"
+                  hasArrow
+                >
+                  <Badge colorScheme="purple" fontSize="xs" cursor="help" variant="subtle">
+                    A/B Test
+                  </Badge>
+                </Tooltip>
+              </HStack>
+            </FormLabel>
+            <Select
+              value={selectedVariant}
+              onChange={(e: ChangeEvent<HTMLSelectElement>) => 
+                setSelectedVariant(e.target.value as PromptVariant)
+              }
+              bg="gray.800"
+              borderColor="gray.600"
+              _hover={{ borderColor: 'gray.500' }}
+            >
+              {promptVariants.map((variant: PromptVariantInfo) => (
+                <option key={variant.id} value={variant.id}>
+                  {variant.id === 'v1' ? '🎵 V1 — Baseline' : '🚀 V2 — MAX Mode'}
+                  {` (${(variant.prompt_length / 1000).toFixed(1)}k chars)`}
+                  {variant.is_default ? ' ★' : ''}
+                </option>
+              ))}
+            </Select>
+          </FormControl>
+        </Collapse>
+
+        {/* Model Selector - only show for Song Style Prompt mode */}
+        <Collapse in={styleMode === 'songStylePrompt' && availableModels.length > 0} animateOpacity>
+          <FormControl>
+            <FormLabel>
+              <HStack spacing={2}>
+                <Text>Model</Text>
+                <Badge 
+                  colorScheme={availableModels.find((m: ModelInfo) => m.id === selectedModel)?.provider === 'openai' ? 'green' : 'blue'} 
+                  fontSize="xs" 
+                  variant="subtle"
+                >
+                  {availableModels.find((m: ModelInfo) => m.id === selectedModel)?.provider || ''}
+                </Badge>
+              </HStack>
+            </FormLabel>
+            <Select
+              value={selectedModel}
+              onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedModel(e.target.value)}
+              bg="gray.800"
+              borderColor="gray.600"
+              _hover={{ borderColor: 'gray.500' }}
+            >
+              {availableModels.map((model: ModelInfo) => (
+                <option key={model.id} value={model.id}>
+                  {model.name}
+                  {model.is_default ? ' ★' : ''}
+                </option>
+              ))}
+            </Select>
           </FormControl>
         </Collapse>
       </VStack>
