@@ -463,7 +463,6 @@ class AgentPromptGraph:
         self._debug_log(state["context_text"])
         self._debug_log("\n--- END REQUEST ---\n")
 
-        logger.info("agent.generate calling LLM (model=%s)", self.settings.llm_model)
         raw_output = await self._call_llm(song_prompt, state["context_text"])
 
         # DEBUG: Write raw response
@@ -494,10 +493,6 @@ class AgentPromptGraph:
             self._debug_log(f"  - {issue}")
         self._debug_log("--- END PARSED ---\n")
 
-        if issues:
-            logger.info("agent.parse_validate found issues (count=%s)", len(issues))
-        else:
-            logger.info("agent.parse_validate ok")
         if issues:
             logger.info("agent.parse_validate found issues (count=%s)", len(issues))
         else:
