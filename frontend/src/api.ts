@@ -113,6 +113,48 @@ export interface LyricProfile {
   avoid?: string[];
 }
 
+// === Debug Trace Types (v1 schema) ===
+
+export type SpanKind = 
+  | 'llm_call'
+  | 'validate'
+  | 'parse'
+  | 'format_context'
+  | 'repair'
+  | 'profile_infer'
+  | 'branch'
+  | 'other';
+
+export interface DebugSpan {
+  id: string;
+  parent_id: string | null;
+  name: string;
+  kind: SpanKind;
+  start_ms: number;
+  end_ms: number;
+  elapsed_ms: number;
+  meta: Record<string, unknown>;
+  artifacts: Record<string, string>;
+}
+
+export interface DebugTraceSummary {
+  variant: string;
+  model: string;
+  fast_model: string | null;
+  total_elapsed_ms: number;
+  llm_calls: number;
+  repairs: number;
+  architecture: 'single_step' | 'two_step';
+  success: boolean;
+  error: string | null;
+}
+
+export interface DebugTrace {
+  version: number;
+  summary: DebugTraceSummary;
+  spans: DebugSpan[];
+}
+
 export interface AdvancedGenerateResponse {
   generation_id: string;
   concept_title: string;
@@ -121,13 +163,7 @@ export interface AdvancedGenerateResponse {
   exclude: string;
   weirdness: number;
   style_influence: number;
-  debug_info?: {
-    variant?: string;
-    model?: string;
-    elapsed_seconds?: number;
-    context_hash?: string;
-    lyric_profile?: LyricProfile;
-  };
+  debug_info?: DebugTrace;
 }
 
 export interface LyricsOnlyRequest {

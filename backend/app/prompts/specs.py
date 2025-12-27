@@ -323,8 +323,7 @@ SONG TITLE SPEC
 - 1-5 words, no quotes, title case.
 - Capture the emotional core of the song, not generic phrase.
 - Pull directly from a striking phrase in the lyrics you wrote.
-- BAD: "Love Song" / "The Journey" (too generic)
-- GOOD: "Velvet Machinery" / "Three A.M. Confessions"
+
 """
 
 # ===========================================================================

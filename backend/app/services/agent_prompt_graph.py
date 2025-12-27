@@ -9,7 +9,6 @@ import logging
 import re
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, TypedDict
 
 import httpx
@@ -22,6 +21,7 @@ from app.prompts import (
     LYRICS_AGENT_SYSTEM_PROMPT,
 )
 from app.schemas.advanced import AdvancedGenerateRequest, LyricControls
+from app.services.debug_trace import DebugTracer
 
 logger = logging.getLogger(__name__)
 
@@ -325,6 +325,9 @@ class _AgentState(TypedDict, total=False):
     repairs_left: int
     repaired: bool
     result: Dict[str, Any]
+    # Debug tracer
+    tracer: Any  # DebugTracer instance
+    generation_debug: Dict[str, Any]
 
 
 class AgentPromptGraph:
@@ -342,12 +345,6 @@ class AgentPromptGraph:
         # Build both graphs at init time
         self._graph_single_step = self._build_single_step_graph()
         self._graph_two_step = self._build_two_step_graph()
-        self._debug_file = Path(__file__).parent.parent.parent / "debug_agent.log"
-
-    def _debug_log(self, msg: str):
-        """Write debug message to log file."""
-        with open(self._debug_file, "a", encoding="utf-8") as f:
-            f.write(msg + "\n")
 
     @staticmethod
     def _create_llm_client(settings: Settings):
@@ -484,8 +481,18 @@ class AgentPromptGraph:
             result = await self._generate_parallel_two_step(request)
         else:
             # V1/V2: Single-step graph with repair loop
-            state = await self._graph_single_step.ainvoke({"request": request})
+            # Create tracer for this generation
+            tracer = DebugTracer(
+                variant=variant_id,
+                model=self._active_model,
+                architecture="single_step",
+            )
+            state = await self._graph_single_step.ainvoke(
+                {"request": request, "tracer": tracer}
+            )
             result = state["result"]
+            # Attach trace to result
+            result["debug_info"] = tracer.to_dict()
 
         logger.info(
             "AgentPromptGraph.generate complete (two_step=%s)", self._is_two_step
@@ -541,16 +548,29 @@ class AgentPromptGraph:
         This achieves ~2x latency improvement over sequential execution.
         """
         logger.info("Starting parallel two-step generation")
-        start_time = time.time()
+
+        # Create tracer for this generation
+        tracer = DebugTracer(
+            variant=self._active_variant,
+            model=self._active_model,
+            fast_model=(
+                self.settings.profile_inference_model
+                if self._uses_lyric_profile
+                else None
+            ),
+            architecture="two_step",
+        )
 
         # Build context pack first (shared by both branches)
         context_pack = self._build_context_pack(request)
         lyric_controls_obj = getattr(request, "lyric_controls", None)
-        user_lyric_controls = self._resolve_lyric_controls(lyric_controls_obj)
+        # For two-step: only extract explicit user overrides (not defaults)
+        # so LLM-inferred profile isn't overwritten by hardcoded defaults
+        user_overrides = self._extract_user_overrides(lyric_controls_obj)
 
         # Run style and lyrics branches in parallel
-        style_task = self._run_style_branch(context_pack)
-        lyrics_task = self._run_lyrics_branch(context_pack, user_lyric_controls)
+        style_task = self._run_style_branch(context_pack, tracer)
+        lyrics_task = self._run_lyrics_branch(context_pack, user_overrides, tracer)
 
         style_result, lyrics_result = await asyncio.gather(
             style_task, lyrics_task, return_exceptions=True
@@ -559,18 +579,20 @@ class AgentPromptGraph:
         # Handle exceptions
         if isinstance(style_result, Exception):
             logger.error("Style branch failed: %s", style_result)
-            return self._create_error_result(
+            tracer.set_error(str(style_result))
+            result = self._create_error_result(
                 "Style generation failed", str(style_result)
             )
+            result["debug_info"] = tracer.to_dict()
+            return result
         if isinstance(lyrics_result, Exception):
             logger.error("Lyrics branch failed: %s", lyrics_result)
-            return self._create_error_result(
+            tracer.set_error(str(lyrics_result))
+            result = self._create_error_result(
                 "Lyrics generation failed", str(lyrics_result)
             )
-
-        # Merge results
-        elapsed = time.time() - start_time
-        logger.info("Parallel two-step complete in %.2fs", elapsed)
+            result["debug_info"] = tracer.to_dict()
+            return result
 
         # For V5 hybrid: prepend MAX headers to V1-style prose output
         suno_prompt = style_result["suno_prompt"]
@@ -590,6 +612,11 @@ class AgentPromptGraph:
             f"{lyrics_result['song_title']}{suno_prompt}{time.time()}".encode()
         ).hexdigest()[:12]
 
+        logger.info(
+            "Parallel two-step complete in %dms",
+            tracer._elapsed_ms(),
+        )
+
         return {
             "concept_title": lyrics_result["song_title"],
             "lyrics": lyrics_result["lyrics"],
@@ -598,48 +625,44 @@ class AgentPromptGraph:
             "weirdness": style_result["weirdness"],
             "style_influence": style_result["style_influence"],
             "generation_id": generation_id,
-            "debug_info": {
-                "variant": self._active_variant,
-                "model": self._active_model,
-                "fast_model": (
-                    self.settings.profile_inference_model
-                    if self._uses_lyric_profile
-                    else None
-                ),
-                "lyric_profile": lyrics_result.get("lyric_profile"),
-                "elapsed_seconds": round(elapsed, 2),
-                "style_branch": style_result.get("debug"),
-                "lyrics_branch": lyrics_result.get("debug"),
-            },
+            "debug_info": tracer.to_dict(),
         }
 
-    async def _run_style_branch(self, context_pack: Dict[str, Any]) -> Dict[str, Any]:
+    async def _run_style_branch(
+        self, context_pack: Dict[str, Any], tracer: DebugTracer
+    ) -> Dict[str, Any]:
         """
         Style branch: generate_style → validate → [repair loop]
         """
         logger.info("Style branch: starting")
-        start_time = time.time()
-        debug = {"step": "style", "repairs": []}
 
         # Format context for style generation
         style_context = self._format_style_context(context_pack)
-        debug["user_message"] = style_context
-        debug["system_prompt"] = self._active_style_prompt
-
-        # Generate style
         style_prompt = self._active_style_prompt
-        raw_output = await self._call_llm(style_prompt, style_context)
-        debug["raw_response"] = raw_output
 
-        # Parse and validate
-        style_output = self._parse_style_output(raw_output)
+        # Generate style with span
+        with tracer.span(
+            "style.generate", "llm_call", model=self._active_model
+        ) as span:
+            raw_output = await self._call_llm(style_prompt, style_context)
+            span.set_meta("prompt_chars", len(style_prompt) + len(style_context))
+            span.set_meta("response_chars", len(raw_output))
+            span.set_artifact("system_prompt", style_prompt)
+            span.set_artifact("user_message", style_context)
+            span.set_artifact("raw_response", raw_output)
+
+        # Parse with span
+        with tracer.span("style.parse", "parse") as span:
+            style_output = self._parse_style_output(raw_output)
+            span.set_meta("suno_prompt_chars", len(style_output.suno_prompt))
 
         # Validate with repair loop
         max_repairs = self.settings.agent_max_repairs
         for attempt in range(max_repairs + 1):
-            validate_start = time.time()
-            issues = self._validate_style_output(style_output)
-            validate_ms = int((time.time() - validate_start) * 1000)
+            with tracer.span(f"style.validate.{attempt}", "validate") as validate_span:
+                issues = self._validate_style_output(style_output)
+                validate_span.set_meta("issues", issues)
+                validate_span.set_meta("valid", len(issues) == 0)
 
             if not issues:
                 break
@@ -653,35 +676,35 @@ class AgentPromptGraph:
                     f"Fix this output:\n\n{style_output.raw}\n\nIssues: {issues}"
                 )
 
-                llm_start = time.time()
-                repair_output = await self._call_llm(repair_prompt, repair_context)
-                llm_ms = int((time.time() - llm_start) * 1000)
+                with tracer.span(
+                    f"style.repair.{attempt + 1}",
+                    "repair",
+                    attempt=attempt + 1,
+                    model=self._active_model,
+                ) as repair_span:
+                    repair_output = await self._call_llm(repair_prompt, repair_context)
+                    repair_span.set_meta("issues", issues)
+                    repair_span.set_meta(
+                        "prompt_chars", len(repair_prompt) + len(repair_context)
+                    )
+                    repair_span.set_meta("response_chars", len(repair_output))
+                    repair_span.set_artifact("system_prompt", repair_prompt)
+                    repair_span.set_artifact("repair_context", repair_context)
+                    repair_span.set_artifact("raw_response", repair_output)
 
-                parse_start = time.time()
-                style_output = self._parse_style_output(repair_output)
-                parse_ms = int((time.time() - parse_start) * 1000)
+                # Parse repaired output
+                with tracer.span(f"style.parse.{attempt + 1}", "parse") as parse_span:
+                    style_output = self._parse_style_output(repair_output)
+                    parse_span.set_meta(
+                        "suno_prompt_chars", len(style_output.suno_prompt)
+                    )
 
-                debug["repairs"].append(
-                    {
-                        "attempt": attempt + 1,
-                        "issues": issues,
-                        "output": repair_output,
-                        "timing": {
-                            "validate_ms": validate_ms,
-                            "llm_ms": llm_ms,
-                            "parse_ms": parse_ms,
-                            "total_ms": validate_ms + llm_ms + parse_ms,
-                        },
-                    }
-                )
                 raw_output = repair_output
             else:
                 logger.warning(
                     "Style branch: max repairs reached, proceeding with issues"
                 )
-                debug["final_issues"] = issues
 
-        debug["elapsed_ms"] = int((time.time() - start_time) * 1000)
         logger.info(
             "Style branch: complete (suno_prompt=%d chars)",
             len(style_output.suno_prompt),
@@ -691,11 +714,13 @@ class AgentPromptGraph:
             "exclude": style_output.exclude,
             "weirdness": style_output.weirdness,
             "style_influence": style_output.style_influence,
-            "debug": debug,
         }
 
     async def _run_lyrics_branch(
-        self, context_pack: Dict[str, Any], user_lyric_controls: Dict[str, str]
+        self,
+        context_pack: Dict[str, Any],
+        user_lyric_controls: Dict[str, str],
+        tracer: DebugTracer,
     ) -> Dict[str, Any]:
         """
         Lyrics branch: [infer_profile] → generate_lyrics → validate → [repair loop]
@@ -706,33 +731,35 @@ class AgentPromptGraph:
         logger.info(
             "Lyrics branch: starting (uses_profile=%s)", self._uses_lyric_profile
         )
-        start_time = time.time()
-        debug = {"step": "lyrics", "repairs": [], "profile_inference": None}
 
         lyric_profile = None
         if self._uses_lyric_profile:
             # V4: Infer lyric profile using fast model
-            profile_start = time.time()
-            inferred_profile, profile_debug = await self._infer_lyric_profile(
-                context_pack
-            )
-            debug["profile_inference"] = {
-                **profile_debug,
-                "elapsed_ms": int((time.time() - profile_start) * 1000),
-            }
+            fast_model = self.settings.profile_inference_model
+            with tracer.span(
+                "lyrics.profile_infer", "profile_infer", model=fast_model
+            ) as span:
+                inferred_profile, profile_artifacts = await self._infer_lyric_profile(
+                    context_pack
+                )
+                span.set_meta("inferred_profile", inferred_profile)
+                span.set_artifact(
+                    "system_prompt", profile_artifacts.get("system_prompt", "")
+                )
+                span.set_artifact(
+                    "user_message", profile_artifacts.get("user_message", "")
+                )
+                span.set_artifact(
+                    "raw_response", profile_artifacts.get("raw_response", "")
+                )
+
             logger.info("Lyrics branch: inferred profile: %s", inferred_profile)
 
-            # Merge user overrides: non-"auto" values override inferred values
+            # Merge explicit user overrides into inferred profile
             lyric_profile = inferred_profile.copy()
             for key, value in user_lyric_controls.items():
-                if value and value != "auto":
-                    lyric_profile[key] = value
-                    logger.info("Lyrics branch: user override %s=%s", key, value)
-
-            debug["profile_inference"]["user_overrides"] = {
-                k: v for k, v in user_lyric_controls.items() if v and v != "auto"
-            }
-            debug["profile_inference"]["final_profile"] = lyric_profile
+                lyric_profile[key] = value
+                logger.info("Lyrics branch: user override %s=%s", key, value)
 
             # Build lyrics context with profile + style info
             lyrics_context = self._format_lyrics_context_v4_parallel(
@@ -743,23 +770,31 @@ class AgentPromptGraph:
             # V3: No profile, use style_request for context
             lyrics_context = self._format_lyrics_context_simple_v3(context_pack)
 
-        debug["user_message"] = lyrics_context
-        debug["system_prompt"] = self._active_lyrics_prompt
-
-        # Generate lyrics
+        # Generate lyrics with span
         lyrics_prompt = self._active_lyrics_prompt
-        raw_output = await self._call_llm(lyrics_prompt, lyrics_context)
-        debug["raw_response"] = raw_output
+        with tracer.span(
+            "lyrics.generate", "llm_call", model=self._active_model
+        ) as span:
+            raw_output = await self._call_llm(lyrics_prompt, lyrics_context)
+            span.set_meta("prompt_chars", len(lyrics_prompt) + len(lyrics_context))
+            span.set_meta("response_chars", len(raw_output))
+            span.set_artifact("system_prompt", lyrics_prompt)
+            span.set_artifact("user_message", lyrics_context)
+            span.set_artifact("raw_response", raw_output)
 
-        # Parse and validate
-        lyrics_output = self._parse_lyrics_output(raw_output)
+        # Parse with span
+        with tracer.span("lyrics.parse", "parse") as span:
+            lyrics_output = self._parse_lyrics_output(raw_output)
+            span.set_meta("title", lyrics_output.song_title)
+            span.set_meta("lyrics_chars", len(lyrics_output.lyrics))
 
         # Validate with repair loop
         max_repairs = self.settings.agent_max_repairs
         for attempt in range(max_repairs + 1):
-            validate_start = time.time()
-            issues = self._validate_lyrics_output(lyrics_output)
-            validate_ms = int((time.time() - validate_start) * 1000)
+            with tracer.span(f"lyrics.validate.{attempt}", "validate") as validate_span:
+                issues = self._validate_lyrics_output(lyrics_output)
+                validate_span.set_meta("issues", issues)
+                validate_span.set_meta("valid", len(issues) == 0)
 
             if not issues:
                 break
@@ -773,35 +808,34 @@ class AgentPromptGraph:
                     f"Fix this output:\n\n{lyrics_output.raw}\n\nIssues: {issues}"
                 )
 
-                llm_start = time.time()
-                repair_output = await self._call_llm(repair_prompt, repair_context)
-                llm_ms = int((time.time() - llm_start) * 1000)
+                with tracer.span(
+                    f"lyrics.repair.{attempt + 1}",
+                    "repair",
+                    attempt=attempt + 1,
+                    model=self._active_model,
+                ) as repair_span:
+                    repair_output = await self._call_llm(repair_prompt, repair_context)
+                    repair_span.set_meta("issues", issues)
+                    repair_span.set_meta(
+                        "prompt_chars", len(repair_prompt) + len(repair_context)
+                    )
+                    repair_span.set_meta("response_chars", len(repair_output))
+                    repair_span.set_artifact("system_prompt", repair_prompt)
+                    repair_span.set_artifact("repair_context", repair_context)
+                    repair_span.set_artifact("raw_response", repair_output)
 
-                parse_start = time.time()
-                lyrics_output = self._parse_lyrics_output(repair_output)
-                parse_ms = int((time.time() - parse_start) * 1000)
+                # Parse repaired output
+                with tracer.span(f"lyrics.parse.{attempt + 1}", "parse") as parse_span:
+                    lyrics_output = self._parse_lyrics_output(repair_output)
+                    parse_span.set_meta("title", lyrics_output.song_title)
+                    parse_span.set_meta("lyrics_chars", len(lyrics_output.lyrics))
 
-                debug["repairs"].append(
-                    {
-                        "attempt": attempt + 1,
-                        "issues": issues,
-                        "output": repair_output,
-                        "timing": {
-                            "validate_ms": validate_ms,
-                            "llm_ms": llm_ms,
-                            "parse_ms": parse_ms,
-                            "total_ms": validate_ms + llm_ms + parse_ms,
-                        },
-                    }
-                )
                 raw_output = repair_output
             else:
                 logger.warning(
                     "Lyrics branch: max repairs reached, proceeding with issues"
                 )
-                debug["final_issues"] = issues
 
-        debug["elapsed_ms"] = int((time.time() - start_time) * 1000)
         logger.info(
             "Lyrics branch: complete (title=%s)",
             lyrics_output.song_title[:30] if lyrics_output.song_title else "EMPTY",
@@ -810,7 +844,6 @@ class AgentPromptGraph:
             "song_title": lyrics_output.song_title,
             "lyrics": lyrics_output.lyrics,
             "lyric_profile": lyric_profile,
-            "debug": debug,
         }
 
     async def _infer_lyric_profile(
@@ -965,8 +998,10 @@ class AgentPromptGraph:
         return issues
 
     def _create_error_result(self, error_type: str, details: str) -> Dict[str, Any]:
-        """Create an error result dict."""
+        """Create an error result dict. Caller should attach debug_info from tracer."""
         return {
+            "success": False,
+            "error": f"{error_type}: {details}",
             "concept_title": "Generation Error",
             "lyrics": f"Error: {error_type}",
             "suno_prompt": "",
@@ -976,11 +1011,6 @@ class AgentPromptGraph:
             "generation_id": hashlib.md5(f"error{time.time()}".encode()).hexdigest()[
                 :12
             ],
-            "debug_info": {
-                "variant": getattr(self, "_active_variant", "unknown"),
-                "model": getattr(self, "_active_model", "unknown"),
-                "error": f"{error_type}: {details}",
-            },
         }
 
     async def _node_build_context(self, state: _AgentState) -> _AgentState:
@@ -1026,25 +1056,7 @@ class AgentPromptGraph:
         # Get active style prompt (V3 or V4)
         style_prompt = getattr(self, "_active_style_prompt", STYLE_AGENT_SYSTEM_PROMPT)
 
-        # DEBUG: Write full request to log file
-        self._debug_log("=" * 80)
-        self._debug_log(
-            f"STEP 1: STYLE GENERATION (generates_profile={uses_lyric_profile})"
-        )
-        self._debug_log(f"MODEL: {self._active_model}")
-        self._debug_log("=" * 80)
-        self._debug_log("\n--- STYLE AGENT PROMPT (truncated) ---")
-        self._debug_log(style_prompt[:500] + "...")
-        self._debug_log("\n--- STYLE CONTEXT ---")
-        self._debug_log(state["style_context"])
-        self._debug_log("\n--- END REQUEST ---\n")
-
         raw_output = await self._call_llm(style_prompt, state["style_context"])
-
-        # DEBUG: Write raw response
-        self._debug_log("\n--- STYLE AGENT RESPONSE ---")
-        self._debug_log(raw_output)
-        self._debug_log("\n--- END RESPONSE ---\n")
 
         # Parse the style output
         style_output = self._parse_style_output(raw_output)
@@ -1108,25 +1120,7 @@ class AgentPromptGraph:
             self, "_active_lyrics_prompt", LYRICS_AGENT_SYSTEM_PROMPT
         )
 
-        # DEBUG: Write full request to log file
-        self._debug_log("=" * 80)
-        self._debug_log(
-            f"STEP 2: LYRICS GENERATION (lyric_profile={uses_lyric_profile})"
-        )
-        self._debug_log(f"MODEL: {self._active_model}")
-        self._debug_log("=" * 80)
-        self._debug_log("\n--- LYRICS AGENT PROMPT (truncated) ---")
-        self._debug_log(lyrics_prompt[:500] + "...")
-        self._debug_log("\n--- LYRICS CONTEXT ---")
-        self._debug_log(lyrics_context)
-        self._debug_log("\n--- END REQUEST ---\n")
-
         raw_output = await self._call_llm(lyrics_prompt, lyrics_context)
-
-        # DEBUG: Write raw response
-        self._debug_log("\n--- LYRICS AGENT RESPONSE ---")
-        self._debug_log(raw_output)
-        self._debug_log("\n--- END RESPONSE ---\n")
 
         # Parse the lyrics output
         lyrics_output = self._parse_lyrics_output(raw_output)
@@ -1150,7 +1144,6 @@ class AgentPromptGraph:
             error_msg = "Style generation produced empty SUNO PROMPT"
 
         logger.warning("agent.error: %s", error_msg)
-        self._debug_log(f"\n--- GENERATION FAILED: {error_msg} ---\n")
 
         return {
             **state,
@@ -1167,6 +1160,7 @@ class AgentPromptGraph:
         """
         Resolve lyric controls to concrete values.
         'auto' values get sensible defaults (no LLM call needed).
+        Used for V1/V2 single-step where there's no LLM inference.
         """
         defaults = {
             "audience": "general",
@@ -1198,6 +1192,35 @@ class AgentPromptGraph:
             resolved["pacing"] = lyric_controls.pacing
 
         return resolved
+
+    def _extract_user_overrides(
+        self, lyric_controls: Optional[LyricControls]
+    ) -> Dict[str, str]:
+        """
+        Extract only explicitly-set (non-"auto") lyric control values.
+        Returns a dict with only the fields the user explicitly set.
+        Used for V4/V5 two-step where LLM infers profile and user overrides it.
+        """
+        if not lyric_controls:
+            return {}
+
+        overrides = {}
+        if lyric_controls.audience and lyric_controls.audience != "auto":
+            overrides["audience"] = lyric_controls.audience
+        if lyric_controls.directness and lyric_controls.directness != "auto":
+            overrides["directness"] = lyric_controls.directness
+        if lyric_controls.humor and lyric_controls.humor != "auto":
+            overrides["humor"] = lyric_controls.humor
+        if lyric_controls.explicitness and lyric_controls.explicitness != "auto":
+            overrides["explicitness"] = lyric_controls.explicitness
+        if lyric_controls.persona and lyric_controls.persona != "auto":
+            overrides["persona"] = lyric_controls.persona
+        if lyric_controls.density and lyric_controls.density != "auto":
+            overrides["density"] = lyric_controls.density
+        if lyric_controls.pacing and lyric_controls.pacing != "auto":
+            overrides["pacing"] = lyric_controls.pacing
+
+        return overrides
 
     def _format_style_context(self, context_pack: Dict[str, Any]) -> str:
         """Format context for V3 style agent (Step 1, no lyric profile)."""
@@ -1393,47 +1416,41 @@ class AgentPromptGraph:
     async def _node_generate_single(self, state: _AgentState) -> _AgentState:
         """Single LLM call to generate all 6 sections (V1/V2)."""
         logger.info("agent.generate_single calling LLM (model=%s)", self._active_model)
-        start_time = time.time()
 
+        tracer: DebugTracer = state.get("tracer")
         context_text = state["context_text"]
         system_prompt = getattr(
             self, "_active_song_prompt", self.settings.song_agent_prompt
         )
 
-        # DEBUG log
-        self._debug_log("=" * 80)
-        self._debug_log("SINGLE-STEP GENERATION (V1/V2)")
-        self._debug_log(f"MODEL: {self._active_model}")
-        self._debug_log("=" * 80)
-        self._debug_log("\n--- SYSTEM PROMPT (truncated) ---")
-        self._debug_log(system_prompt[:500] + "...")
-        self._debug_log("\n--- USER CONTEXT ---")
-        self._debug_log(context_text)
-        self._debug_log("\n--- END REQUEST ---\n")
+        # Generate with span
+        with tracer.span("song.generate", "llm_call", model=self._active_model) as span:
+            raw = await self._call_llm(system_prompt, context_text)
+            span.set_meta("prompt_chars", len(system_prompt) + len(context_text))
+            span.set_meta("response_chars", len(raw))
+            span.set_artifact("system_prompt", system_prompt)
+            span.set_artifact("user_message", context_text)
+            span.set_artifact("raw_response", raw)
 
-        raw = await self._call_llm(system_prompt, context_text)
-        elapsed_ms = int((time.time() - start_time) * 1000)
-
-        self._debug_log("\n--- RAW OUTPUT ---")
-        self._debug_log(raw)
-        self._debug_log("\n--- END OUTPUT ---\n")
-
-        # Store debug info for finalize
-        generation_debug = {
-            "system_prompt": system_prompt,
-            "user_message": context_text,
-            "raw_response": raw,
-            "elapsed_ms": elapsed_ms,
-            "repairs": [],
-        }
-
-        return {**state, "raw_output": raw, "generation_debug": generation_debug}
+        return {**state, "raw_output": raw}
 
     async def _node_parse_validate(self, state: _AgentState) -> _AgentState:
         """Parse and validate the single-step output."""
+        tracer: DebugTracer = state.get("tracer")
         raw = state.get("raw_output", "")
-        parsed = self._parse_agent_output(raw)
-        issues = self._validate_output(parsed, state["context_pack"])
+
+        # Parse with span
+        with tracer.span("song.parse", "parse") as span:
+            parsed = self._parse_agent_output(raw)
+            span.set_meta("title", parsed.song_title)
+            span.set_meta("lyrics_chars", len(parsed.lyrics))
+            span.set_meta("suno_prompt_chars", len(parsed.suno_prompt))
+
+        # Validate with span
+        with tracer.span("song.validate", "validate") as span:
+            issues = self._validate_output(parsed, state["context_pack"])
+            span.set_meta("issues", issues)
+            span.set_meta("valid", len(issues) == 0)
 
         if issues:
             logger.info("agent.parse_validate found issues: %s", issues)
@@ -1455,15 +1472,20 @@ class AgentPromptGraph:
 
     async def _node_repair(self, state: _AgentState) -> _AgentState:
         """Attempt to repair invalid output."""
+        tracer: DebugTracer = state.get("tracer")
+        repairs_left = state.get("repairs_left", 0)
+        max_repairs = self.settings.agent_max_repairs
+        attempt = max_repairs - repairs_left + 1
+
         logger.info(
-            "agent.repair attempting fix (repairs_left=%d)",
-            state.get("repairs_left", 0),
+            "agent.repair attempting fix (attempt=%d, repairs_left=%d)",
+            attempt,
+            repairs_left,
         )
 
         issues = state.get("issues", [])
         raw_output = state.get("raw_output", "")
         context_text = state["context_text"]
-        repairs_left = state.get("repairs_left", 0)
 
         # Build repair prompt
         repair_prompt = getattr(
@@ -1482,34 +1504,25 @@ ORIGINAL REQUEST:
 
 Please fix the issues and regenerate the complete output with all 6 sections.
 """
-        llm_start = time.time()
-        raw = await self._call_llm(repair_prompt, user_message)
-        llm_ms = int((time.time() - llm_start) * 1000)
 
-        parse_start = time.time()
-        # We'll parse later in validation, but measure the time here
-        parse_ms = 0  # Parsing happens in validation step for single-step
-
-        # Track repair in debug
-        generation_debug = state.get("generation_debug", {"repairs": []})
-        max_repairs = self.settings.agent_max_repairs
-        generation_debug["repairs"].append(
-            {
-                "attempt": max_repairs - repairs_left + 1,
-                "issues": issues,
-                "output": raw,
-                "timing": {
-                    "llm_ms": llm_ms,
-                    "parse_ms": parse_ms,
-                    "total_ms": llm_ms,
-                },
-            }
-        )
+        # Repair with span
+        with tracer.span(
+            f"song.repair.{attempt}",
+            "repair",
+            attempt=attempt,
+            model=self._active_model,
+        ) as span:
+            raw = await self._call_llm(repair_prompt, user_message)
+            span.set_meta("issues", issues)
+            span.set_meta("prompt_chars", len(repair_prompt) + len(user_message))
+            span.set_meta("response_chars", len(raw))
+            span.set_artifact("system_prompt", repair_prompt)
+            span.set_artifact("repair_context", user_message)
+            span.set_artifact("raw_response", raw)
 
         return {
             **state,
             "raw_output": raw,
-            "generation_debug": generation_debug,
             "repairs_left": repairs_left - 1,
             "repaired": True,
         }
@@ -1534,12 +1547,8 @@ Please fix the issues and regenerate the complete output with all 6 sections.
         weirdness = self._clamp_percent(parsed.weirdness)
         style_influence = self._clamp_percent(parsed.style_influence)
         generation_id = self._create_generation_id(song_prompt, lyrics_about)
-        context_hash = self._hash_context(context_pack)
 
-        # Get generation debug info
-        generation_debug = state.get("generation_debug", {})
-        elapsed_seconds = generation_debug.get("elapsed_ms", 0) / 1000
-
+        # Result without debug_info - tracer will be attached in generate()
         result = {
             "concept_title": concept_title,
             "lyrics": lyrics,
@@ -1548,24 +1557,6 @@ Please fix the issues and regenerate the complete output with all 6 sections.
             "weirdness": weirdness,
             "style_influence": style_influence,
             "generation_id": generation_id,
-            "debug_info": {
-                "variant": getattr(
-                    self, "_active_variant", self.settings.prompt_variant
-                ),
-                "model": getattr(self, "_active_model", self.settings.llm_model),
-                "elapsed_seconds": round(elapsed_seconds, 2),
-                "context_hash": context_hash,
-                "two_step": False,
-                "repaired": state.get("repaired", False),
-                # Detailed debug like parallel flow
-                "generation": {
-                    "system_prompt": generation_debug.get("system_prompt"),
-                    "user_message": generation_debug.get("user_message"),
-                    "raw_response": generation_debug.get("raw_response"),
-                    "elapsed_ms": generation_debug.get("elapsed_ms"),
-                    "repairs": generation_debug.get("repairs", []),
-                },
-            },
         }
         return {**state, "result": result}
 

@@ -2,9 +2,80 @@
 Minimal generation models for the Suno formatter agent.
 """
 
-from typing import Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
+
+
+# ===========================================================================
+# DEBUG TRACE SCHEMA (v1)
+# ===========================================================================
+
+SpanKind = Literal[
+    "llm_call",
+    "validate",
+    "parse",
+    "format_context",
+    "repair",
+    "profile_infer",
+    "branch",
+    "other",
+]
+
+
+class DebugSpan(BaseModel):
+    """A single span in the debug trace timeline."""
+
+    id: str = Field(description="Unique span identifier")
+    parent_id: Optional[str] = Field(
+        default=None, description="Parent span ID for nesting"
+    )
+    name: str = Field(
+        description="Span name (e.g., 'style.generate', 'lyrics.repair.1')"
+    )
+    kind: SpanKind = Field(description="Type of operation")
+    start_ms: int = Field(description="Start time in ms since generation start")
+    end_ms: int = Field(description="End time in ms since generation start")
+    elapsed_ms: int = Field(description="Duration in ms")
+    meta: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Structured metadata (model, prompt_chars, response_chars, issues, etc.)",
+    )
+    artifacts: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Raw text artifacts (system_prompt, user_message, raw_response) - hidden by default in UI",
+    )
+
+
+class DebugTraceSummary(BaseModel):
+    """High-level summary of the generation."""
+
+    variant: str = Field(description="Prompt variant used (e.g., v5_hybrid)")
+    model: str = Field(description="Primary LLM model used")
+    fast_model: Optional[str] = Field(
+        default=None, description="Fast model for profile inference (if used)"
+    )
+    total_elapsed_ms: int = Field(description="Total generation time in ms")
+    llm_calls: int = Field(description="Number of LLM calls made")
+    repairs: int = Field(description="Number of repair attempts")
+    architecture: str = Field(
+        description="Generation architecture (single_step or two_step)"
+    )
+    success: bool = Field(default=True, description="Whether generation succeeded")
+    error: Optional[str] = Field(default=None, description="Error message if failed")
+
+
+class DebugTrace(BaseModel):
+    """
+    Unified debug trace returned in AdvancedGenerateResponse.debug_info.
+    Version 1 schema - all variants (V1-V5) use this same structure.
+    """
+
+    version: int = Field(default=1, description="Schema version for forward compat")
+    summary: DebugTraceSummary = Field(description="High-level generation summary")
+    spans: List[DebugSpan] = Field(
+        default_factory=list, description="Ordered timeline of spans"
+    )
 
 from app.constants import (
     SUNO_PROMPT_MAX_CHARS,
