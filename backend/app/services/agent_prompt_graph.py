@@ -58,6 +58,34 @@ class _ParsedStyleOutput:
     weirdness: int
     style_influence: int
     lyric_profile: Optional[Dict[str, str]]  # V4 only: LLM-generated profile
+
+
+@dataclass
+class GenerationContext:
+    """
+    Request-scoped context for a single generation.
+
+    This avoids race conditions when the AgentPromptGraph singleton
+    handles concurrent requests - each request gets its own context.
+    """
+
+    variant_id: str
+    is_two_step: bool
+    uses_lyric_profile: bool
+
+    # Model configuration
+    active_model: str  # Primary model (or style model for two-step)
+    style_model: Optional[str] = None  # Two-step only
+    lyrics_model: Optional[str] = None  # Two-step only
+
+    # Prompts (set based on variant)
+    song_prompt: Optional[str] = None  # Single-step
+    repair_prompt: Optional[str] = None  # Single-step
+    style_prompt: Optional[str] = None  # Two-step
+    style_repair_prompt: Optional[str] = None  # Two-step
+    lyrics_prompt: Optional[str] = None  # Two-step
+    lyrics_repair_prompt: Optional[str] = None  # Two-step
+    profile_inference_prompt: Optional[str] = None  # V4 only
     raw: str
 
 
@@ -311,6 +339,8 @@ class _AgentState(TypedDict, total=False):
     request: AdvancedGenerateRequest
     context_pack: Dict[str, Any]
     lyric_controls: Dict[str, Any]
+    # Request-scoped context (avoids race conditions with concurrent requests)
+    ctx: Any  # GenerationContext instance
     # Step 1: Style generation
     style_context: str
     style_output: _ParsedStyleOutput
@@ -432,88 +462,83 @@ class AgentPromptGraph:
     async def generate(self, request: AdvancedGenerateRequest) -> Dict[str, Any]:
         logger.info("AgentPromptGraph.generate start")
 
-        # Get variant - either from request or settings
+        # Get variant - either from request, settings, or default to v5_hybrid
         request_variant = getattr(request, "prompt_variant", None)
-        variant_id = request_variant or self.settings.prompt_variant
+        variant_id = request_variant or self.settings.prompt_variant or "v5_hybrid"
 
         try:
             variant = get_variant(variant_id)
         except ValueError:
-            # Fall back to v1 if variant not found
-            variant = get_variant("v1")
-            variant_id = "v1"
+            # Fall back to default if variant not found
+            logger.warning("Unknown variant %s, falling back to v5_hybrid", variant_id)
+            variant = get_variant("v5_hybrid")
+            variant_id = "v5_hybrid"
 
-        self._active_variant = variant_id
-        self._is_two_step = variant.two_step
-        self._uses_lyric_profile = variant.uses_lyric_profile
-
-        if self._is_two_step:
-            # V3/V4 two-step: use style_agent and lyrics_agent prompts
-            self._active_style_prompt = variant.style_agent
-            self._active_style_repair_prompt = variant.style_repair_agent
-            self._active_lyrics_prompt = variant.lyrics_agent
-            self._active_lyrics_repair_prompt = variant.lyrics_repair_agent
-            self._active_profile_inference_prompt = variant.profile_inference_agent
-            logger.info(
-                "Using two-step variant: %s (lyric_profile=%s)",
-                variant_id,
-                self._uses_lyric_profile,
-            )
-        else:
-            # V1/V2 single-step: use song_agent and repair_agent prompts
-            self._active_song_prompt = variant.song_agent
-            self._active_repair_prompt = variant.repair_agent
-            logger.info("Using single-step variant: %s", variant_id)
-
-        # Check for per-request model overrides
-        if self._is_two_step:
-            # Two-step: support separate style and lyrics models
+        # Build request-scoped context to avoid race conditions with concurrent requests
+        if variant.two_step:
+            # Two-step: separate style and lyrics models
             request_style_model = getattr(request, "style_model", None)
             request_lyrics_model = getattr(request, "lyrics_model", None)
-            self._active_style_model = request_style_model or self.settings.style_model
-            self._active_lyrics_model = (
-                request_lyrics_model or self.settings.lyrics_model
+            style_model = request_style_model or self.settings.style_model
+            lyrics_model = request_lyrics_model or self.settings.lyrics_model
+
+            ctx = GenerationContext(
+                variant_id=variant_id,
+                is_two_step=True,
+                uses_lyric_profile=variant.uses_lyric_profile,
+                active_model=style_model,
+                style_model=style_model,
+                lyrics_model=lyrics_model,
+                style_prompt=variant.style_agent,
+                style_repair_prompt=variant.style_repair_agent,
+                lyrics_prompt=variant.lyrics_agent,
+                lyrics_repair_prompt=variant.lyrics_repair_agent,
+                profile_inference_prompt=variant.profile_inference_agent,
             )
-            # For backwards compat, set _active_model to style model
-            self._active_model = self._active_style_model
             logger.info(
-                "Using two-step models: style=%s, lyrics=%s",
-                self._active_style_model,
-                self._active_lyrics_model,
+                "Using two-step variant: %s (lyric_profile=%s, style=%s, lyrics=%s)",
+                variant_id,
+                ctx.uses_lyric_profile,
+                ctx.style_model,
+                ctx.lyrics_model,
             )
         else:
-            # Single-step: use single model
+            # Single-step: single model
             request_model = getattr(request, "model", None)
-            if request_model:
-                self._active_llm = self._get_or_create_llm(request_model)
-                self._active_model = request_model
-                logger.info("Using per-request model: %s", request_model)
-            else:
-                self._active_llm = self.llm
-                self._active_model = self.settings.llm_model
+            active_model = request_model or self.settings.llm_model
+
+            ctx = GenerationContext(
+                variant_id=variant_id,
+                is_two_step=False,
+                uses_lyric_profile=False,
+                active_model=active_model,
+                song_prompt=variant.song_agent,
+                repair_prompt=variant.repair_agent,
+            )
+            logger.info(
+                "Using single-step variant: %s (model=%s)", variant_id, active_model
+            )
 
         # Select the appropriate execution path based on variant
-        if self._is_two_step:
+        if ctx.is_two_step:
             # V3/V4: Parallel two-step generation
-            result = await self._generate_parallel_two_step(request)
+            result = await self._generate_parallel_two_step(request, ctx)
         else:
             # V1/V2: Single-step graph with repair loop
             # Create tracer for this generation
             tracer = DebugTracer(
-                variant=variant_id,
-                model=self._active_model,
+                variant=ctx.variant_id,
+                model=ctx.active_model,
                 architecture="single_step",
             )
             state = await self._graph_single_step.ainvoke(
-                {"request": request, "tracer": tracer}
+                {"request": request, "tracer": tracer, "ctx": ctx}
             )
             result = state["result"]
             # Attach trace to result
             result["debug_info"] = tracer.to_dict()
 
-        logger.info(
-            "AgentPromptGraph.generate complete (two_step=%s)", self._is_two_step
-        )
+        logger.info("AgentPromptGraph.generate complete (two_step=%s)", ctx.is_two_step)
         return result
 
     def _get_or_create_llm(self, model: str):
@@ -552,7 +577,7 @@ class AgentPromptGraph:
         return self._get_or_create_llm(fast_model)
 
     async def _generate_parallel_two_step(
-        self, request: AdvancedGenerateRequest
+        self, request: AdvancedGenerateRequest, ctx: GenerationContext
     ) -> Dict[str, Any]:
         """
         V3/V4 parallel two-step generation:
@@ -566,17 +591,17 @@ class AgentPromptGraph:
         """
         logger.info(
             "Starting parallel two-step generation (style=%s, lyrics=%s)",
-            self._active_style_model,
-            self._active_lyrics_model,
+            ctx.style_model,
+            ctx.lyrics_model,
         )
 
         # Create tracer for this generation (show primary style model in summary)
         tracer = DebugTracer(
-            variant=self._active_variant,
-            model=f"{self._active_style_model} / {self._active_lyrics_model}",
+            variant=ctx.variant_id,
+            model=f"{ctx.style_model} / {ctx.lyrics_model}",
             fast_model=(
                 self.settings.profile_inference_model
-                if self._uses_lyric_profile
+                if ctx.uses_lyric_profile
                 else None
             ),
             architecture="two_step",
@@ -590,12 +615,8 @@ class AgentPromptGraph:
         user_overrides = self._extract_user_overrides(lyric_controls_obj)
 
         # Run style and lyrics branches in parallel with separate models
-        style_task = self._run_style_branch(
-            context_pack, tracer, model=self._active_style_model
-        )
-        lyrics_task = self._run_lyrics_branch(
-            context_pack, user_overrides, tracer, model=self._active_lyrics_model
-        )
+        style_task = self._run_style_branch(context_pack, tracer, ctx)
+        lyrics_task = self._run_lyrics_branch(context_pack, user_overrides, tracer, ctx)
 
         style_result, lyrics_result = await asyncio.gather(
             style_task, lyrics_task, return_exceptions=True
@@ -621,7 +642,7 @@ class AgentPromptGraph:
 
         # For V5 hybrid: prepend MAX headers to V1-style prose output
         suno_prompt = style_result["suno_prompt"]
-        if self._active_variant == "v5_hybrid":
+        if ctx.variant_id == "v5_hybrid":
             max_headers = (
                 "[IS_MAX_MODE: MAX](MAX)\n"
                 "[QUALITY: MAX](MAX)\n"
@@ -657,17 +678,17 @@ class AgentPromptGraph:
         self,
         context_pack: Dict[str, Any],
         tracer: DebugTracer,
-        model: Optional[str] = None,
+        ctx: GenerationContext,
     ) -> Dict[str, Any]:
         """
         Style branch: generate_style → validate → [repair loop]
         """
-        style_model = model or self._active_model
+        style_model = ctx.style_model
         logger.info("Style branch: starting (model=%s)", style_model)
 
         # Format context for style generation
         style_context = self._format_style_context(context_pack)
-        style_prompt = self._active_style_prompt
+        style_prompt = ctx.style_prompt
 
         # Generate style with span
         with tracer.span("style.generate", "llm_call", model=style_model) as span:
@@ -700,7 +721,7 @@ class AgentPromptGraph:
                 logger.info(
                     "Style branch: repair attempt %d/%d", attempt + 1, max_repairs
                 )
-                repair_prompt = self._active_style_repair_prompt
+                repair_prompt = ctx.style_repair_prompt
                 repair_context = (
                     f"Fix this output:\n\n{style_output.raw}\n\nIssues: {issues}"
                 )
@@ -752,7 +773,7 @@ class AgentPromptGraph:
         context_pack: Dict[str, Any],
         user_lyric_controls: Dict[str, str],
         tracer: DebugTracer,
-        model: Optional[str] = None,
+        ctx: GenerationContext,
     ) -> Dict[str, Any]:
         """
         Lyrics branch: [infer_profile] → generate_lyrics → validate → [repair loop]
@@ -760,22 +781,22 @@ class AgentPromptGraph:
         For V4: First infers lyric profile using fast model, then generates lyrics.
         For V3: Skips profile inference, generates lyrics directly.
         """
-        lyrics_model = model or self._active_model
+        lyrics_model = ctx.lyrics_model
         logger.info(
             "Lyrics branch: starting (uses_profile=%s, model=%s)",
-            self._uses_lyric_profile,
+            ctx.uses_lyric_profile,
             lyrics_model,
         )
 
         lyric_profile = None
-        if self._uses_lyric_profile:
+        if ctx.uses_lyric_profile:
             # V4: Infer lyric profile using fast model
             fast_model = self.settings.profile_inference_model
             with tracer.span(
                 "lyrics.profile_infer", "profile_infer", model=fast_model
             ) as span:
                 inferred_profile, profile_artifacts = await self._infer_lyric_profile(
-                    context_pack
+                    context_pack, ctx
                 )
                 span.set_meta("inferred_profile", inferred_profile)
                 span.set_artifact(
@@ -806,7 +827,7 @@ class AgentPromptGraph:
             lyrics_context = self._format_lyrics_context_simple_v3(context_pack)
 
         # Generate lyrics with span
-        lyrics_prompt = self._active_lyrics_prompt
+        lyrics_prompt = ctx.lyrics_prompt
         with tracer.span("lyrics.generate", "llm_call", model=lyrics_model) as span:
             raw_output = await self._call_llm(
                 lyrics_prompt, lyrics_context, model=lyrics_model
@@ -838,7 +859,7 @@ class AgentPromptGraph:
                 logger.info(
                     "Lyrics branch: repair attempt %d/%d", attempt + 1, max_repairs
                 )
-                repair_prompt = self._active_lyrics_repair_prompt
+                repair_prompt = ctx.lyrics_repair_prompt
                 repair_context = (
                     f"Fix this output:\n\n{lyrics_output.raw}\n\nIssues: {issues}"
                 )
@@ -884,14 +905,14 @@ class AgentPromptGraph:
         }
 
     async def _infer_lyric_profile(
-        self, context_pack: Dict[str, Any]
+        self, context_pack: Dict[str, Any], ctx: GenerationContext
     ) -> Tuple[Dict[str, str], Dict[str, Any]]:
         """
         Infer lyric profile using the fast model (gpt-4.1-nano).
         Returns a tuple of (profile_dict, debug_info).
         """
         fast_llm = self._get_fast_llm()
-        profile_prompt = self._active_profile_inference_prompt
+        profile_prompt = ctx.profile_inference_prompt
 
         # Build context for profile inference
         context = (
@@ -1452,17 +1473,17 @@ class AgentPromptGraph:
 
     async def _node_generate_single(self, state: _AgentState) -> _AgentState:
         """Single LLM call to generate all 6 sections (V1/V2)."""
-        logger.info("agent.generate_single calling LLM (model=%s)", self._active_model)
+        ctx: GenerationContext = state.get("ctx")
+        model = ctx.active_model if ctx else self.settings.llm_model
+        logger.info("agent.generate_single calling LLM (model=%s)", model)
 
         tracer: DebugTracer = state.get("tracer")
         context_text = state["context_text"]
-        system_prompt = getattr(
-            self, "_active_song_prompt", self.settings.song_agent_prompt
-        )
+        system_prompt = ctx.song_prompt if ctx else self.settings.song_agent_prompt
 
         # Generate with span
-        with tracer.span("song.generate", "llm_call", model=self._active_model) as span:
-            raw = await self._call_llm(system_prompt, context_text)
+        with tracer.span("song.generate", "llm_call", model=model) as span:
+            raw = await self._call_llm(system_prompt, context_text, model=model)
             span.set_meta("prompt_chars", len(system_prompt) + len(context_text))
             span.set_meta("response_chars", len(raw))
             span.set_artifact("system_prompt", system_prompt)
@@ -1509,6 +1530,7 @@ class AgentPromptGraph:
 
     async def _node_repair(self, state: _AgentState) -> _AgentState:
         """Attempt to repair invalid output."""
+        ctx: GenerationContext = state.get("ctx")
         tracer: DebugTracer = state.get("tracer")
         repairs_left = state.get("repairs_left", 0)
         max_repairs = self.settings.agent_max_repairs
@@ -1525,9 +1547,8 @@ class AgentPromptGraph:
         context_text = state["context_text"]
 
         # Build repair prompt
-        repair_prompt = getattr(
-            self, "_active_repair_prompt", self.settings.repair_agent_prompt
-        )
+        repair_prompt = ctx.repair_prompt if ctx else self.settings.repair_agent_prompt
+        model = ctx.active_model if ctx else self.settings.llm_model
         user_message = f"""The following output has validation issues:
 
 ORIGINAL OUTPUT:
@@ -1547,9 +1568,9 @@ Please fix the issues and regenerate the complete output with all 6 sections.
             f"song.repair.{attempt}",
             "repair",
             attempt=attempt,
-            model=self._active_model,
+            model=model,
         ) as span:
-            raw = await self._call_llm(repair_prompt, user_message)
+            raw = await self._call_llm(repair_prompt, user_message, model=model)
             span.set_meta("issues", issues)
             span.set_meta("prompt_chars", len(repair_prompt) + len(user_message))
             span.set_meta("response_chars", len(raw))
