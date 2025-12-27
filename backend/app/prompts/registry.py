@@ -73,6 +73,7 @@ class PromptVariant:
     lyrics_agent: Optional[str] = None
     lyrics_repair_agent: Optional[str] = None
     profile_inference_agent: Optional[str] = None  # For V4: fast profile inference
+    genre_disambiguation_agent: Optional[str] = None  # For V6: pre-style genre enrichment
     
     # Metadata
     is_default: bool = False
@@ -116,11 +117,14 @@ class PromptVariant:
         Single-step: [song_agent, repair_agent]
         Two-step: [style_agent, style_repair, lyrics_agent, lyrics_repair]
         Two-step with profile: [profile_inference, style_agent, style_repair, lyrics_agent, lyrics_repair]
+        Two-step with genre disambiguation: [genre_disambig, style_agent, style_repair, lyrics_agent, lyrics_repair]
         """
         if self.architecture == "single_step":
             return [len(self.song_agent or ""), len(self.repair_agent or "")]
         else:
             lengths = []
+            if self.genre_disambiguation_agent:
+                lengths.append(len(self.genre_disambiguation_agent))
             if self.profile_inference_agent:
                 lengths.append(len(self.profile_inference_agent))
             lengths.extend([
@@ -148,6 +152,8 @@ class PromptVariant:
             result["lyrics_repair_agent"] = self.lyrics_repair_agent
             if self.profile_inference_agent:
                 result["profile_inference_agent"] = self.profile_inference_agent
+            if self.genre_disambiguation_agent:
+                result["genre_disambiguation_agent"] = self.genre_disambiguation_agent
         return result
 
 
@@ -167,6 +173,7 @@ def register_variant(
     lyrics_agent: Optional[str] = None,
     lyrics_repair_agent: Optional[str] = None,
     profile_inference_agent: Optional[str] = None,
+    genre_disambiguation_agent: Optional[str] = None,
     is_default: bool = False,
     experimental: bool = False,
     deprecated: bool = False,
@@ -198,6 +205,7 @@ def register_variant(
         lyrics_agent=lyrics_agent,
         lyrics_repair_agent=lyrics_repair_agent,
         profile_inference_agent=profile_inference_agent,
+        genre_disambiguation_agent=genre_disambiguation_agent,
         is_default=is_default,
         experimental=experimental,
         deprecated=deprecated,

@@ -46,7 +46,7 @@ export interface AuthStatus {
 
 // === Generation Types ===
 
-export type PromptVariant = 'v1' | 'v2_reddit_tricks' | 'v3_two_step' | 'v4_lyric_profile' | 'v5_hybrid';
+export type PromptVariant = 'v1' | 'v2_reddit_tricks' | 'v3_two_step' | 'v4_lyric_profile' | 'v5_hybrid' | 'v6_genre_disambiguation';
 
 // Lyric control types
 export type LyricAudience = 'auto' | 'kids' | 'general' | 'adult';

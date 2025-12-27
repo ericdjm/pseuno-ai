@@ -83,6 +83,10 @@ class Settings(BaseSettings):
         default="gpt-4.1-mini",
         description="Fast model for lyric profile inference (e.g., gpt-4.1-mini, gpt-4.1-nano)",
     )
+    genre_disambiguation_model: str = Field(
+        default="gemini-3-flash-preview",
+        description="Model for V6 genre disambiguation pre-call",
+    )
     llm_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     prompt_variant: Optional[str] = Field(
         default=None,

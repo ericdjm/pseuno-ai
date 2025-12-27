@@ -15,11 +15,7 @@ import httpx
 from langgraph.graph import END, StateGraph
 
 from app.config import Settings
-from app.prompts import (
-    get_variant,
-    STYLE_AGENT_SYSTEM_PROMPT,
-    LYRICS_AGENT_SYSTEM_PROMPT,
-)
+from app.prompts import get_variant
 from app.schemas.advanced import AdvancedGenerateRequest, LyricControls
 from app.services.debug_trace import DebugTracer
 
@@ -86,7 +82,8 @@ class GenerationContext:
     style_repair_prompt: Optional[str] = None  # Two-step
     lyrics_prompt: Optional[str] = None  # Two-step
     lyrics_repair_prompt: Optional[str] = None  # Two-step
-    profile_inference_prompt: Optional[str] = None  # V4 only
+    profile_inference_prompt: Optional[str] = None  # V4 onwards
+    genre_disambiguation_prompt: Optional[str] = None  # V6 onwards
 
 
 @dataclass(frozen=True)
@@ -372,9 +369,8 @@ class AgentPromptGraph:
     def __init__(self, settings: Settings, llm: Optional[Any] = None):
         self.settings = settings
         self.llm = llm or self._create_llm_client(settings)
-        # Build both graphs at init time
+        # Build single-step graph at init time (two-step uses _generate_parallel_two_step)
         self._graph_single_step = self._build_single_step_graph()
-        self._graph_two_step = self._build_two_step_graph()
 
     @staticmethod
     def _create_llm_client(settings: Settings):
@@ -429,36 +425,6 @@ class AgentPromptGraph:
 
         return graph.compile()
 
-    def _build_two_step_graph(self):
-        """
-        V3 two-step generation graph:
-        build_context → generate_style → generate_lyrics → finalize
-
-        Each step is focused on one task:
-        - Style agent: SUNO PROMPT, EXCLUDE, WEIRDNESS, STYLE INFLUENCE
-        - Lyrics agent: SONG TITLE, LYRICS
-        """
-        graph = StateGraph(_AgentState)
-
-        graph.add_node("build_context", self._node_build_context)
-        graph.add_node("generate_style", self._node_generate_style)
-        graph.add_node("generate_lyrics", self._node_generate_lyrics)
-        graph.add_node("finalize", self._node_finalize)
-        graph.add_node("error", self._node_error)
-
-        graph.set_entry_point("build_context")
-        graph.add_edge("build_context", "generate_style")
-        graph.add_conditional_edges(
-            "generate_style",
-            self._route_after_style,
-            {"generate_lyrics": "generate_lyrics", "error": "error"},
-        )
-        graph.add_edge("generate_lyrics", "finalize")
-        graph.add_edge("finalize", END)
-        graph.add_edge("error", END)
-
-        return graph.compile()
-
     async def generate(self, request: AdvancedGenerateRequest) -> Dict[str, Any]:
         logger.info("AgentPromptGraph.generate start")
 
@@ -494,6 +460,7 @@ class AgentPromptGraph:
                 lyrics_prompt=variant.lyrics_agent,
                 lyrics_repair_prompt=variant.lyrics_repair_agent,
                 profile_inference_prompt=variant.profile_inference_agent,
+                genre_disambiguation_prompt=variant.genre_disambiguation_agent,
             )
             logger.info(
                 "Using two-step variant: %s (lyric_profile=%s, style=%s, lyrics=%s)",
@@ -596,14 +563,18 @@ class AgentPromptGraph:
         )
 
         # Create tracer for this generation (show primary style model in summary)
+        # Include fast models used: profile inference and/or genre disambiguation
+        fast_models = []
+        if ctx.uses_lyric_profile:
+            fast_models.append(self.settings.profile_inference_model)
+        if ctx.genre_disambiguation_prompt:
+            fast_models.append(self.settings.genre_disambiguation_model)
+        fast_model_str = ", ".join(fast_models) if fast_models else None
+
         tracer = DebugTracer(
             variant=ctx.variant_id,
             model=f"{ctx.style_model} / {ctx.lyrics_model}",
-            fast_model=(
-                self.settings.profile_inference_model
-                if ctx.uses_lyric_profile
-                else None
-            ),
+            fast_model=fast_model_str,
             architecture="two_step",
         )
 
@@ -640,9 +611,9 @@ class AgentPromptGraph:
             result["debug_info"] = tracer.to_dict()
             return result
 
-        # For V5 hybrid: prepend MAX headers to V1-style prose output
+        # For V5 hybrid and V6: prepend MAX headers to V1-style prose output
         suno_prompt = style_result["suno_prompt"]
-        if ctx.variant_id == "v5_hybrid":
+        if ctx.variant_id in ("v5_hybrid", "v6_genre_disambiguation"):
             max_headers = (
                 "[IS_MAX_MODE: MAX](MAX)\n"
                 "[QUALITY: MAX](MAX)\n"
@@ -674,6 +645,109 @@ class AgentPromptGraph:
             "debug_info": tracer.to_dict(),
         }
 
+    async def _run_genre_disambiguation(
+        self,
+        context_pack: Dict[str, Any],
+        tracer: DebugTracer,
+        ctx: GenerationContext,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        V6: Run genre disambiguation pre-call to enrich style context.
+        Returns parsed JSON or None on failure (best-effort).
+        """
+        if not ctx.genre_disambiguation_prompt:
+            return None
+
+        genre_model = self.settings.genre_disambiguation_model
+        logger.info("Genre disambiguation: starting (model=%s)", genre_model)
+
+        # Build user message for genre disambiguation
+        user_msg = (
+            f"Analyze these artists for genre disambiguation:\n"
+            f"  style_request: {context_pack.get('user_style_request', '')}\n"
+            f"  selected_artists: {context_pack.get('selected_artists', [])}\n"
+            f"  tags: {context_pack.get('tags', [])}\n\n"
+            f"Return ONLY valid JSON matching the schema."
+        )
+
+        with tracer.span(
+            "style.genre_disambiguate", "llm_call", model=genre_model
+        ) as span:
+            try:
+                raw_output = await self._call_llm(
+                    ctx.genre_disambiguation_prompt, user_msg, model=genre_model
+                )
+                span.set_meta(
+                    "prompt_chars", len(ctx.genre_disambiguation_prompt) + len(user_msg)
+                )
+                span.set_meta("response_chars", len(raw_output))
+                span.set_artifact("system_prompt", ctx.genre_disambiguation_prompt)
+                span.set_artifact("user_message", user_msg)
+                span.set_artifact("raw_response", raw_output)
+            except Exception as e:
+                logger.warning("Genre disambiguation LLM call failed: %s", e)
+                span.set_meta("error", str(e))
+                return None
+
+        # Parse JSON with span
+        with tracer.span("style.genre_disambiguate.parse", "parse") as parse_span:
+            try:
+                # Extract JSON from response (may be wrapped in markdown code block)
+                json_match = re.search(r"```json\s*(.*?)\s*```", raw_output, re.DOTALL)
+                if json_match:
+                    json_str = json_match.group(1)
+                else:
+                    # Try to find raw JSON
+                    json_str = raw_output.strip()
+
+                parsed = json.loads(json_str)
+                parse_span.set_meta("valid", True)
+                parse_span.set_meta("artist_count", len(parsed.get("artists", [])))
+
+                logger.info(
+                    "Genre disambiguation: parsed %d artists",
+                    len(parsed.get("artists", [])),
+                )
+                return parsed
+            except (json.JSONDecodeError, KeyError) as e:
+                logger.warning("Genre disambiguation parse failed: %s", e)
+                parse_span.set_meta("valid", False)
+                parse_span.set_meta("error", str(e))
+                return None
+
+    def _format_genre_context_section(self, genre_data: Dict[str, Any]) -> str:
+        """Format genre disambiguation data for injection into style context."""
+        if not genre_data or not genre_data.get("artists"):
+            return ""
+
+        lines = [
+            "",
+            "GENRE DISAMBIGUATION (DO NOT COPY VERBATIM - use to guide genre accuracy):",
+        ]
+
+        for artist in genre_data.get("artists", []):
+            name = artist.get("name", "Unknown")
+            era = artist.get("era", {})
+            era_label = era.get("label", "unspecified")
+            era_basis = era.get("basis", "unspecified")
+
+            lines.append(f"  {name} ({era_label}, basis={era_basis}):")
+            lines.append(f"    genres: {artist.get('genres', [])}")
+            lines.append(f"    NOT (commonly confused): {artist.get('not_genres', [])}")
+
+            anchors = artist.get("anchors", {})
+            if anchors.get("albums") or anchors.get("songs"):
+                lines.append(
+                    f"    anchors: albums={anchors.get('albums', [])}, "
+                    f"songs={anchors.get('songs', [])}"
+                )
+
+        global_notes = genre_data.get("global_notes", [])
+        if global_notes:
+            lines.append(f"  Notes: {global_notes}")
+
+        return "\n".join(lines)
+
     async def _run_style_branch(
         self,
         context_pack: Dict[str, Any],
@@ -681,13 +755,24 @@ class AgentPromptGraph:
         ctx: GenerationContext,
     ) -> Dict[str, Any]:
         """
-        Style branch: generate_style → validate → [repair loop]
+        Style branch: [genre_disambiguate] → generate_style → validate → [repair loop]
         """
         style_model = ctx.style_model
         logger.info("Style branch: starting (model=%s)", style_model)
 
+        # V6: Run genre disambiguation first (best-effort)
+        genre_data = None
+        if ctx.genre_disambiguation_prompt:
+            genre_data = await self._run_genre_disambiguation(context_pack, tracer, ctx)
+
         # Format context for style generation
         style_context = self._format_style_context(context_pack)
+
+        # Inject genre disambiguation context if available
+        if genre_data:
+            genre_section = self._format_genre_context_section(genre_data)
+            style_context = style_context + genre_section
+
         style_prompt = ctx.style_prompt
 
         # Generate style with span
@@ -1071,129 +1156,6 @@ class AgentPromptGraph:
             ],
         }
 
-    async def _node_build_context(self, state: _AgentState) -> _AgentState:
-        """Build context for both style and lyrics generation."""
-        request = state["request"]
-        context_pack = self._build_context_pack(request)
-
-        # Get lyric controls directly from request (no LLM call needed)
-        lyric_controls_obj = getattr(request, "lyric_controls", None)
-        lyric_controls = self._resolve_lyric_controls(lyric_controls_obj)
-
-        # Format style context (for Step 1 - no lyrics_about needed)
-        # Format style context based on variant
-        # V4 includes lyrics_about for profile inference
-        uses_lyric_profile = getattr(self, "_uses_lyric_profile", False)
-        if uses_lyric_profile:
-            style_context = self._format_style_context_with_profile(context_pack)
-        else:
-            style_context = self._format_style_context(context_pack)
-
-        logger.info(
-            "agent.build_context prepared (tags=%s, artists=%s, uses_profile=%s)",
-            len(context_pack.get("tags", [])),
-            len(context_pack.get("selected_artists", [])),
-            uses_lyric_profile,
-        )
-        return {
-            **state,
-            "context_pack": context_pack,
-            "lyric_controls": lyric_controls,
-            "style_context": style_context,
-        }
-
-    async def _node_generate_style(self, state: _AgentState) -> _AgentState:
-        """Step 1: Generate style artifacts (SUNO PROMPT, EXCLUDE, params)."""
-        uses_lyric_profile = getattr(self, "_uses_lyric_profile", False)
-        logger.info(
-            "agent.generate_style calling LLM (model=%s, generates_profile=%s)",
-            self._active_model,
-            uses_lyric_profile,
-        )
-
-        # Get active style prompt (V3 or V4)
-        style_prompt = getattr(self, "_active_style_prompt", STYLE_AGENT_SYSTEM_PROMPT)
-
-        raw_output = await self._call_llm(style_prompt, state["style_context"])
-
-        # Parse the style output
-        style_output = self._parse_style_output(raw_output)
-
-        logger.info(
-            "agent.generate_style complete (suno_prompt=%d chars, weirdness=%d)",
-            len(style_output.suno_prompt),
-            style_output.weirdness,
-        )
-        return {**state, "style_output": style_output}
-
-    def _route_after_style(self, state: _AgentState) -> str:
-        """Route after style generation - check for critical failures."""
-        style_output = state.get("style_output")
-        if not style_output or not style_output.suno_prompt:
-            return "error"
-        return "generate_lyrics"
-
-    async def _node_generate_lyrics(self, state: _AgentState) -> _AgentState:
-        """Step 2: Generate lyrics using the style context."""
-        logger.info(
-            "agent.generate_lyrics calling LLM (model=%s, uses_lyric_profile=%s)",
-            self._active_model,
-            getattr(self, "_uses_lyric_profile", False),
-        )
-
-        style_output = state["style_output"]
-        context_pack = state["context_pack"]
-        _lyric_controls = state.get("lyric_controls", {})  # Reserved for future use
-        uses_lyric_profile = getattr(self, "_uses_lyric_profile", False)
-
-        # Build lyrics context - with or without lyric profile based on variant
-        if uses_lyric_profile:
-            # V4: Use lyric profile generated by LLM in step 1
-            # Fall back to defaults if parsing failed
-            generated_profile = style_output.lyric_profile or {}
-            profile_for_lyrics = {
-                "density": generated_profile.get("density", "standard"),
-                "pacing": generated_profile.get("pacing", "mid"),
-                "directness": generated_profile.get("directness", "balanced"),
-                "persona": generated_profile.get("persona", "earnest"),
-                "audience": generated_profile.get("audience", "general"),
-                "humor": generated_profile.get("humor", "none"),
-                "explicitness": generated_profile.get("explicitness", "clean"),
-            }
-            lyrics_context = self._format_lyrics_context_with_profile(
-                suno_prompt=style_output.suno_prompt,
-                lyrics_about=context_pack.get("lyrics_about", ""),
-                lyric_controls=profile_for_lyrics,
-            )
-            logger.info("V4: Using LLM-generated lyric profile: %s", generated_profile)
-        else:
-            # V3: No lyric profile, just style context
-            lyrics_context = self._format_lyrics_context_simple(
-                suno_prompt=style_output.suno_prompt,
-                lyrics_about=context_pack.get("lyrics_about", ""),
-            )
-
-        # Get the active lyrics prompt (V3 or V4)
-        lyrics_prompt = getattr(
-            self, "_active_lyrics_prompt", LYRICS_AGENT_SYSTEM_PROMPT
-        )
-
-        raw_output = await self._call_llm(lyrics_prompt, lyrics_context)
-
-        # Parse the lyrics output
-        lyrics_output = self._parse_lyrics_output(raw_output)
-
-        logger.info(
-            "agent.generate_lyrics complete (title=%s, lyrics=%d chars)",
-            lyrics_output.song_title[:30] if lyrics_output.song_title else "EMPTY",
-            len(lyrics_output.lyrics),
-        )
-        return {
-            **state,
-            "lyrics_output": lyrics_output,
-            "lyrics_context": lyrics_context,
-        }
-
     def _node_error(self, state: _AgentState) -> _AgentState:
         """Return an error result when style generation fails."""
         style_output = state.get("style_output")
@@ -1404,50 +1366,6 @@ class AgentPromptGraph:
             lyrics=lyrics,
             raw=raw,
         )
-
-    def _node_finalize(self, state: _AgentState) -> _AgentState:
-        """Combine outputs from both steps into final response."""
-        logger.info("agent.finalize assembling response")
-        context_pack = state["context_pack"]
-        style_output = state["style_output"]
-        lyrics_output = state["lyrics_output"]
-        lyric_controls = state.get("lyric_controls", {})
-
-        song_prompt = context_pack.get("user_style_request", "")
-        lyrics_about = context_pack.get("lyrics_about", "")
-
-        # Use LLM-generated title, fall back to derived if empty
-        concept_title = lyrics_output.song_title.strip() or self._derive_title(
-            song_prompt, lyrics_about
-        )
-        suno_prompt = style_output.suno_prompt.strip() or song_prompt.strip()
-        suno_prompt = self._trim_text(suno_prompt, 500)
-        lyrics = lyrics_output.lyrics.strip()
-        exclude = style_output.exclude.strip()
-        weirdness = self._clamp_percent(style_output.weirdness)
-        style_influence = self._clamp_percent(style_output.style_influence)
-        generation_id = self._create_generation_id(song_prompt, lyrics_about)
-        context_hash = self._hash_context(context_pack)
-
-        result = {
-            "concept_title": concept_title,
-            "lyrics": lyrics,
-            "suno_prompt": suno_prompt,
-            "exclude": exclude,
-            "weirdness": weirdness,
-            "style_influence": style_influence,
-            "generation_id": generation_id,
-            "debug_info": {
-                "agent_model": getattr(self, "_active_model", self.settings.llm_model),
-                "prompt_variant": getattr(
-                    self, "_active_variant", self.settings.prompt_variant
-                ),
-                "context_hash": context_hash,
-                "two_step": True,
-                "lyric_controls": lyric_controls,
-            },
-        }
-        return {**state, "result": result}
 
     # =========================================================================
     # SINGLE-STEP GRAPH NODES (V1/V2)

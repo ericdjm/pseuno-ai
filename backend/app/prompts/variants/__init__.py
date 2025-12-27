@@ -18,6 +18,7 @@ from app.prompts.variants import v2_max_mode
 from app.prompts.variants import v3_two_step
 from app.prompts.variants import v4_lyric_profile
 from app.prompts.variants import v5_hybrid
+from app.prompts.variants import v6_genre_disambiguation
 
 # List of all variant modules (for documentation)
 ALL_VARIANTS = [
@@ -26,5 +27,6 @@ ALL_VARIANTS = [
     v3_two_step,
     v4_lyric_profile,
     v5_hybrid,
+    v6_genre_disambiguation,
 ]
 
