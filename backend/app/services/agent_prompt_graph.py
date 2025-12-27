@@ -58,6 +58,7 @@ class _ParsedStyleOutput:
     weirdness: int
     style_influence: int
     lyric_profile: Optional[Dict[str, str]]  # V4 only: LLM-generated profile
+    raw: str
 
 
 @dataclass
@@ -86,7 +87,6 @@ class GenerationContext:
     lyrics_prompt: Optional[str] = None  # Two-step
     lyrics_repair_prompt: Optional[str] = None  # Two-step
     profile_inference_prompt: Optional[str] = None  # V4 only
-    raw: str
 
 
 @dataclass(frozen=True)
