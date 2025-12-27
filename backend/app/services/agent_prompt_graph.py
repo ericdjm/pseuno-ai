@@ -638,7 +638,10 @@ class AgentPromptGraph:
         # Validate with repair loop
         max_repairs = self.settings.agent_max_repairs
         for attempt in range(max_repairs + 1):
+            validate_start = time.time()
             issues = self._validate_style_output(style_output)
+            validate_ms = int((time.time() - validate_start) * 1000)
+
             if not issues:
                 break
 
@@ -646,23 +649,33 @@ class AgentPromptGraph:
                 logger.info(
                     "Style branch: repair attempt %d/%d", attempt + 1, max_repairs
                 )
-                repair_start = time.time()
                 repair_prompt = self._active_style_repair_prompt
                 repair_context = (
                     f"Fix this output:\n\n{style_output.raw}\n\nIssues: {issues}"
                 )
+
+                llm_start = time.time()
                 repair_output = await self._call_llm(repair_prompt, repair_context)
-                repair_elapsed = int((time.time() - repair_start) * 1000)
+                llm_ms = int((time.time() - llm_start) * 1000)
+
+                parse_start = time.time()
+                style_output = self._parse_style_output(repair_output)
+                parse_ms = int((time.time() - parse_start) * 1000)
+
                 debug["repairs"].append(
                     {
                         "attempt": attempt + 1,
                         "issues": issues,
                         "output": repair_output,
-                        "elapsed_ms": repair_elapsed,
+                        "timing": {
+                            "validate_ms": validate_ms,
+                            "llm_ms": llm_ms,
+                            "parse_ms": parse_ms,
+                            "total_ms": validate_ms + llm_ms + parse_ms,
+                        },
                     }
                 )
                 raw_output = repair_output
-                style_output = self._parse_style_output(raw_output)
             else:
                 logger.warning(
                     "Style branch: max repairs reached, proceeding with issues"
@@ -701,12 +714,26 @@ class AgentPromptGraph:
         if self._uses_lyric_profile:
             # V4: Infer lyric profile using fast model
             profile_start = time.time()
-            lyric_profile, profile_debug = await self._infer_lyric_profile(context_pack)
+            inferred_profile, profile_debug = await self._infer_lyric_profile(
+                context_pack
+            )
             debug["profile_inference"] = {
                 **profile_debug,
                 "elapsed_ms": int((time.time() - profile_start) * 1000),
             }
-            logger.info("Lyrics branch: inferred profile: %s", lyric_profile)
+            logger.info("Lyrics branch: inferred profile: %s", inferred_profile)
+
+            # Merge user overrides: non-"auto" values override inferred values
+            lyric_profile = inferred_profile.copy()
+            for key, value in user_lyric_controls.items():
+                if value and value != "auto":
+                    lyric_profile[key] = value
+                    logger.info("Lyrics branch: user override %s=%s", key, value)
+
+            debug["profile_inference"]["user_overrides"] = {
+                k: v for k, v in user_lyric_controls.items() if v and v != "auto"
+            }
+            debug["profile_inference"]["final_profile"] = lyric_profile
 
             # Build lyrics context with profile + style info
             lyrics_context = self._format_lyrics_context_v4_parallel(
@@ -731,7 +758,10 @@ class AgentPromptGraph:
         # Validate with repair loop
         max_repairs = self.settings.agent_max_repairs
         for attempt in range(max_repairs + 1):
+            validate_start = time.time()
             issues = self._validate_lyrics_output(lyrics_output)
+            validate_ms = int((time.time() - validate_start) * 1000)
+
             if not issues:
                 break
 
@@ -739,23 +769,33 @@ class AgentPromptGraph:
                 logger.info(
                     "Lyrics branch: repair attempt %d/%d", attempt + 1, max_repairs
                 )
-                repair_start = time.time()
                 repair_prompt = self._active_lyrics_repair_prompt
                 repair_context = (
                     f"Fix this output:\n\n{lyrics_output.raw}\n\nIssues: {issues}"
                 )
+
+                llm_start = time.time()
                 repair_output = await self._call_llm(repair_prompt, repair_context)
-                repair_elapsed = int((time.time() - repair_start) * 1000)
+                llm_ms = int((time.time() - llm_start) * 1000)
+
+                parse_start = time.time()
+                lyrics_output = self._parse_lyrics_output(repair_output)
+                parse_ms = int((time.time() - parse_start) * 1000)
+
                 debug["repairs"].append(
                     {
                         "attempt": attempt + 1,
                         "issues": issues,
                         "output": repair_output,
-                        "elapsed_ms": repair_elapsed,
+                        "timing": {
+                            "validate_ms": validate_ms,
+                            "llm_ms": llm_ms,
+                            "parse_ms": parse_ms,
+                            "total_ms": validate_ms + llm_ms + parse_ms,
+                        },
                     }
                 )
                 raw_output = repair_output
-                lyrics_output = self._parse_lyrics_output(raw_output)
             else:
                 logger.warning(
                     "Lyrics branch: max repairs reached, proceeding with issues"
@@ -902,6 +942,18 @@ class AgentPromptGraph:
             issues.append(f"STYLE INFLUENCE out of range ({output.style_influence})")
         return issues
 
+    def _strip_lyrics_preamble(self, lyrics: str) -> str:
+        """Strip any header preamble that might have been included in lyrics."""
+        # Find first section tag - everything before it is preamble
+        match = re.search(
+            r"\[(?:Verse|Chorus|Bridge|Intro|Outro|Breakdown|Pre-Chorus|Post-Chorus|Instrumental)",
+            lyrics,
+            re.IGNORECASE,
+        )
+        if match:
+            return lyrics[match.start() :].strip()
+        return lyrics.strip()
+
     def _validate_lyrics_output(self, output: _ParsedLyricsOutput) -> List[str]:
         """Validate lyrics output, return list of issues."""
         issues = []
@@ -911,10 +963,13 @@ class AgentPromptGraph:
             issues.append("LYRICS is empty")
         elif "[" not in output.lyrics:
             issues.append("LYRICS missing section tags")
-        elif len(output.lyrics) > LYRICS_HARD_LIMIT:
-            issues.append(
-                f"LYRICS too long ({len(output.lyrics)} > {LYRICS_HARD_LIMIT})"
-            )
+        else:
+            # Only count from first section tag (strip any preamble)
+            lyrics_content = self._strip_lyrics_preamble(output.lyrics)
+            if len(lyrics_content) > LYRICS_HARD_LIMIT:
+                issues.append(
+                    f"LYRICS too long ({len(lyrics_content)} > {LYRICS_HARD_LIMIT})"
+                )
         return issues
 
     def _create_error_result(self, error_type: str, details: str) -> Dict[str, Any]:
@@ -1267,7 +1322,9 @@ class AgentPromptGraph:
         _, sections = self._extract_sections(raw)
 
         song_title = self._first_non_empty_line(sections.get("SONG TITLE", ""))
-        lyrics = sections.get("LYRICS", "").strip()
+        lyrics_raw = sections.get("LYRICS", "").strip()
+        # Strip any preamble - only count from first section tag
+        lyrics = self._strip_lyrics_preamble(lyrics_raw)
 
         return _ParsedLyricsOutput(
             song_title=song_title,
@@ -1338,7 +1395,7 @@ class AgentPromptGraph:
             **state,
             "context_pack": context_pack,
             "context_text": context_text,
-            "repairs_left": 2,
+            "repairs_left": self.settings.agent_max_repairs,
         }
 
     async def _node_generate_single(self, state: _AgentState) -> _AgentState:
@@ -1410,7 +1467,6 @@ class AgentPromptGraph:
             "agent.repair attempting fix (repairs_left=%d)",
             state.get("repairs_left", 0),
         )
-        repair_start = time.time()
 
         issues = state.get("issues", [])
         raw_output = state.get("raw_output", "")
@@ -1434,17 +1490,27 @@ ORIGINAL REQUEST:
 
 Please fix the issues and regenerate the complete output with all 6 sections.
 """
+        llm_start = time.time()
         raw = await self._call_llm(repair_prompt, user_message)
-        repair_elapsed = int((time.time() - repair_start) * 1000)
+        llm_ms = int((time.time() - llm_start) * 1000)
+
+        parse_start = time.time()
+        # We'll parse later in validation, but measure the time here
+        parse_ms = 0  # Parsing happens in validation step for single-step
 
         # Track repair in debug
         generation_debug = state.get("generation_debug", {"repairs": []})
+        max_repairs = self.settings.agent_max_repairs
         generation_debug["repairs"].append(
             {
-                "attempt": 3 - repairs_left,  # Convert remaining to attempt number
+                "attempt": max_repairs - repairs_left + 1,
                 "issues": issues,
                 "output": raw,
-                "elapsed_ms": repair_elapsed,
+                "timing": {
+                    "llm_ms": llm_ms,
+                    "parse_ms": parse_ms,
+                    "total_ms": llm_ms,
+                },
             }
         )
 

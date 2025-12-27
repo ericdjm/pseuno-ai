@@ -379,13 +379,25 @@ function DebugInfoPanel({ debugInfo }: DebugInfoPanelProps) {
               <VStack align="stretch" spacing={2}>
                 {singleStepGeneration.repairs.map((repair: any, idx: number) => (
                   <Box key={idx} p={2} bg="orange.900" borderRadius="md">
-                    <HStack justify="space-between">
+                    <HStack justify="space-between" wrap="wrap">
                       <Text color="orange.200" fontSize="xs">
                         Attempt {repair.attempt}: {repair.issues?.join(', ')}
                       </Text>
-                      {repair.elapsed_ms && (
-                        <Badge colorScheme="orange" fontSize="xs">{repair.elapsed_ms}ms</Badge>
-                      )}
+                      <HStack spacing={1}>
+                        {repair.timing ? (
+                          <>
+                            {repair.timing.validate_ms !== undefined && (
+                              <Badge colorScheme="purple" fontSize="xs">val:{repair.timing.validate_ms}ms</Badge>
+                            )}
+                            <Badge colorScheme="blue" fontSize="xs">llm:{repair.timing.llm_ms}ms</Badge>
+                            {repair.timing.parse_ms > 0 && (
+                              <Badge colorScheme="green" fontSize="xs">parse:{repair.timing.parse_ms}ms</Badge>
+                            )}
+                          </>
+                        ) : repair.elapsed_ms && (
+                          <Badge colorScheme="orange" fontSize="xs">{repair.elapsed_ms}ms</Badge>
+                        )}
+                      </HStack>
                     </HStack>
                   </Box>
                 ))}
@@ -539,11 +551,23 @@ function BranchDebugPanel({ branch }: BranchDebugPanelProps) {
           </Text>
           {branch.repairs.map((repair: any, idx: number) => (
             <Box key={idx} p={2} bg="orange.900" borderRadius="md" mb={2}>
-              <HStack justify="space-between">
+              <HStack justify="space-between" wrap="wrap">
                 <Text color="orange.200">Attempt {repair.attempt}: {repair.issues?.join(', ')}</Text>
-                {repair.elapsed_ms && (
-                  <Badge colorScheme="orange" fontSize="xs">{repair.elapsed_ms}ms</Badge>
-                )}
+                <HStack spacing={1}>
+                  {repair.timing ? (
+                    <>
+                      {repair.timing.validate_ms !== undefined && (
+                        <Badge colorScheme="purple" fontSize="xs">val:{repair.timing.validate_ms}ms</Badge>
+                      )}
+                      <Badge colorScheme="blue" fontSize="xs">llm:{repair.timing.llm_ms}ms</Badge>
+                      {repair.timing.parse_ms > 0 && (
+                        <Badge colorScheme="green" fontSize="xs">parse:{repair.timing.parse_ms}ms</Badge>
+                      )}
+                    </>
+                  ) : repair.elapsed_ms && (
+                    <Badge colorScheme="orange" fontSize="xs">{repair.elapsed_ms}ms</Badge>
+                  )}
+                </HStack>
               </HStack>
               <Box
                 mt={1}

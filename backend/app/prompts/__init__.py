@@ -47,6 +47,7 @@ __all__ = [
     "TASK_STYLE_WITH_PROFILE",
     "TASK_LYRICS",
     "TASK_LYRICS_WITH_PROFILE",
+    "TASK_LYRICS_SIMPLE",
     "OUTPUT_CONTRACT_STYLE_WITH_PROFILE",
     "LYRICS_SPEC",
     "SONG_TITLE_SPEC",
@@ -75,6 +76,7 @@ __all__ = [
     "LYRICS_AGENT_SYSTEM_PROMPT",
     "LYRICS_AGENT_SYSTEM_PROMPT_V3",
     "LYRICS_AGENT_SYSTEM_PROMPT_V4",
+    "LYRICS_SIMPLE_PROMPT",
     "LYRICS_SYSTEM_PROMPT",
 ]
 
@@ -103,6 +105,7 @@ from app.prompts.specs import (
     TASK_STYLE_WITH_PROFILE,
     TASK_LYRICS,
     TASK_LYRICS_WITH_PROFILE,
+    TASK_LYRICS_SIMPLE,
     # Content specs
     LYRICS_SPEC,
     SONG_TITLE_SPEC,
@@ -151,4 +154,15 @@ STYLE_AGENT_SYSTEM_PROMPT = get_variant("v3_two_step").style_agent
 LYRICS_AGENT_SYSTEM_PROMPT = get_variant("v4_lyric_profile").lyrics_agent
 LYRICS_AGENT_SYSTEM_PROMPT_V3 = get_variant("v3_two_step").lyrics_agent
 LYRICS_AGENT_SYSTEM_PROMPT_V4 = get_variant("v4_lyric_profile").lyrics_agent
-LYRICS_SYSTEM_PROMPT = LYRICS_AGENT_SYSTEM_PROMPT_V4
+
+# Simple lyrics prompt for /lyrics-only endpoint (expects suno_prompt + lyrics_about only)
+LYRICS_SIMPLE_PROMPT = f"""\
+{POLICY}
+{OUTPUT_CONTRACT_LYRICS}
+{TASK_LYRICS_SIMPLE}
+{LYRICS_SPEC}
+{SONG_TITLE_SPEC}
+"""
+
+# LYRICS_SYSTEM_PROMPT: used by /lyrics-only endpoint which passes suno_prompt + lyrics_about
+LYRICS_SYSTEM_PROMPT = LYRICS_SIMPLE_PROMPT

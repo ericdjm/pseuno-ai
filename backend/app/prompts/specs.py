@@ -127,7 +127,7 @@ LYRICS constraints:
 - Tag modifiers allowed: [Verse, soft, introspective, breathy vocals]
 - 4 lines per section (standard). Adjust based on density control.
 - Reuse chorus lyrics across repetitions (same words).
-- Instrumental sections: tag only, no lyrics. Example: [Breakdown, instrumental]
+- [Intro], [Breakdown], [Outro] have no lyrics (tag only).
 """
 
 # Legacy alias
@@ -253,6 +253,30 @@ LYRICS
 # Legacy alias
 TASK = TASK_FULL
 
+# Simple lyrics task for /lyrics-only endpoint (just suno_prompt + lyrics_about)
+TASK_LYRICS_SIMPLE = """\
+═══════════════════════════════════════════════════════════════════════════════
+TASK
+═══════════════════════════════════════════════════════════════════════════════
+Input fields:
+- suno_prompt: Style context (use for mood, tone, genre tropes — NOT literal content).
+- lyrics_about: Lyrical topic (use for meaning and content).
+
+Process:
+1. Read suno_prompt to understand the musical style/mood.
+2. Generate LYRICS about lyrics_about using metaphor/imagery. Let style influence phrasing, not content.
+3. Generate SONG TITLE from a striking phrase in the lyrics.
+
+OUTPUT FORMAT:
+
+SONG TITLE
+[Your Title Here]
+
+LYRICS
+[Verse/Chorus/Intro/etc, descriptors]
+...
+"""
+
 # ===========================================================================
 # LYRICS SPEC
 # ===========================================================================
@@ -268,9 +292,10 @@ Tag modifiers: Use multiple comma-separated descriptors to control each section.
   Examples:
   - [Verse, soft, introspective, breathy vocals]
   - [Chorus, anthemic, soaring, powerful belting]
-  - [Breakdown, sparse, haunting, whispered]
+  - [Breakdown, sparse, haunting]
   - [Bridge, building tension, layered harmonies]
-Instrumental sections: tag only, no text beneath. Example: [Breakdown, heavy, distorted, instrumental]
+
+[Intro], [Breakdown], [Outro] have no lyrics beneath them (tag only).
 
 Vocal formatting:
 - (text) = backing vocals — ONLY use for words that should be SUNG as backing vocals.
@@ -290,7 +315,7 @@ Content rules:
 - Reuse chorus lyrics across repetitions.
 - Prioritize punchy, impactful lines over filler. Each line should earn its place.
 
-REMINDER: Total lyrics ≤{LYRICS_PROMPT_TARGET} chars. If over, cut descriptors and consider cutting sections.
+REMINDER: Total lyrics ≤{LYRICS_PROMPT_TARGET} chars.
 """
 
 # ===========================================================================
@@ -429,25 +454,17 @@ Think: what would RUIN this song if it crept in?
 
 PARAMETER_SPEC = """\
 ═══════════════════════════════════════════════════════════════════════════════
-WEIRDNESS + STYLE INFLUENCE SPEC
+PARAMETER SPEC
 ═══════════════════════════════════════════════════════════════════════════════
-WEIRDNESS (0-100):
-- 0-20: Radio-friendly, conventional structure
-- 30-50: Subtle experimentation, interesting without alienating
-- 60-80: Art-rock territory, expect unconventional choices
-- 90-100: Avant-garde, experimental, intentionally challenging
+WEIRDNESS:
+- 20-30: Radio-friendly (pop, rock, country)
+- 30-55: Balanced (alternative, indie)
+- 55-75: Experimental (prog, avant-garde)
+- 75+: Chaos (use sparingly)
 
-STYLE INFLUENCE (0-100):
-- How strongly reference artists should influence the output
-- 0-30: Light inspiration, mostly original interpretation
-- 40-60: Clear influence but not imitation
-- 70-100: Heavy homage, unmistakably in their style
-
-Genre conventions (use these as baseline):
-- Pop/Country/R&B: WEIRDNESS 15-30, STYLE INFLUENCE 50-70
-- Indie/Alternative: WEIRDNESS 35-55, STYLE INFLUENCE 40-60
-- Art Rock/Experimental: WEIRDNESS 60-85, STYLE INFLUENCE 30-50
-- Electronic/EDM: WEIRDNESS 25-45, STYLE INFLUENCE 45-65
+STYLE INFLUENCE:
+- 90-95: Strict adherence (when style is specific)
+- 70-90: Looser interpretation (when style is vague)
 """
 
 # ===========================================================================
@@ -552,12 +569,20 @@ SONG TITLE rules:
 - Pull a striking phrase from the lyrics.
 
 LYRICS rules:
-- CRITICAL: Total lyrics ≤{LYRICS_HARD_LIMIT} characters. Remove entire sections if needed.
+- CRITICAL: Total lyrics ≤{LYRICS_HARD_LIMIT} characters.
 - Section tags required: [Verse], [Chorus], [Bridge], [Breakdown], [Outro]
+- [Intro], [Breakdown], [Outro] have no lyrics (tag only).
 - Choruses: 0 or 2+. Never exactly 1 chorus.
 - Tag modifiers allowed: [Verse, soft, introspective]
 - 4 lines per section (standard).
-- Instrumental sections: tag only, no lyrics.
+
+IF OVER CHARACTER LIMIT, cut in this order:
+1. Remove [Bridge] entirely
+2. Shorten lines (fewer words, not fewer lines)
+3. Remove extraneous descriptors from sections (e.g. [Verse, soft, introspective] -> [Verse, soft])
+4. Remove a verse (keep at least 1)
+
+NEVER cut to exactly 1 chorus. Either keep 2+ or remove all choruses.
 """
 
 STYLE_REPAIR_AGENT_PROSE = f"""\
@@ -624,11 +649,12 @@ PERSONA:
 HUMOR:
 - "none": Serious tone.
 - "light": Witty, clever wordplay.
-- "heavy": Comedy-focused, jokes, absurdist.
+- "comedic": Comedy-focused, jokes.
+- "crude": Absurdist, shock humor, vulgar.
 
 EXPLICITNESS:
 - "clean": Family-friendly.
-- "suggestive": Innuendo, implied adult themes.
+- "innuendo": Suggestive, implied adult themes.
 - "explicit": Strong language, adult content.
 
 AUDIENCE:
@@ -637,5 +663,5 @@ AUDIENCE:
 - "adult": Mature themes.
 
 Example: artists=["Steel Panther", "TOOL"], topic="cocaine trip"
-Output: {"density": "dense", "pacing": "fast", "directness": "direct", "persona": "aggressive", "humor": "heavy", "explicitness": "explicit", "audience": "adult"}
+Output: {"density": "dense", "pacing": "fast", "directness": "direct", "persona": "aggressive", "humor": "crude", "explicitness": "explicit", "audience": "adult"}
 """
