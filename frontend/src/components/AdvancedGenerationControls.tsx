@@ -30,6 +30,14 @@ import {
   PromptVariantInfo,
   PromptVariant,
   ModelInfo,
+  LyricControls,
+  LyricAudience,
+  LyricDirectness,
+  LyricHumor,
+  LyricExplicitness,
+  LyricPersona,
+  LyricDensity,
+  LyricPacing,
 } from '../api';
 
 type StyleMode = 'songStylePrompt' | 'savedSunoPrompt';
@@ -82,6 +90,16 @@ export default function AdvancedGenerationControls({
   const [selectedVariant, setSelectedVariant] = useState<PromptVariant | ''>('');
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
+
+  // Lyric controls state
+  const [showLyricControls, setShowLyricControls] = useState(false);
+  const [lyricAudience, setLyricAudience] = useState<LyricAudience>('auto');
+  const [lyricDirectness, setLyricDirectness] = useState<LyricDirectness>('auto');
+  const [lyricHumor, setLyricHumor] = useState<LyricHumor>('auto');
+  const [lyricExplicitness, setLyricExplicitness] = useState<LyricExplicitness>('auto');
+  const [lyricPersona, setLyricPersona] = useState<LyricPersona>('auto');
+  const [lyricDensity, setLyricDensity] = useState<LyricDensity>('auto');
+  const [lyricPacing, setLyricPacing] = useState<LyricPacing>('auto');
 
   // Fetch available prompt variants and models on mount
   useEffect(() => {
@@ -223,6 +241,17 @@ export default function AdvancedGenerationControls({
           .map((t) => t.slice(0, MAX_TAG_LEN))
           .slice(0, MAX_TAGS_COUNT);
 
+        // Build lyric controls if any non-auto values are set
+        const lyricControls: LyricControls = {};
+        if (lyricAudience !== 'auto') lyricControls.audience = lyricAudience;
+        if (lyricDirectness !== 'auto') lyricControls.directness = lyricDirectness;
+        if (lyricHumor !== 'auto') lyricControls.humor = lyricHumor;
+        if (lyricExplicitness !== 'auto') lyricControls.explicitness = lyricExplicitness;
+        if (lyricPersona !== 'auto') lyricControls.persona = lyricPersona;
+        if (lyricDensity !== 'auto') lyricControls.density = lyricDensity;
+        if (lyricPacing !== 'auto') lyricControls.pacing = lyricPacing;
+        const hasLyricControls = Object.keys(lyricControls).length > 0;
+
         const request: AdvancedGenerateRequest = {
           user_prompt: songPrompt.trim(),
           lyrics_about: lyricsAbout.trim(),
@@ -230,6 +259,7 @@ export default function AdvancedGenerationControls({
           tags: tags.length > 0 ? tags : undefined,
           prompt_variant: selectedVariant || undefined,
           model: selectedModel || undefined,
+          lyric_controls: hasLyricControls ? lyricControls : undefined,
         };
 
         const result = await generateAdvanced(request);
@@ -540,6 +570,152 @@ export default function AdvancedGenerationControls({
           </FormControl>
         </Collapse>
 
+        {/* Lyric Style Controls - collapsible */}
+        <Collapse in={styleMode === 'songStylePrompt'} animateOpacity>
+          <Box>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setShowLyricControls(!showLyricControls)}
+              mb={2}
+              leftIcon={<Text fontSize="xs">{showLyricControls ? '▼' : '▶'}</Text>}
+              color="gray.400"
+              fontWeight="normal"
+              _hover={{ color: 'gray.200' }}
+            >
+              Lyrics Style (Optional)
+            </Button>
+            <Collapse in={showLyricControls} animateOpacity>
+              <VStack spacing={3} align="stretch" pl={2} borderLeft="2px solid" borderColor="gray.700">
+                <HStack spacing={4} flexWrap="wrap">
+                  <FormControl flex="1" minW="140px">
+                    <FormLabel fontSize="sm" color="gray.400">Audience</FormLabel>
+                    <Select
+                      size="sm"
+                      value={lyricAudience}
+                      onChange={(e: ChangeEvent<HTMLSelectElement>) => setLyricAudience(e.target.value as LyricAudience)}
+                      bg="gray.800"
+                      borderColor="gray.600"
+                    >
+                      <option value="auto">Auto</option>
+                      <option value="kids">Kids</option>
+                      <option value="general">General</option>
+                      <option value="adult">Adult</option>
+                    </Select>
+                  </FormControl>
+
+                  <FormControl flex="1" minW="140px">
+                    <FormLabel fontSize="sm" color="gray.400">Directness</FormLabel>
+                    <Select
+                      size="sm"
+                      value={lyricDirectness}
+                      onChange={(e: ChangeEvent<HTMLSelectElement>) => setLyricDirectness(e.target.value as LyricDirectness)}
+                      bg="gray.800"
+                      borderColor="gray.600"
+                    >
+                      <option value="auto">Auto</option>
+                      <option value="direct">Direct (literal)</option>
+                      <option value="balanced">Balanced</option>
+                      <option value="metaphor_heavy">Metaphor Heavy</option>
+                    </Select>
+                  </FormControl>
+
+                  <FormControl flex="1" minW="140px">
+                    <FormLabel fontSize="sm" color="gray.400">Humor</FormLabel>
+                    <Select
+                      size="sm"
+                      value={lyricHumor}
+                      onChange={(e: ChangeEvent<HTMLSelectElement>) => setLyricHumor(e.target.value as LyricHumor)}
+                      bg="gray.800"
+                      borderColor="gray.600"
+                    >
+                      <option value="auto">Auto</option>
+                      <option value="none">None</option>
+                      <option value="light">Light</option>
+                      <option value="comedic">Comedic</option>
+                      <option value="crude">Crude</option>
+                    </Select>
+                  </FormControl>
+                </HStack>
+
+                <HStack spacing={4} flexWrap="wrap">
+                  <FormControl flex="1" minW="140px">
+                    <FormLabel fontSize="sm" color="gray.400">Explicitness</FormLabel>
+                    <Select
+                      size="sm"
+                      value={lyricExplicitness}
+                      onChange={(e: ChangeEvent<HTMLSelectElement>) => setLyricExplicitness(e.target.value as LyricExplicitness)}
+                      bg="gray.800"
+                      borderColor="gray.600"
+                    >
+                      <option value="auto">Auto</option>
+                      <option value="clean">Clean</option>
+                      <option value="innuendo">Innuendo</option>
+                      <option value="explicit">Explicit</option>
+                    </Select>
+                  </FormControl>
+
+                  <FormControl flex="1" minW="140px">
+                    <FormLabel fontSize="sm" color="gray.400">Persona</FormLabel>
+                    <Select
+                      size="sm"
+                      value={lyricPersona}
+                      onChange={(e: ChangeEvent<HTMLSelectElement>) => setLyricPersona(e.target.value as LyricPersona)}
+                      bg="gray.800"
+                      borderColor="gray.600"
+                    >
+                      <option value="auto">Auto</option>
+                      <option value="earnest">Earnest</option>
+                      <option value="playful">Playful</option>
+                      <option value="aggressive">Aggressive</option>
+                      <option value="romantic">Romantic</option>
+                      <option value="melancholic">Melancholic</option>
+                    </Select>
+                  </FormControl>
+                </HStack>
+
+                <HStack spacing={4} flexWrap="wrap">
+                  <FormControl flex="1" minW="140px">
+                    <FormLabel fontSize="sm" color="gray.400">Density</FormLabel>
+                    <Select
+                      size="sm"
+                      value={lyricDensity}
+                      onChange={(e: ChangeEvent<HTMLSelectElement>) => setLyricDensity(e.target.value as LyricDensity)}
+                      bg="gray.800"
+                      borderColor="gray.600"
+                    >
+                      <option value="auto">Auto</option>
+                      <option value="sparse">Sparse (atmospheric)</option>
+                      <option value="standard">Standard</option>
+                      <option value="dense">Dense (wordy)</option>
+                    </Select>
+                  </FormControl>
+
+                  <FormControl flex="1" minW="140px">
+                    <FormLabel fontSize="sm" color="gray.400">Pacing</FormLabel>
+                    <Select
+                      size="sm"
+                      value={lyricPacing}
+                      onChange={(e: ChangeEvent<HTMLSelectElement>) => setLyricPacing(e.target.value as LyricPacing)}
+                      bg="gray.800"
+                      borderColor="gray.600"
+                    >
+                      <option value="auto">Auto</option>
+                      <option value="slow">Slow (rhyme every line)</option>
+                      <option value="mid">Mid (standard)</option>
+                      <option value="fast">Fast (punchy, sparse rhymes)</option>
+                    </Select>
+                  </FormControl>
+                </HStack>
+
+                <Text fontSize="xs" color="gray.500">
+                  Leave on "Auto" to let the AI infer from your style and artists.
+                </Text>
+              </VStack>
+            </Collapse>
+          </Box>
+        </Collapse>
+
         {/* Prompt Variant Selector - only show for Song Style Prompt mode */}
         <Collapse in={styleMode === 'songStylePrompt' && promptVariants.length > 1} animateOpacity>
           <FormControl>
@@ -566,13 +742,26 @@ export default function AdvancedGenerationControls({
               borderColor="gray.600"
               _hover={{ borderColor: 'gray.500' }}
             >
-              {promptVariants.map((variant: PromptVariantInfo) => (
-                <option key={variant.id} value={variant.id}>
-                  {variant.id === 'v1' ? '🎵 V1 — Baseline' : '🚀 V2 — MAX Mode'}
-                  {` (${(variant.prompt_length / 1000).toFixed(1)}k chars)`}
-                  {variant.is_default ? ' ★' : ''}
-                </option>
-              ))}
+              {promptVariants.map((variant: PromptVariantInfo) => {
+                // Format prompt lengths as "2.2k + 5.3k" for multi-call variants
+                const formatLengths = (lengths: number[]) => {
+                  if (!lengths || lengths.length === 0) {
+                    return `${(variant.prompt_length / 1000).toFixed(1)}k`;
+                  }
+                  return lengths.map(l => `${(l / 1000).toFixed(1)}k`).join(' + ');
+                };
+                const label = variant.id === 'v1' ? '🎵 V1 — Baseline' : 
+                              variant.id === 'v2_reddit_tricks' ? '🚀 V2 — MAX Mode' :
+                              variant.id === 'v3_two_step' ? '⚡ V3 — Two-Step' :
+                              variant.id === 'v4_lyric_profile' ? '🎭 V4 — Lyric Profile' :
+                              variant.id === 'v5_hybrid' ? '🔥 V5 — Hybrid' : variant.id;
+                return (
+                  <option key={variant.id} value={variant.id}>
+                    {label} ({formatLengths(variant.prompt_lengths)})
+                    {variant.is_default ? ' ★' : ''}
+                  </option>
+                );
+              })}
             </Select>
           </FormControl>
         </Collapse>

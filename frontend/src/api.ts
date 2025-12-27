@@ -46,7 +46,26 @@ export interface AuthStatus {
 
 // === Generation Types ===
 
-export type PromptVariant = 'v1' | 'v2_reddit_tricks';
+export type PromptVariant = 'v1' | 'v2_reddit_tricks' | 'v3_two_step' | 'v4_lyric_profile' | 'v5_hybrid';
+
+// Lyric control types
+export type LyricAudience = 'auto' | 'kids' | 'general' | 'adult';
+export type LyricDirectness = 'auto' | 'direct' | 'balanced' | 'metaphor_heavy';
+export type LyricHumor = 'auto' | 'none' | 'light' | 'comedic' | 'crude';
+export type LyricExplicitness = 'auto' | 'clean' | 'innuendo' | 'explicit';
+export type LyricPersona = 'auto' | 'earnest' | 'playful' | 'aggressive' | 'romantic' | 'melancholic';
+export type LyricDensity = 'auto' | 'sparse' | 'standard' | 'dense';
+export type LyricPacing = 'auto' | 'slow' | 'mid' | 'fast';
+
+export interface LyricControls {
+  audience?: LyricAudience;
+  directness?: LyricDirectness;
+  humor?: LyricHumor;
+  explicitness?: LyricExplicitness;
+  persona?: LyricPersona;
+  density?: LyricDensity;
+  pacing?: LyricPacing;
+}
 
 export interface AdvancedGenerateRequest {
   user_prompt: string;
@@ -55,6 +74,7 @@ export interface AdvancedGenerateRequest {
   tags?: string[];
   prompt_variant?: PromptVariant;
   model?: string;
+  lyric_controls?: LyricControls;
 }
 
 export interface PromptVariantInfo {
@@ -62,6 +82,7 @@ export interface PromptVariantInfo {
   description: string;
   is_default: boolean;
   prompt_length: number;
+  prompt_lengths: number[];  // Individual lengths per LLM call
 }
 
 export interface PromptVariantsResponse {
@@ -80,6 +101,18 @@ export interface ModelsResponse {
   default_model: string;
 }
 
+export interface LyricProfile {
+  audience: 'kids' | 'general' | 'adult';
+  directness: 'direct' | 'balanced' | 'metaphor_heavy';
+  humor: 'none' | 'light' | 'comedic' | 'crude';
+  explicitness: 'clean' | 'innuendo' | 'explicit';
+  persona: 'earnest' | 'playful' | 'aggressive' | 'romantic' | 'melancholic';
+  density: 'sparse' | 'standard' | 'dense';
+  pacing: 'slow' | 'mid' | 'fast';
+  devices?: string[];
+  avoid?: string[];
+}
+
 export interface AdvancedGenerateResponse {
   generation_id: string;
   concept_title: string;
@@ -89,8 +122,11 @@ export interface AdvancedGenerateResponse {
   weirdness: number;
   style_influence: number;
   debug_info?: {
-    agent_model?: string;
+    variant?: string;
+    model?: string;
+    elapsed_seconds?: number;
     context_hash?: string;
+    lyric_profile?: LyricProfile;
   };
 }
 

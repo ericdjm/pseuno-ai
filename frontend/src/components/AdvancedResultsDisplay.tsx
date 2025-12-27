@@ -24,6 +24,17 @@ import {
   useDisclosure,
   FormControl,
   FormLabel,
+  Accordion,
+  AccordionItem,
+  AccordionButton,
+  AccordionPanel,
+  AccordionIcon,
+  Code,
+  Tabs,
+  TabList,
+  TabPanels,
+  Tab,
+  TabPanel,
 } from '@chakra-ui/react';
 import { CopyIcon, StarIcon } from '@chakra-ui/icons';
 import { AdvancedGenerateResponse, createSavedPrompt } from '../api';
@@ -287,6 +298,299 @@ export default function AdvancedResultsDisplay({
           </Stat>
         </SimpleGrid>
       </Box>
+
+      {/* Debug Info - Expandable */}
+      {result.debug_info && (
+        <>
+          <Divider />
+          <Accordion allowToggle>
+            <AccordionItem border="none">
+              <AccordionButton px={0} _hover={{ bg: 'transparent' }}>
+                <HStack flex="1" justify="space-between">
+                  <Text fontSize="sm" color="gray.500">
+                    Debug Info
+                  </Text>
+                  <HStack spacing={2}>
+                    {result.debug_info.elapsed_seconds && (
+                      <Badge colorScheme="blue" fontSize="xs">
+                        {result.debug_info.elapsed_seconds}s
+                      </Badge>
+                    )}
+                    {result.debug_info.variant && (
+                      <Badge colorScheme="purple" fontSize="xs">
+                        {result.debug_info.variant}
+                      </Badge>
+                    )}
+                    {result.debug_info.model && (
+                      <Badge colorScheme="green" fontSize="xs">
+                        {result.debug_info.model}
+                      </Badge>
+                    )}
+                    <AccordionIcon />
+                  </HStack>
+                </HStack>
+              </AccordionButton>
+              <AccordionPanel pb={4} px={0}>
+                <DebugInfoPanel debugInfo={result.debug_info} />
+              </AccordionPanel>
+            </AccordionItem>
+          </Accordion>
+        </>
+      )}
+    </VStack>
+  );
+}
+
+interface DebugInfoPanelProps {
+  debugInfo: Record<string, any>;
+}
+
+function DebugInfoPanel({ debugInfo }: DebugInfoPanelProps) {
+  const styleBranch = debugInfo.style_branch;
+  const lyricsBranch = debugInfo.lyrics_branch;
+  const hasParallelBranches = styleBranch && lyricsBranch;
+  const singleStepGeneration = debugInfo.generation;
+
+  if (!hasParallelBranches && singleStepGeneration) {
+    // Single-step variant (V1/V2) - show generation details
+    return (
+      <Tabs size="sm" variant="enclosed" colorScheme="gray">
+        <TabList>
+          <Tab fontSize="xs">
+            Generation
+            {singleStepGeneration?.elapsed_ms && (
+              <Badge ml={2} colorScheme="blue" fontSize="xs">
+                {singleStepGeneration.elapsed_ms}ms
+              </Badge>
+            )}
+          </Tab>
+          {singleStepGeneration?.repairs?.length > 0 && (
+            <Tab fontSize="xs">
+              Repairs ({singleStepGeneration.repairs.length})
+            </Tab>
+          )}
+        </TabList>
+        <TabPanels>
+          <TabPanel p={2}>
+            <BranchDebugPanel branch={singleStepGeneration} />
+          </TabPanel>
+          {singleStepGeneration?.repairs?.length > 0 && (
+            <TabPanel p={2}>
+              <VStack align="stretch" spacing={2}>
+                {singleStepGeneration.repairs.map((repair: any, idx: number) => (
+                  <Box key={idx} p={2} bg="orange.900" borderRadius="md">
+                    <HStack justify="space-between">
+                      <Text color="orange.200" fontSize="xs">
+                        Attempt {repair.attempt}: {repair.issues?.join(', ')}
+                      </Text>
+                      {repair.elapsed_ms && (
+                        <Badge colorScheme="orange" fontSize="xs">{repair.elapsed_ms}ms</Badge>
+                      )}
+                    </HStack>
+                  </Box>
+                ))}
+              </VStack>
+            </TabPanel>
+          )}
+        </TabPanels>
+      </Tabs>
+    );
+  }
+
+  if (!hasParallelBranches) {
+    // Fallback - just show raw debug info
+    return (
+      <Box
+        p={3}
+        bg="gray.900"
+        borderRadius="md"
+        fontSize="xs"
+        fontFamily="monospace"
+        overflowX="auto"
+        whiteSpace="pre-wrap"
+      >
+        <Code colorScheme="gray" display="block" p={2}>
+          {JSON.stringify(debugInfo, null, 2)}
+        </Code>
+      </Box>
+    );
+  }
+
+  // Two-step variant with parallel branches
+  return (
+    <Tabs size="sm" variant="enclosed" colorScheme="gray">
+      <TabList>
+        <Tab fontSize="xs">
+          Style Branch
+          {styleBranch?.elapsed_ms && (
+            <Badge ml={2} colorScheme="blue" fontSize="xs">
+              {styleBranch.elapsed_ms}ms
+            </Badge>
+          )}
+        </Tab>
+        <Tab fontSize="xs">
+          Lyrics Branch
+          {lyricsBranch?.elapsed_ms && (
+            <Badge ml={2} colorScheme="blue" fontSize="xs">
+              {lyricsBranch.elapsed_ms}ms
+            </Badge>
+          )}
+        </Tab>
+        {debugInfo.lyric_profile && (
+          <Tab fontSize="xs">Lyric Profile</Tab>
+        )}
+      </TabList>
+      <TabPanels>
+        <TabPanel p={2}>
+          <BranchDebugPanel branch={styleBranch} />
+        </TabPanel>
+        <TabPanel p={2}>
+          <BranchDebugPanel branch={lyricsBranch} />
+        </TabPanel>
+        {debugInfo.lyric_profile && (
+          <TabPanel p={2}>
+            <Box
+              p={3}
+              bg="gray.900"
+              borderRadius="md"
+              fontSize="xs"
+              fontFamily="monospace"
+            >
+              <Code colorScheme="gray" display="block" p={2}>
+                {JSON.stringify(debugInfo.lyric_profile, null, 2)}
+              </Code>
+            </Box>
+          </TabPanel>
+        )}
+      </TabPanels>
+    </Tabs>
+  );
+}
+
+interface BranchDebugPanelProps {
+  branch: Record<string, any>;
+}
+
+function BranchDebugPanel({ branch }: BranchDebugPanelProps) {
+  if (!branch) return <Text fontSize="xs" color="gray.500">No data</Text>;
+
+  return (
+    <VStack align="stretch" spacing={3} fontSize="xs">
+      {/* System Prompt */}
+      {branch.system_prompt && (
+        <Box>
+          <Text fontWeight="bold" color="gray.400" mb={1}>System Prompt</Text>
+          <Box
+            p={2}
+            bg="gray.900"
+            borderRadius="md"
+            fontFamily="monospace"
+            maxH="200px"
+            overflowY="auto"
+            whiteSpace="pre-wrap"
+            fontSize="xs"
+          >
+            {branch.system_prompt}
+          </Box>
+        </Box>
+      )}
+
+      {/* User Message */}
+      {branch.user_message && (
+        <Box>
+          <Text fontWeight="bold" color="gray.400" mb={1}>User Message</Text>
+          <Box
+            p={2}
+            bg="gray.900"
+            borderRadius="md"
+            fontFamily="monospace"
+            maxH="150px"
+            overflowY="auto"
+            whiteSpace="pre-wrap"
+          >
+            {branch.user_message}
+          </Box>
+        </Box>
+      )}
+
+      {/* Raw Response */}
+      {branch.raw_response && (
+        <Box>
+          <Text fontWeight="bold" color="gray.400" mb={1}>Raw Response</Text>
+          <Box
+            p={2}
+            bg="gray.900"
+            borderRadius="md"
+            fontFamily="monospace"
+            maxH="200px"
+            overflowY="auto"
+            whiteSpace="pre-wrap"
+          >
+            {branch.raw_response}
+          </Box>
+        </Box>
+      )}
+
+      {/* Repairs */}
+      {branch.repairs && branch.repairs.length > 0 && (
+        <Box>
+          <Text fontWeight="bold" color="orange.400" mb={1}>
+            Repairs ({branch.repairs.length})
+          </Text>
+          {branch.repairs.map((repair: any, idx: number) => (
+            <Box key={idx} p={2} bg="orange.900" borderRadius="md" mb={2}>
+              <HStack justify="space-between">
+                <Text color="orange.200">Attempt {repair.attempt}: {repair.issues?.join(', ')}</Text>
+                {repair.elapsed_ms && (
+                  <Badge colorScheme="orange" fontSize="xs">{repair.elapsed_ms}ms</Badge>
+                )}
+              </HStack>
+              <Box
+                mt={1}
+                p={2}
+                bg="gray.900"
+                borderRadius="md"
+                fontFamily="monospace"
+                maxH="100px"
+                overflowY="auto"
+                whiteSpace="pre-wrap"
+              >
+                {repair.output}
+              </Box>
+            </Box>
+          ))}
+        </Box>
+      )}
+
+      {/* Profile Inference (for lyrics branch) */}
+      {branch.profile_inference && (
+        <Box>
+          <Text fontWeight="bold" color="purple.400" mb={1}>
+            Profile Inference
+            {branch.profile_inference.elapsed_ms && (
+              <Badge ml={2} colorScheme="purple" fontSize="xs">
+                {branch.profile_inference.elapsed_ms}ms
+              </Badge>
+            )}
+          </Text>
+          <Box p={2} bg="purple.900" borderRadius="md">
+            <Text color="purple.200" fontSize="xs" mb={1}>
+              Model: {branch.profile_inference.model}
+            </Text>
+            {branch.profile_inference.raw_response && (
+              <Box
+                p={2}
+                bg="gray.900"
+                borderRadius="md"
+                fontFamily="monospace"
+                whiteSpace="pre-wrap"
+              >
+                {branch.profile_inference.raw_response}
+              </Box>
+            )}
+          </Box>
+        </Box>
+      )}
     </VStack>
   );
 }

@@ -15,7 +15,11 @@ from app.schemas.advanced import (
 )
 from app.deps import get_song_agent
 from app.services.agent_prompt_graph import AgentPromptGraph
-from app.prompts import LYRICS_SYSTEM_PROMPT, PROMPT_VARIANTS, AVAILABLE_MODELS
+from app.prompts import (
+    LYRICS_SYSTEM_PROMPT,
+    AVAILABLE_MODELS,
+    list_variants,
+)
 from app.config import get_settings
 
 router = APIRouter()
@@ -27,7 +31,8 @@ class PromptVariantInfo(BaseModel):
     id: str
     description: str
     is_default: bool = False
-    prompt_length: int = 0  # Length of the system prompt in characters
+    prompt_length: int = 0  # Total length of system prompts in characters
+    prompt_lengths: List[int] = []  # Individual lengths per LLM call
 
 
 class PromptVariantsResponse(BaseModel):
@@ -37,18 +42,19 @@ class PromptVariantsResponse(BaseModel):
 
 
 @router.get("/prompt-variants", response_model=PromptVariantsResponse)
-async def list_prompt_variants():
+async def list_prompt_variants_endpoint():
     """
     List available prompt variants for A/B testing.
     """
     variants = [
         PromptVariantInfo(
-            id=variant_id,
-            description=variant_data["description"],
-            is_default=(variant_id == "v1"),
-            prompt_length=len(variant_data["song_agent"]),
+            id=v.id,
+            description=v.description,
+            is_default=v.is_default,
+            prompt_length=v.prompt_length,
+            prompt_lengths=v.prompt_lengths,
         )
-        for variant_id, variant_data in PROMPT_VARIANTS.items()
+        for v in list_variants()
     ]
     return PromptVariantsResponse(variants=variants)
 
