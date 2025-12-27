@@ -65,6 +65,7 @@ __all__ = [
     "LYRICS_REPAIR_AGENT",
     "PROFILE_INFERENCE_AGENT",
     "GENRE_DISAMBIGUATION_AGENT",
+    "GENRE_DISAMBIGUATION_AGENT_V2",
     # Legacy exports
     "PROMPT_VARIANTS",
     "AVAILABLE_MODELS",
@@ -124,6 +125,7 @@ from app.prompts.specs import (
     LYRICS_REPAIR_AGENT,
     PROFILE_INFERENCE_AGENT,
     GENRE_DISAMBIGUATION_AGENT,
+    GENRE_DISAMBIGUATION_AGENT_V2,
 )
 
 # Import all variants (this triggers registration)

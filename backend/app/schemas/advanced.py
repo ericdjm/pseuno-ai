@@ -87,7 +87,15 @@ from app.constants import (
 )
 
 # Available prompt variants for A/B testing
-PromptVariant = Literal["v1", "v2_reddit_tricks", "v3_two_step", "v4_lyric_profile", "v5_hybrid", "v6_genre_disambiguation"]
+PromptVariant = Literal[
+    "v1",
+    "v2_reddit_tricks",
+    "v3_two_step",
+    "v4_lyric_profile",
+    "v5_hybrid",
+    "v6_genre_disambiguation",
+    "v7_genre_term_disambiguation",
+]
 
 # Lyric control enums - user can set to 'auto' to let the model infer
 LyricAudience = Literal["auto", "kids", "general", "adult"]

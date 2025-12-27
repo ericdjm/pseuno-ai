@@ -257,7 +257,15 @@ export default function AdvancedGenerationControls({
         const hasLyricControls = Object.keys(lyricControls).length > 0;
 
         // Check if using a two-step variant
-        const isTwoStep = selectedVariant && ['v3_two_step', 'v4_lyric_profile', 'v5_hybrid', 'v6_genre_disambiguation'].includes(selectedVariant);
+        const isTwoStep =
+          selectedVariant &&
+          [
+            'v3_two_step',
+            'v4_lyric_profile',
+            'v5_hybrid',
+            'v6_genre_disambiguation',
+            'v7_genre_term_disambiguation',
+          ].includes(selectedVariant);
         
         const request: AdvancedGenerateRequest = {
           user_prompt: songPrompt.trim(),
@@ -765,7 +773,9 @@ export default function AdvancedGenerationControls({
                               variant.id === 'v3_two_step' ? '⚡ V3 — Two-Step' :
                               variant.id === 'v4_lyric_profile' ? '🎭 V4 — Lyric Profile' :
                               variant.id === 'v5_hybrid' ? '🔥 V5 — Hybrid' :
-                              variant.id === 'v6_genre_disambiguation' ? '🎯 V6 — Genre Precision' : variant.id;
+                              variant.id === 'v6_genre_disambiguation' ? '🎯 V6 — Genre Precision' :
+                              variant.id === 'v7_genre_term_disambiguation' ? '🛡️ V7 — Anti-Drift' :
+                              variant.id;
                 return (
                   <option key={variant.id} value={variant.id}>
                     {label} ({formatLengths(variant.prompt_lengths)})
@@ -780,7 +790,19 @@ export default function AdvancedGenerationControls({
         {/* Model Selectors - show different options based on variant type */}
         <Collapse in={styleMode === 'songStylePrompt' && availableModels.length > 0} animateOpacity>
           {/* Single-step variants (V1/V2): single model dropdown */}
-          <Collapse in={!selectedVariant || !['v3_two_step', 'v4_lyric_profile', 'v5_hybrid', 'v6_genre_disambiguation'].includes(selectedVariant as string)} animateOpacity>
+          <Collapse
+            in={
+              !selectedVariant ||
+              ![
+                'v3_two_step',
+                'v4_lyric_profile',
+                'v5_hybrid',
+                'v6_genre_disambiguation',
+                'v7_genre_term_disambiguation',
+              ].includes(selectedVariant as string)
+            }
+            animateOpacity
+          >
             <FormControl>
               <FormLabel>
                 <HStack spacing={2}>
@@ -812,7 +834,19 @@ export default function AdvancedGenerationControls({
           </Collapse>
 
           {/* Two-step variants (V3/V4/V5): separate style and lyrics model dropdowns */}
-          <Collapse in={Boolean(selectedVariant) && ['v3_two_step', 'v4_lyric_profile', 'v5_hybrid', 'v6_genre_disambiguation'].includes(selectedVariant as string)} animateOpacity>
+          <Collapse
+            in={
+              Boolean(selectedVariant) &&
+              [
+                'v3_two_step',
+                'v4_lyric_profile',
+                'v5_hybrid',
+                'v6_genre_disambiguation',
+                'v7_genre_term_disambiguation',
+              ].includes(selectedVariant as string)
+            }
+            animateOpacity
+          >
             <VStack spacing={3} align="stretch">
               <FormControl>
                 <FormLabel>

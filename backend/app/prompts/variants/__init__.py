@@ -19,6 +19,7 @@ from app.prompts.variants import v3_two_step
 from app.prompts.variants import v4_lyric_profile
 from app.prompts.variants import v5_hybrid
 from app.prompts.variants import v6_genre_disambiguation
+from app.prompts.variants import v7_genre_term_disambiguation
 
 # List of all variant modules (for documentation)
 ALL_VARIANTS = [
@@ -28,5 +29,6 @@ ALL_VARIANTS = [
     v4_lyric_profile,
     v5_hybrid,
     v6_genre_disambiguation,
+    v7_genre_term_disambiguation,
 ]
 

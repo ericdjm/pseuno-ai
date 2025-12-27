@@ -611,9 +611,13 @@ class AgentPromptGraph:
             result["debug_info"] = tracer.to_dict()
             return result
 
-        # For V5 hybrid and V6: prepend MAX headers to V1-style prose output
+        # For V5/V6/V7: prepend MAX headers to V1-style prose output
         suno_prompt = style_result["suno_prompt"]
-        if ctx.variant_id in ("v5_hybrid", "v6_genre_disambiguation"):
+        if ctx.variant_id in (
+            "v5_hybrid",
+            "v6_genre_disambiguation",
+            "v7_genre_term_disambiguation",
+        ):
             max_headers = (
                 "[IS_MAX_MODE: MAX](MAX)\n"
                 "[QUALITY: MAX](MAX)\n"
@@ -716,10 +720,31 @@ class AgentPromptGraph:
                 return None
 
     def _format_genre_context_section(self, genre_data: Dict[str, Any]) -> str:
-        """Format genre disambiguation data for injection into style context."""
+        """
+        Format genre disambiguation data for injection into style context.
+
+        V6: Basic genre/not_genres guidance
+        V7: Enhanced with terms_to_use/terms_to_avoid + instruments
+        """
         if not genre_data or not genre_data.get("artists"):
             return ""
 
+        # Check if this is V7 (has terms_to_use/terms_to_avoid or instruments)
+        has_vocab_guidance = any(
+            artist.get("terms_to_use")
+            or artist.get("terms_to_avoid")
+            or artist.get("instruments_to_use")
+            or artist.get("instruments_to_avoid")
+            for artist in genre_data.get("artists", [])
+        )
+
+        if has_vocab_guidance:
+            return self._format_genre_context_v7(genre_data)
+        else:
+            return self._format_genre_context_v6(genre_data)
+
+    def _format_genre_context_v6(self, genre_data: Dict[str, Any]) -> str:
+        """V6 format: basic genre disambiguation."""
         lines = [
             "",
             "GENRE DISAMBIGUATION (DO NOT COPY VERBATIM - use to guide genre accuracy):",
@@ -747,6 +772,128 @@ class AgentPromptGraph:
             lines.append(f"  Notes: {global_notes}")
 
         return "\n".join(lines)
+
+    def _format_genre_context_v7(self, genre_data: Dict[str, Any]) -> str:
+        """
+        V7 format: enhanced genre + vocabulary + instrument guidance.
+
+        Structured as actionable sections for the style model.
+        """
+        lines = [
+            "",
+            "═══════════════════════════════════════════════════════════════════════════════",
+            "STYLE GUIDANCE (use this to inform SUNO PROMPT and EXCLUDE)",
+            "═══════════════════════════════════════════════════════════════════════════════",
+        ]
+
+        all_terms_to_avoid = []  # Collect for EXCLUDE guidance
+
+        for artist in genre_data.get("artists", []):
+            name = artist.get("name", "Unknown")
+            era = artist.get("era", {})
+            era_label = era.get("label", "unspecified")
+
+            lines.append("")
+            lines.append(f"▶ {name} ({era_label})")
+
+            # GENRE_TARGETS
+            genres = artist.get("genres", [])
+            not_genres = artist.get("not_genres", [])
+            if genres:
+                lines.append(f"  GENRE_TARGETS: {', '.join(genres)}")
+            if not_genres:
+                lines.append(f"  GENRE_AVOID: {', '.join(not_genres)}")
+
+            # VOCAB_TO_USE
+            terms_to_use = artist.get("terms_to_use", [])
+            if terms_to_use:
+                lines.append(f"  VOCAB_TO_USE: {', '.join(terms_to_use)}")
+
+            # VOCAB_TO_AVOID
+            terms_to_avoid = artist.get("terms_to_avoid", [])
+            if terms_to_avoid:
+                lines.append(f"  VOCAB_TO_AVOID: {', '.join(terms_to_avoid)}")
+                all_terms_to_avoid.extend(terms_to_avoid)
+
+            # INSTRUMENTS_TO_USE
+            instruments_to_use = artist.get("instruments_to_use", [])
+            if instruments_to_use:
+                lines.append(f"  INSTRUMENTS_TO_USE: {', '.join(instruments_to_use)}")
+
+            # INSTRUMENTS_TO_AVOID
+            instruments_to_avoid = artist.get("instruments_to_avoid", [])
+            if instruments_to_avoid:
+                lines.append(
+                    f"  INSTRUMENTS_TO_AVOID: {', '.join(instruments_to_avoid)}"
+                )
+                all_terms_to_avoid.extend(instruments_to_avoid)  # Also feed to EXCLUDE
+
+            # VOCAL_STYLE_TO_USE
+            vocal_style_to_use = artist.get("vocal_style_to_use", [])
+            if vocal_style_to_use:
+                lines.append(f"  VOCAL_STYLE_TO_USE: {', '.join(vocal_style_to_use)}")
+
+            # VOCAL_STYLE_TO_AVOID
+            vocal_style_to_avoid = artist.get("vocal_style_to_avoid", [])
+            if vocal_style_to_avoid:
+                lines.append(
+                    f"  VOCAL_STYLE_TO_AVOID: {', '.join(vocal_style_to_avoid)}"
+                )
+                all_terms_to_avoid.extend(vocal_style_to_avoid)  # Also feed to EXCLUDE
+
+            # ANCHOR_REFERENCES
+            anchors = artist.get("anchors", {})
+            albums = anchors.get("albums", [])
+            songs = anchors.get("songs", [])
+            if albums or songs:
+                anchor_str = []
+                if albums:
+                    anchor_str.append(f"albums: {', '.join(albums)}")
+                if songs:
+                    anchor_str.append(f"songs: {', '.join(songs)}")
+                lines.append(f"  ANCHOR_REFERENCES: {'; '.join(anchor_str)}")
+
+        # Global notes
+        global_notes = genre_data.get("global_notes", [])
+        if global_notes:
+            lines.append("")
+            lines.append(f"NOTES: {' '.join(global_notes)}")
+
+        # Actionable instruction
+        lines.append("")
+        lines.append("INSTRUCTIONS:")
+        lines.append("- Use VOCAB_TO_USE terms in your SUNO PROMPT for texture/feel")
+        lines.append("- Use INSTRUMENTS_TO_USE in your instrument descriptions")
+        lines.append("- Use VOCAL_STYLE_TO_USE for vocal descriptions")
+        lines.append(
+            "- Do NOT use VOCAB_TO_AVOID, INSTRUMENTS_TO_AVOID, or VOCAL_STYLE_TO_AVOID"
+        )
+        lines.append("- Treat GENRE_AVOID as hard negatives")
+
+        # EXCLUDE guidance (feed terms_to_avoid into exclude context)
+        if all_terms_to_avoid:
+            # Pick up to 4 most important drift blockers for EXCLUDE
+            exclude_suggestions = all_terms_to_avoid[:4]
+            lines.append("")
+            lines.append(f"EXCLUDE SHOULD INCLUDE: {', '.join(exclude_suggestions)}")
+
+        return "\n".join(lines)
+
+    def _extract_exclude_suggestions(self, genre_data: Dict[str, Any]) -> List[str]:
+        """Extract terms_to_avoid from genre data for EXCLUDE guidance."""
+        if not genre_data or not genre_data.get("artists"):
+            return []
+
+        suggestions = []
+        for artist in genre_data.get("artists", []):
+            terms_to_avoid = artist.get("terms_to_avoid", [])
+            suggestions.extend(terms_to_avoid[:2])  # Take top 2 per artist
+            instruments_to_avoid = artist.get("instruments_to_avoid", [])
+            suggestions.extend(instruments_to_avoid[:1])  # Take top 1 per artist
+            vocal_style_to_avoid = artist.get("vocal_style_to_avoid", [])
+            suggestions.extend(vocal_style_to_avoid[:1])  # Take top 1 per artist
+
+        return suggestions[:5]  # Cap at 5 total
 
     async def _run_style_branch(
         self,
