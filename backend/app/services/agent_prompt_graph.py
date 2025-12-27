@@ -1312,12 +1312,16 @@ class AgentPromptGraph:
 
         logger.warning("agent.error: %s", error_msg)
 
+        # IMPORTANT: this must return a fully-shaped AdvancedGenerateResponse-compatible
+        # payload (minus debug_info, which is attached by the caller), otherwise FastAPI
+        # response_model validation will fail during serialization.
+        result = self._create_error_result("StyleError", error_msg)
+        result["style_raw"] = style_output.raw if style_output else ""
+
         return {
             **state,
             "result": {
-                "success": False,
-                "error": error_msg,
-                "style_raw": style_output.raw if style_output else "",
+                **result,
             },
         }
 
