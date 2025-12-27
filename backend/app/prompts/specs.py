@@ -17,8 +17,6 @@ Usage:
 from app.constants import (
     SUNO_PROMPT_MAX_CHARS,
     SUNO_PROMPT_MAX_CHARS_V5_PROSE,
-    LYRICS_PROMPT_TARGET,
-    LYRICS_HARD_LIMIT,
 )
 
 # ===========================================================================
@@ -123,7 +121,7 @@ SONG TITLE constraints:
 - Pull a striking phrase FROM the lyrics you wrote.
 
 LYRICS constraints:
-- Section tags required: [Verse], [Chorus], [Bridge], [Breakdown], [Outro]
+- Section tags: [Intro], [Verse], [Pre-Chorus], [Chorus], [Post-Chorus], [Bridge], [Breakdown], [Outro]
 - Tag modifiers allowed: [Verse, soft, introspective, breathy vocals]
 - 4 lines per section (standard). Adjust based on density control.
 - Reuse chorus lyrics across repetitions (same words).
@@ -281,13 +279,11 @@ LYRICS
 # LYRICS SPEC
 # ===========================================================================
 
-LYRICS_SPEC = f"""\
+LYRICS_SPEC = """\
 ═══════════════════════════════════════════════════════════════════════════════
 LYRICS SPEC
 ═══════════════════════════════════════════════════════════════════════════════
-CRITICAL: Total lyrics must be ≤{LYRICS_PROMPT_TARGET} characters.
-
-Required tags: [Verse], [Chorus], [Bridge], [Breakdown], [Outro]
+Available tags: [Intro], [Verse], [Pre-Chorus], [Chorus], [Post-Chorus], [Bridge], [Breakdown], [Outro]
 Tag modifiers: Use multiple comma-separated descriptors to control each section.
   Examples:
   - [Verse, soft, introspective, breathy vocals]
@@ -314,8 +310,6 @@ Content rules:
 - Choruses: 0 or 2+. Never exactly 1 chorus (awkward structure).
 - Reuse chorus lyrics across repetitions.
 - Prioritize punchy, impactful lines over filler. Each line should earn its place.
-
-REMINDER: Total lyrics ≤{LYRICS_PROMPT_TARGET} chars.
 """
 
 # ===========================================================================
@@ -476,7 +470,7 @@ LYRIC_PROFILE_SPEC = """\
 LYRIC PROFILE (apply from user message)
 ═══════════════════════════════════════════════════════════════════════════════
 DENSITY:
-- sparse: 2-3 lines per section. Atmospheric, breathing room.
+- sparse: 2 lines per section. Atmospheric, breathing room.
 - standard: 4 lines per section. Normal for most genres.
 - dense: 6-8 lines per section. Wordy, storytelling, rapid-fire.
 
@@ -556,7 +550,7 @@ Common fixes:
 - LYRIC PROFILE must be valid JSON with density, pacing, directness, persona fields.
 """
 
-LYRICS_REPAIR_AGENT = f"""\
+LYRICS_REPAIR_AGENT = """\
 You are a repair agent. Fix the previous output to match the required format.
 Return ONLY the corrected output — no explanations.
 
@@ -569,20 +563,11 @@ SONG TITLE rules:
 - Pull a striking phrase from the lyrics.
 
 LYRICS rules:
-- CRITICAL: Total lyrics ≤{LYRICS_HARD_LIMIT} characters.
-- Section tags required: [Verse], [Chorus], [Bridge], [Breakdown], [Outro]
+- Section tags: [Intro], [Verse], [Pre-Chorus], [Chorus], [Post-Chorus], [Bridge], [Breakdown], [Outro]
 - [Intro], [Breakdown], [Outro] have no lyrics (tag only).
 - Choruses: 0 or 2+. Never exactly 1 chorus.
 - Tag modifiers allowed: [Verse, soft, introspective]
 - 4 lines per section (standard).
-
-IF OVER CHARACTER LIMIT, cut in this order:
-1. Remove [Bridge] entirely
-2. Shorten lines (fewer words, not fewer lines)
-3. Remove extraneous descriptors from sections (e.g. [Verse, soft, introspective] -> [Verse, soft])
-4. Remove a verse (keep at least 1)
-
-NEVER cut to exactly 1 chorus. Either keep 2+ or remove all choruses.
 """
 
 STYLE_REPAIR_AGENT_PROSE = f"""\

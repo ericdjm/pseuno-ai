@@ -22,11 +22,9 @@ SUNO_EXCLUDE_MAX_CHARS = 100
 # Lyrics Generation Limits
 # ===========================================================================
 
-# Lyrics character limits
-LYRICS_PROMPT_TARGET = 750  # What we tell the model (they overshoot)
-LYRICS_HARD_LIMIT = 1000  # Suno's actual limit (triggers repair)
+# No character limit on lyrics - Suno accepts any length
 LYRICS_MAX_VERSES = 3
-LYRICS_MAX_CHORUSES = 3
+LYRICS_MAX_CHORUSES = 4
 LYRICS_LINES_PER_SECTION = "1-8"
 LYRICS_TOPIC_MAX_CHARS = 500
 
@@ -40,7 +38,6 @@ ALLOWED_SECTION_TAGS = [
     "[Bridge]",
     "[Breakdown]",
     "[Outro]",
-    "[Instrumental]",
     "[Intro]",
     "[Pre-Chorus]",
     "[Post-Chorus]",

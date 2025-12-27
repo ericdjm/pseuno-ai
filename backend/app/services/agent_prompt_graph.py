@@ -16,7 +16,6 @@ import httpx
 from langgraph.graph import END, StateGraph
 
 from app.config import Settings
-from app.constants import LYRICS_HARD_LIMIT
 from app.prompts import (
     get_variant,
     STYLE_AGENT_SYSTEM_PROMPT,
@@ -946,7 +945,7 @@ class AgentPromptGraph:
         """Strip any header preamble that might have been included in lyrics."""
         # Find first section tag - everything before it is preamble
         match = re.search(
-            r"\[(?:Verse|Chorus|Bridge|Intro|Outro|Breakdown|Pre-Chorus|Post-Chorus|Instrumental)",
+            r"\[(?:Intro|Verse|Pre-Chorus|Chorus|Post-Chorus|Bridge|Breakdown|Outro)",
             lyrics,
             re.IGNORECASE,
         )
@@ -963,13 +962,6 @@ class AgentPromptGraph:
             issues.append("LYRICS is empty")
         elif "[" not in output.lyrics:
             issues.append("LYRICS missing section tags")
-        else:
-            # Only count from first section tag (strip any preamble)
-            lyrics_content = self._strip_lyrics_preamble(output.lyrics)
-            if len(lyrics_content) > LYRICS_HARD_LIMIT:
-                issues.append(
-                    f"LYRICS too long ({len(lyrics_content)} > {LYRICS_HARD_LIMIT})"
-                )
         return issues
 
     def _create_error_result(self, error_type: str, details: str) -> Dict[str, Any]:
