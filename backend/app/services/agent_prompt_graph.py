@@ -465,15 +465,32 @@ class AgentPromptGraph:
             self._active_repair_prompt = variant.repair_agent
             logger.info("Using single-step variant: %s", variant_id)
 
-        # Check for per-request model override
-        request_model = getattr(request, "model", None)
-        if request_model:
-            self._active_llm = self._get_or_create_llm(request_model)
-            self._active_model = request_model
-            logger.info("Using per-request model: %s", request_model)
+        # Check for per-request model overrides
+        if self._is_two_step:
+            # Two-step: support separate style and lyrics models
+            request_style_model = getattr(request, "style_model", None)
+            request_lyrics_model = getattr(request, "lyrics_model", None)
+            self._active_style_model = request_style_model or self.settings.style_model
+            self._active_lyrics_model = (
+                request_lyrics_model or self.settings.lyrics_model
+            )
+            # For backwards compat, set _active_model to style model
+            self._active_model = self._active_style_model
+            logger.info(
+                "Using two-step models: style=%s, lyrics=%s",
+                self._active_style_model,
+                self._active_lyrics_model,
+            )
         else:
-            self._active_llm = self.llm
-            self._active_model = self.settings.llm_model
+            # Single-step: use single model
+            request_model = getattr(request, "model", None)
+            if request_model:
+                self._active_llm = self._get_or_create_llm(request_model)
+                self._active_model = request_model
+                logger.info("Using per-request model: %s", request_model)
+            else:
+                self._active_llm = self.llm
+                self._active_model = self.settings.llm_model
 
         # Select the appropriate execution path based on variant
         if self._is_two_step:
@@ -547,12 +564,16 @@ class AgentPromptGraph:
 
         This achieves ~2x latency improvement over sequential execution.
         """
-        logger.info("Starting parallel two-step generation")
+        logger.info(
+            "Starting parallel two-step generation (style=%s, lyrics=%s)",
+            self._active_style_model,
+            self._active_lyrics_model,
+        )
 
-        # Create tracer for this generation
+        # Create tracer for this generation (show primary style model in summary)
         tracer = DebugTracer(
             variant=self._active_variant,
-            model=self._active_model,
+            model=f"{self._active_style_model} / {self._active_lyrics_model}",
             fast_model=(
                 self.settings.profile_inference_model
                 if self._uses_lyric_profile
@@ -568,9 +589,13 @@ class AgentPromptGraph:
         # so LLM-inferred profile isn't overwritten by hardcoded defaults
         user_overrides = self._extract_user_overrides(lyric_controls_obj)
 
-        # Run style and lyrics branches in parallel
-        style_task = self._run_style_branch(context_pack, tracer)
-        lyrics_task = self._run_lyrics_branch(context_pack, user_overrides, tracer)
+        # Run style and lyrics branches in parallel with separate models
+        style_task = self._run_style_branch(
+            context_pack, tracer, model=self._active_style_model
+        )
+        lyrics_task = self._run_lyrics_branch(
+            context_pack, user_overrides, tracer, model=self._active_lyrics_model
+        )
 
         style_result, lyrics_result = await asyncio.gather(
             style_task, lyrics_task, return_exceptions=True
@@ -629,22 +654,26 @@ class AgentPromptGraph:
         }
 
     async def _run_style_branch(
-        self, context_pack: Dict[str, Any], tracer: DebugTracer
+        self,
+        context_pack: Dict[str, Any],
+        tracer: DebugTracer,
+        model: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Style branch: generate_style → validate → [repair loop]
         """
-        logger.info("Style branch: starting")
+        style_model = model or self._active_model
+        logger.info("Style branch: starting (model=%s)", style_model)
 
         # Format context for style generation
         style_context = self._format_style_context(context_pack)
         style_prompt = self._active_style_prompt
 
         # Generate style with span
-        with tracer.span(
-            "style.generate", "llm_call", model=self._active_model
-        ) as span:
-            raw_output = await self._call_llm(style_prompt, style_context)
+        with tracer.span("style.generate", "llm_call", model=style_model) as span:
+            raw_output = await self._call_llm(
+                style_prompt, style_context, model=style_model
+            )
             span.set_meta("prompt_chars", len(style_prompt) + len(style_context))
             span.set_meta("response_chars", len(raw_output))
             span.set_artifact("system_prompt", style_prompt)
@@ -680,9 +709,11 @@ class AgentPromptGraph:
                     f"style.repair.{attempt + 1}",
                     "repair",
                     attempt=attempt + 1,
-                    model=self._active_model,
+                    model=style_model,
                 ) as repair_span:
-                    repair_output = await self._call_llm(repair_prompt, repair_context)
+                    repair_output = await self._call_llm(
+                        repair_prompt, repair_context, model=style_model
+                    )
                     repair_span.set_meta("issues", issues)
                     repair_span.set_meta(
                         "prompt_chars", len(repair_prompt) + len(repair_context)
@@ -721,6 +752,7 @@ class AgentPromptGraph:
         context_pack: Dict[str, Any],
         user_lyric_controls: Dict[str, str],
         tracer: DebugTracer,
+        model: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Lyrics branch: [infer_profile] → generate_lyrics → validate → [repair loop]
@@ -728,8 +760,11 @@ class AgentPromptGraph:
         For V4: First infers lyric profile using fast model, then generates lyrics.
         For V3: Skips profile inference, generates lyrics directly.
         """
+        lyrics_model = model or self._active_model
         logger.info(
-            "Lyrics branch: starting (uses_profile=%s)", self._uses_lyric_profile
+            "Lyrics branch: starting (uses_profile=%s, model=%s)",
+            self._uses_lyric_profile,
+            lyrics_model,
         )
 
         lyric_profile = None
@@ -772,10 +807,10 @@ class AgentPromptGraph:
 
         # Generate lyrics with span
         lyrics_prompt = self._active_lyrics_prompt
-        with tracer.span(
-            "lyrics.generate", "llm_call", model=self._active_model
-        ) as span:
-            raw_output = await self._call_llm(lyrics_prompt, lyrics_context)
+        with tracer.span("lyrics.generate", "llm_call", model=lyrics_model) as span:
+            raw_output = await self._call_llm(
+                lyrics_prompt, lyrics_context, model=lyrics_model
+            )
             span.set_meta("prompt_chars", len(lyrics_prompt) + len(lyrics_context))
             span.set_meta("response_chars", len(raw_output))
             span.set_artifact("system_prompt", lyrics_prompt)
@@ -812,9 +847,11 @@ class AgentPromptGraph:
                     f"lyrics.repair.{attempt + 1}",
                     "repair",
                     attempt=attempt + 1,
-                    model=self._active_model,
+                    model=lyrics_model,
                 ) as repair_span:
-                    repair_output = await self._call_llm(repair_prompt, repair_context)
+                    repair_output = await self._call_llm(
+                        repair_prompt, repair_context, model=lyrics_model
+                    )
                     repair_span.set_meta("issues", issues)
                     repair_span.set_meta(
                         "prompt_chars", len(repair_prompt) + len(repair_context)
@@ -1576,15 +1613,22 @@ Please fix the issues and regenerate the complete output with all 6 sections.
     # =========================================================================
 
     async def _call_llm(
-        self, system_prompt: str, user_prompt: str, temperature: Optional[float] = None
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: Optional[float] = None,
+        model: Optional[str] = None,
     ) -> str:
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
 
-        # Use active LLM (may be variant-specific) or fall back to default
-        llm = getattr(self, "_active_llm", self.llm)
+        # Use specified model, active LLM, or fall back to default
+        if model:
+            llm = self._get_or_create_llm(model)
+        else:
+            llm = getattr(self, "_active_llm", self.llm)
 
         try:
             response = await llm.ainvoke(messages, temperature=temperature)

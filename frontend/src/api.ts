@@ -74,6 +74,8 @@ export interface AdvancedGenerateRequest {
   tags?: string[];
   prompt_variant?: PromptVariant;
   model?: string;
+  style_model?: string;
+  lyrics_model?: string;
   lyric_controls?: LyricControls;
 }
 
@@ -94,11 +96,15 @@ export interface ModelInfo {
   name: string;
   provider: string;
   is_default: boolean;
+  is_style_default: boolean;
+  is_lyrics_default: boolean;
 }
 
 export interface ModelsResponse {
   models: ModelInfo[];
   default_model: string;
+  default_style_model: string;
+  default_lyrics_model: string;
 }
 
 export interface LyricProfile {

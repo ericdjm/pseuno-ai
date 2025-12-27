@@ -66,6 +66,8 @@ class ModelInfo(BaseModel):
     name: str
     provider: str
     is_default: bool = False
+    is_style_default: bool = False
+    is_lyrics_default: bool = False
 
 
 class ModelsResponse(BaseModel):
@@ -73,6 +75,8 @@ class ModelsResponse(BaseModel):
 
     models: List[ModelInfo]
     default_model: str
+    default_style_model: str
+    default_lyrics_model: str
 
 
 @router.get("/models", response_model=ModelsResponse)
@@ -87,10 +91,17 @@ async def list_models():
             name=model["name"],
             provider=model["provider"],
             is_default=(model["id"] == settings.llm_model),
+            is_style_default=(model["id"] == settings.style_model),
+            is_lyrics_default=(model["id"] == settings.lyrics_model),
         )
         for model in AVAILABLE_MODELS
     ]
-    return ModelsResponse(models=models, default_model=settings.llm_model)
+    return ModelsResponse(
+        models=models,
+        default_model=settings.llm_model,
+        default_style_model=settings.style_model,
+        default_lyrics_model=settings.lyrics_model,
+    )
 
 
 @router.post("/advanced", response_model=AdvancedGenerateResponse)

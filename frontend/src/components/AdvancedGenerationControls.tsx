@@ -90,6 +90,8 @@ export default function AdvancedGenerationControls({
   const [selectedVariant, setSelectedVariant] = useState<PromptVariant | ''>('');
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
+  const [selectedStyleModel, setSelectedStyleModel] = useState<string>('');
+  const [selectedLyricsModel, setSelectedLyricsModel] = useState<string>('');
 
   // Lyric controls state
   const [showLyricControls, setShowLyricControls] = useState(false);
@@ -121,6 +123,8 @@ export default function AdvancedGenerationControls({
         const response = await getModels();
         setAvailableModels(response.models);
         setSelectedModel(response.default_model);
+        setSelectedStyleModel(response.default_style_model);
+        setSelectedLyricsModel(response.default_lyrics_model);
       } catch (error) {
         console.error('Failed to fetch models:', error);
       }
@@ -252,13 +256,19 @@ export default function AdvancedGenerationControls({
         if (lyricPacing !== 'auto') lyricControls.pacing = lyricPacing;
         const hasLyricControls = Object.keys(lyricControls).length > 0;
 
+        // Check if using a two-step variant
+        const isTwoStep = selectedVariant && ['v3_two_step', 'v4_lyric_profile', 'v5_hybrid'].includes(selectedVariant);
+        
         const request: AdvancedGenerateRequest = {
           user_prompt: songPrompt.trim(),
           lyrics_about: lyricsAbout.trim(),
           selected_artists: artists.length > 0 ? artists : undefined,
           tags: tags.length > 0 ? tags : undefined,
           prompt_variant: selectedVariant || undefined,
-          model: selectedModel || undefined,
+          // For two-step variants, use separate style/lyrics models
+          model: isTwoStep ? undefined : (selectedModel || undefined),
+          style_model: isTwoStep ? (selectedStyleModel || undefined) : undefined,
+          lyrics_model: isTwoStep ? (selectedLyricsModel || undefined) : undefined,
           lyric_controls: hasLyricControls ? lyricControls : undefined,
         };
 
@@ -766,36 +776,104 @@ export default function AdvancedGenerationControls({
           </FormControl>
         </Collapse>
 
-        {/* Model Selector - only show for Song Style Prompt mode */}
+        {/* Model Selectors - show different options based on variant type */}
         <Collapse in={styleMode === 'songStylePrompt' && availableModels.length > 0} animateOpacity>
-          <FormControl>
-            <FormLabel>
-              <HStack spacing={2}>
-                <Text>Model</Text>
-                <Badge 
-                  colorScheme={availableModels.find((m: ModelInfo) => m.id === selectedModel)?.provider === 'openai' ? 'green' : 'blue'} 
-                  fontSize="xs" 
-                  variant="subtle"
+          {/* Single-step variants (V1/V2): single model dropdown */}
+          <Collapse in={!selectedVariant || !['v3_two_step', 'v4_lyric_profile', 'v5_hybrid'].includes(selectedVariant as string)} animateOpacity>
+            <FormControl>
+              <FormLabel>
+                <HStack spacing={2}>
+                  <Text>Model</Text>
+                  <Badge 
+                    colorScheme={availableModels.find((m: ModelInfo) => m.id === selectedModel)?.provider === 'openai' ? 'green' : 'blue'} 
+                    fontSize="xs" 
+                    variant="subtle"
+                  >
+                    {availableModels.find((m: ModelInfo) => m.id === selectedModel)?.provider || ''}
+                  </Badge>
+                </HStack>
+              </FormLabel>
+              <Select
+                value={selectedModel}
+                onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedModel(e.target.value)}
+                bg="gray.800"
+                borderColor="gray.600"
+                _hover={{ borderColor: 'gray.500' }}
+              >
+                {availableModels.map((model: ModelInfo) => (
+                  <option key={model.id} value={model.id}>
+                    {model.name}
+                    {model.is_default ? ' ★' : ''}
+                  </option>
+                ))}
+              </Select>
+            </FormControl>
+          </Collapse>
+
+          {/* Two-step variants (V3/V4/V5): separate style and lyrics model dropdowns */}
+          <Collapse in={Boolean(selectedVariant) && ['v3_two_step', 'v4_lyric_profile', 'v5_hybrid'].includes(selectedVariant as string)} animateOpacity>
+            <VStack spacing={3} align="stretch">
+              <FormControl>
+                <FormLabel>
+                  <HStack spacing={2}>
+                    <Text>Style Model</Text>
+                    <Badge 
+                      colorScheme={availableModels.find((m: ModelInfo) => m.id === selectedStyleModel)?.provider === 'openai' ? 'green' : 'blue'} 
+                      fontSize="xs" 
+                      variant="subtle"
+                    >
+                      {availableModels.find((m: ModelInfo) => m.id === selectedStyleModel)?.provider || ''}
+                    </Badge>
+                    <Text fontSize="xs" color="gray.500">(SUNO prompt)</Text>
+                  </HStack>
+                </FormLabel>
+                <Select
+                  value={selectedStyleModel}
+                  onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedStyleModel(e.target.value)}
+                  bg="gray.800"
+                  borderColor="gray.600"
+                  _hover={{ borderColor: 'gray.500' }}
                 >
-                  {availableModels.find((m: ModelInfo) => m.id === selectedModel)?.provider || ''}
-                </Badge>
-              </HStack>
-            </FormLabel>
-            <Select
-              value={selectedModel}
-              onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedModel(e.target.value)}
-              bg="gray.800"
-              borderColor="gray.600"
-              _hover={{ borderColor: 'gray.500' }}
-            >
-              {availableModels.map((model: ModelInfo) => (
-                <option key={model.id} value={model.id}>
-                  {model.name}
-                  {model.is_default ? ' ★' : ''}
-                </option>
-              ))}
-            </Select>
-          </FormControl>
+                  {availableModels.map((model: ModelInfo) => (
+                    <option key={model.id} value={model.id}>
+                      {model.name}
+                      {model.is_style_default ? ' ★' : ''}
+                    </option>
+                  ))}
+                </Select>
+              </FormControl>
+
+              <FormControl>
+                <FormLabel>
+                  <HStack spacing={2}>
+                    <Text>Lyrics Model</Text>
+                    <Badge 
+                      colorScheme={availableModels.find((m: ModelInfo) => m.id === selectedLyricsModel)?.provider === 'openai' ? 'green' : 'blue'} 
+                      fontSize="xs" 
+                      variant="subtle"
+                    >
+                      {availableModels.find((m: ModelInfo) => m.id === selectedLyricsModel)?.provider || ''}
+                    </Badge>
+                    <Text fontSize="xs" color="gray.500">(lyrics)</Text>
+                  </HStack>
+                </FormLabel>
+                <Select
+                  value={selectedLyricsModel}
+                  onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedLyricsModel(e.target.value)}
+                  bg="gray.800"
+                  borderColor="gray.600"
+                  _hover={{ borderColor: 'gray.500' }}
+                >
+                  {availableModels.map((model: ModelInfo) => (
+                    <option key={model.id} value={model.id}>
+                      {model.name}
+                      {model.is_lyrics_default ? ' ★' : ''}
+                    </option>
+                  ))}
+                </Select>
+              </FormControl>
+            </VStack>
+          </Collapse>
         </Collapse>
       </VStack>
 

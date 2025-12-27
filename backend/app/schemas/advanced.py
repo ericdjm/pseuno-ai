@@ -200,7 +200,15 @@ class AdvancedGenerateRequest(BaseModel):
     )
     model: Optional[str] = Field(
         default=None,
-        description="LLM model to use (e.g., gpt-4.1, gemini-3-flash-preview). Uses server default if not specified.",
+        description="LLM model for single-step generation (V1/V2). Uses server default if not specified.",
+    )
+    style_model: Optional[str] = Field(
+        default=None,
+        description="LLM model for SUNO prompt/style generation (two-step). Uses server default if not specified.",
+    )
+    lyrics_model: Optional[str] = Field(
+        default=None,
+        description="LLM model for lyrics generation (two-step). Uses server default if not specified.",
     )
     lyric_controls: Optional[LyricControls] = Field(
         default=None,
