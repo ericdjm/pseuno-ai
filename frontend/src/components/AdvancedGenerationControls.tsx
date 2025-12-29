@@ -781,6 +781,7 @@ export default function AdvancedGenerationControls({
                        selectedVariant === 'v5_hybrid' ? '🔥 V5 — Hybrid' :
                        selectedVariant === 'v6_genre_disambiguation' ? '🎯 V6 — Genre Precision' :
                        selectedVariant === 'v7_genre_term_disambiguation' ? '🛡️ V7 — Genre+Vocab Guardrails' :
+                       selectedVariant === 'v8_channel_split' ? '🎤 V8 — Channel Split' :
                        selectedVariant}
                     </Text>
                     {promptVariants.find(v => v.id === selectedVariant)?.is_default && (
@@ -813,6 +814,7 @@ export default function AdvancedGenerationControls({
                                   variant.id === 'v5_hybrid' ? '🔥 V5 — Hybrid' :
                                   variant.id === 'v6_genre_disambiguation' ? '🎯 V6 — Genre Precision' :
                                   variant.id === 'v7_genre_term_disambiguation' ? '🛡️ V7 — Genre+Vocab Guardrails' :
+                                  variant.id === 'v8_channel_split' ? '🎤 V8 — Channel Split' :
                                   variant.id;
                     const isSelected = selectedVariant === variant.id;
                     return (
