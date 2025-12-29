@@ -611,22 +611,7 @@ class AgentPromptGraph:
             result["debug_info"] = tracer.to_dict()
             return result
 
-        # For V5/V6/V7: prepend MAX headers to V1-style prose output
         suno_prompt = style_result["suno_prompt"]
-        if ctx.variant_id in (
-            "v5_hybrid",
-            "v6_genre_disambiguation",
-            "v7_genre_term_disambiguation",
-        ):
-            max_headers = (
-                "[IS_MAX_MODE: MAX](MAX)\n"
-                "[QUALITY: MAX](MAX)\n"
-                "[REALISM: MAX](MAX)\n"
-                "[REAL_INSTRUMENTS: MAX](MAX)\n"
-            )
-            # Only prepend if headers aren't already there
-            if not suno_prompt.strip().startswith("[IS_MAX_MODE"):
-                suno_prompt = max_headers + suno_prompt
 
         # Generate unique ID for this generation
         generation_id = hashlib.md5(
@@ -1232,17 +1217,11 @@ class AgentPromptGraph:
         elif len(output.suno_prompt) > 500:
             issues.append(f"SUNO PROMPT too long ({len(output.suno_prompt)} > 500)")
         else:
-            # Check for structured format (V2+) - should have genre/instruments/style tags/recording
+            # MAX headers are no longer used; reject if present so repair can remove them
             prompt_lower = output.suno_prompt.lower()
-            has_structured_format = (
-                "genre:" in prompt_lower
-                or "instruments:" in prompt_lower
-                or "style tags:" in prompt_lower
-            )
-            # If it has MAX headers but no structured fields, it's wrong format
-            if "[is_max_mode" in prompt_lower and not has_structured_format:
+            if "[is_max_mode" in prompt_lower:
                 issues.append(
-                    "SUNO PROMPT has MAX headers but missing structured format (genre:/instruments:/style tags:/recording:)"
+                    "SUNO PROMPT contains MAX headers ([IS_MAX_MODE: ...]) which are no longer used; remove them"
                 )
         if not output.exclude:
             issues.append("EXCLUDE is empty")

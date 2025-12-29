@@ -2,25 +2,23 @@
 V5 Hybrid Variant
 
 Combines V1's prose SUNO PROMPT accuracy with V4's lyric profile system.
-After style generation, MAX headers are prepended to the suno prompt.
 
 Architecture:
   [PARALLEL]
-    ├── Style Branch: generate_style (V1 prose) → validate → [repair] → prepend MAX headers
+    ├── Style Branch: generate_style (V1 prose) → validate → [repair]
     └── Lyrics Branch: infer_profile (fast) → generate_lyrics → validate → [repair]
   → finalize (merge)
 
-The key insight: V1's prose format produces more accurate genre/era content,
-while the MAX headers improve Suno's audio quality. Best of both worlds.
+The key insight: V1's prose format produces more accurate genre/era content.
 """
 
 from app.prompts.registry import register_variant
 from app.prompts.specs import (
-    # Style side: uses V1's prose specs with reduced char limit
+    # Style side: uses V1's prose specs (full 500-char budget)
     POLICY,
     OUTPUT_CONTRACT_STYLE,
     TASK_STYLE,
-    SUNO_PROMPT_SPEC_V5,  # Prose with 400 char limit (MAX headers added after)
+    SUNO_PROMPT_SPEC_V5,  # Prose format, full 500-char budget
     EXCLUDE_SPEC,
     PARAMETER_SPEC,
     STYLE_REPAIR_AGENT_PROSE,  # Repair for prose format
@@ -34,7 +32,7 @@ from app.prompts.specs import (
     PROFILE_INFERENCE_AGENT,
 )
 
-# Style Agent: V5's prose spec (400 char limit, MAX headers added after)
+# Style Agent: V5's prose spec (full 500-char budget)
 STYLE_AGENT = f"""\
 {POLICY}
 {OUTPUT_CONTRACT_STYLE}
@@ -57,7 +55,7 @@ LYRICS_AGENT = f"""\
 # Register this variant
 register_variant(
     id="v5_hybrid",
-    description="V5 hybrid: V1 prose style + MAX headers + V4 lyrics",
+    description="V5 hybrid: V1 prose style + V4 lyrics",
     architecture="two_step",
     uses_lyric_profile=True,
     style_agent=STYLE_AGENT,

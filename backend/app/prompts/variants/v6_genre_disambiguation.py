@@ -6,7 +6,7 @@ to infer era-specific genres and commonly-confused-but-incorrect genres for each
 
 Architecture:
   [PARALLEL]
-    ├── Style Branch: genre_disambiguate → generate_style (V5 prose) → validate → [repair] → prepend MAX headers
+    ├── Style Branch: genre_disambiguate → generate_style (V5 prose) → validate → [repair]
     └── Lyrics Branch: infer_profile (fast) → generate_lyrics → validate → [repair]
   → finalize (merge)
 
@@ -16,11 +16,11 @@ The key insight: By explicitly identifying genres and "not-genres" for each arti
 
 from app.prompts.registry import register_variant
 from app.prompts.specs import (
-    # Style side: uses V5's prose specs
+    # Style side: uses V5's prose specs (full 500-char budget)
     POLICY,
     OUTPUT_CONTRACT_STYLE,
     TASK_STYLE,
-    SUNO_PROMPT_SPEC_V5,  # Prose with 400 char limit (MAX headers added after)
+    SUNO_PROMPT_SPEC_V5,  # Prose format, full 500-char budget
     EXCLUDE_SPEC,
     PARAMETER_SPEC,
     STYLE_REPAIR_AGENT_PROSE,  # Repair for prose format

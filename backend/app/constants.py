@@ -12,9 +12,6 @@ This module contains tunable values that are used across multiple modules
 # Maximum characters for a Suno prompt (hard limit from Suno)
 SUNO_PROMPT_MAX_CHARS = 500
 
-# V5 hybrid: MAX headers are 92 chars, leaving 408 for prose
-SUNO_PROMPT_MAX_CHARS_V5_PROSE = 400  # Rounded down for safety
-
 # Maximum characters for the exclude field
 SUNO_EXCLUDE_MAX_CHARS = 100
 

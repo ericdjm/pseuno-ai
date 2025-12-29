@@ -16,7 +16,6 @@ Usage:
 
 from app.constants import (
     SUNO_PROMPT_MAX_CHARS,
-    SUNO_PROMPT_MAX_CHARS_V5_PROSE,
 )
 
 # ===========================================================================
@@ -350,13 +349,13 @@ Techniques:
 - Production texture > generic quality words: "saturated analog warmth" not "high quality"
 """
 
-# V5 Hybrid: prose with reduced limit (MAX headers prepended after generation)
+# V5+ Prose: full 500-char budget (no headers prepended after generation)
 SUNO_PROMPT_SPEC_V5 = f"""\
 ═══════════════════════════════════════════════════════════════════════════════
 SUNO PROMPT SPEC
 ═══════════════════════════════════════════════════════════════════════════════
 Formula: [Era/Location Origin] + [Genre + Subgenre] + [3 Evocative Adjectives] + [Vocal Style] + [Production Character]
-CRITICAL: Total must be ≤{SUNO_PROMPT_MAX_CHARS_V5_PROSE} characters (headers added automatically).
+CRITICAL: Total must be ≤{SUNO_PROMPT_MAX_CHARS} characters.
 
 BAD:
 - "An upbeat pop song with catchy melodies" (generic, no era, no texture)
@@ -576,16 +575,17 @@ Return ONLY the corrected output — no explanations.
 {OUTPUT_CONTRACT_STYLE}
 
 SUNO PROMPT must be flowing prose (NOT structured fields):
-- ≤{SUNO_PROMPT_MAX_CHARS_V5_PROSE} characters total (headers added automatically).
+- ≤{SUNO_PROMPT_MAX_CHARS} characters total.
 - Format: [Era/Location] + [Genre] + [Adjectives] + [Vocals] + [Production]
 - NO "genre:", "instruments:", etc. fields — just descriptive prose.
+- NO MAX headers (e.g., [IS_MAX_MODE: MAX]) — those are not used.
 
 Example of correct SUNO PROMPT:
 Early 2000s Los Angeles progressive metal, complex polyrhythmic textures, visceral and opulent, dynamic male vocals ranging from breathy whispers to soaring operatic screams, thick bass-driven production, intricate tribal drumming
 
 Common fixes:
 - Remove structured field labels (genre:, instruments:, etc.)
-- Remove MAX headers — those will be added automatically.
+- Remove any MAX headers ([IS_MAX_MODE: MAX], etc.) if present.
 - EXCLUDE must be one line, comma-separated, ≥2 items.
 - WEIRDNESS must be a single integer 0-100.
 - STYLE INFLUENCE must be a single integer 0-100.
