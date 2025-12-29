@@ -441,6 +441,59 @@ Think: what would RUIN this song if it crept in?
 """
 
 # ===========================================================================
+# EXCLUDE SPEC V9 (Comprehensive — leverages genre disambiguation data)
+# ===========================================================================
+
+EXCLUDE_SPEC_V9 = """\
+═══════════════════════════════════════════════════════════════════════════════
+EXCLUDE SPEC (V9 — Comprehensive)
+═══════════════════════════════════════════════════════════════════════════════
+Purpose: Prevent genre drift with comprehensive, data-driven exclusions.
+
+Character limit: ≤300 chars
+Format: One line, comma-separated, 8-12 items total
+
+BUILD YOUR EXCLUDE FROM THESE SOURCES (in order of priority):
+
+1. GENRE_AVOID (from genre context above)
+   - Include 2-3 high-level genres from the GENRE_AVOID list
+   - These are the "never go here" guardrails
+
+2. VOCAB_TO_AVOID + INSTRUMENTS_TO_AVOID (from genre context above)
+   - Include 3-5 specific terms/instruments that would cause drift
+   - These are the texture/arrangement blockers
+
+3. PRODUCTION ANTI-PATTERNS (infer from era/context)
+   - What production choices would violate the era?
+   - Examples:
+     - 70s rock → "brick-wall compression", "digital clipping", "quantized drums"
+     - Live recording → "studio overdubs", "click track", "pitch correction"
+     - Lo-fi → "pristine highs", "commercial polish", "crystal clear mix"
+     - Acoustic/intimate → "stadium reverb", "wall of sound", "layered synths"
+     - Analog warmth → "digital harshness", "sterile mix", "over-processed"
+
+4. VOCAL_STYLE_TO_AVOID (if doing vocal reference)
+   - Include vocal approaches that would clash
+
+SYNTHESIS RULE:
+Combine items from all categories into a single comma-separated line.
+Prioritize the most impactful blockers. Aim for 8-12 items total.
+
+EXAMPLES (full comprehensive excludes):
+
+70s progressive rock:
+"EDM, trap, nu-metal, synth arpeggios, 808 bass, trap hi-hats, brick-wall compression, digital clipping, auto-tune, click track precision, quantized drums"
+
+Indie rock (2010s):
+"EDM, country, pop-punk, auto-tune, trap hi-hats, 808 bass, synth leads, heavily compressed master, vocal tuning artifacts, stadium reverb, overproduced drums"
+
+Live jazz recording:
+"studio overdubs, click track, auto-tune, synthetic instruments, EDM drops, heavily compressed, pop production, layered synths, drum machines, pitch correction"
+
+Think: What would a fan of this era/genre HATE if it appeared?
+"""
+
+# ===========================================================================
 # PARAMETER SPEC
 # ===========================================================================
 

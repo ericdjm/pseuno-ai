@@ -21,6 +21,7 @@ from app.prompts.variants import v5_hybrid
 from app.prompts.variants import v6_genre_disambiguation
 from app.prompts.variants import v7_genre_term_disambiguation
 from app.prompts.variants import v8_channel_split
+from app.prompts.variants import v9_comprehensive_exclude
 
 # List of all variant modules (for documentation)
 ALL_VARIANTS = [
@@ -32,5 +33,6 @@ ALL_VARIANTS = [
     v6_genre_disambiguation,
     v7_genre_term_disambiguation,
     v8_channel_split,
+    v9_comprehensive_exclude,
 ]
 

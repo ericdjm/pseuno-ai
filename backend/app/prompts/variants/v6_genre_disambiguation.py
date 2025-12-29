@@ -68,6 +68,5 @@ register_variant(
     lyrics_repair_agent=LYRICS_REPAIR_AGENT,
     profile_inference_agent=PROFILE_INFERENCE_AGENT,
     genre_disambiguation_agent=GENRE_DISAMBIGUATION_AGENT,
-    is_default=True,
+    is_default=False,  # V9 is now the default
 )
-

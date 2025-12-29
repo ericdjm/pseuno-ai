@@ -1,0 +1,69 @@
+[
+  {
+    "name": "V9: 70s progressive rock (expect production blockers)",
+    "user_prompt": "Epic 70s progressive rock with long instrumental sections",
+    "lyrics_about": "cosmic journey through space and time",
+    "selected_artists": ["Pink Floyd", "Yes", "Genesis"],
+    "user_style_request": "Classic 70s progressive rock, analog warmth, live feel",
+    "tags": ["progressive rock", "70s", "epic"],
+    "expected_exclude_contains": ["brick-wall", "digital", "compressed", "quantized", "auto-tune"],
+    "expected_exclude_min_length": 150,
+    "notes": "Should contain production anti-patterns for 70s analog era"
+  },
+  {
+    "name": "V9: Live jazz recording (expect studio blockers)",
+    "user_prompt": "Intimate live jazz trio recording",
+    "lyrics_about": "late night in a smoky club",
+    "selected_artists": ["Bill Evans Trio", "Keith Jarrett"],
+    "user_style_request": "Live jazz recording, room ambience, natural dynamics",
+    "tags": ["jazz", "live", "intimate"],
+    "expected_exclude_contains": ["studio", "overdubs", "click track", "pitch correction", "synthetic"],
+    "expected_exclude_min_length": 150,
+    "notes": "Should exclude studio production techniques that violate live feel"
+  },
+  {
+    "name": "V9: Lo-fi hip-hop (expect polish blockers)",
+    "user_prompt": "Chill lo-fi hip-hop beats for studying",
+    "lyrics_about": "rainy afternoon memories",
+    "selected_artists": ["Nujabes", "J Dilla"],
+    "user_style_request": "Lo-fi hip-hop, warm and hazy, vinyl crackle",
+    "tags": ["lo-fi", "hip-hop", "chill"],
+    "expected_exclude_contains": ["pristine", "polished", "crystal clear", "commercial", "radio"],
+    "expected_exclude_min_length": 150,
+    "notes": "Should exclude production quality that violates lo-fi aesthetic"
+  },
+  {
+    "name": "V9: Modern EDM (expect organic blockers)",
+    "user_prompt": "High-energy festival EDM with massive drops",
+    "lyrics_about": "losing yourself in the music",
+    "selected_artists": ["Skrillex", "Deadmau5"],
+    "user_style_request": "Festival EDM, massive synths, electronic production",
+    "tags": ["EDM", "electronic", "festival"],
+    "expected_exclude_contains": ["acoustic", "organic", "folk", "unplugged", "country"],
+    "expected_exclude_min_length": 150,
+    "notes": "Should exclude organic/acoustic elements that clash with electronic production"
+  },
+  {
+    "name": "V9: Acoustic folk (expect electronic blockers)",
+    "user_prompt": "Stripped-down acoustic folk with fingerpicked guitar",
+    "lyrics_about": "walking through autumn woods",
+    "selected_artists": ["Nick Drake", "Iron & Wine"],
+    "user_style_request": "Intimate acoustic folk, natural room sound",
+    "tags": ["folk", "acoustic", "intimate"],
+    "expected_exclude_contains": ["electronic", "synth", "EDM", "drum machine", "auto-tune"],
+    "expected_exclude_min_length": 150,
+    "notes": "Should exclude electronic production that violates acoustic aesthetic"
+  },
+  {
+    "name": "V9: 80s synth-pop (expect wrong decade blockers)",
+    "user_prompt": "Classic 80s synth-pop with gated reverb drums",
+    "lyrics_about": "neon-lit city nights",
+    "selected_artists": ["Depeche Mode", "New Order"],
+    "user_style_request": "80s synth-pop, analog synthesizers, gated reverb",
+    "tags": ["synth-pop", "80s", "new wave"],
+    "expected_exclude_contains": ["trap", "dubstep", "modern", "mumble rap", "folk"],
+    "expected_exclude_min_length": 150,
+    "notes": "Should exclude modern genres and production styles from wrong decades"
+  }
+]
+

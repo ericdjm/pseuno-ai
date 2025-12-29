@@ -782,6 +782,7 @@ export default function AdvancedGenerationControls({
                        selectedVariant === 'v6_genre_disambiguation' ? '🎯 V6 — Genre Precision' :
                        selectedVariant === 'v7_genre_term_disambiguation' ? '🛡️ V7 — Genre+Vocab Guardrails' :
                        selectedVariant === 'v8_channel_split' ? '🎤 V8 — Channel Split' :
+                       selectedVariant === 'v9_comprehensive_exclude' ? '🚫 V9 — Comprehensive EXCLUDE' :
                        selectedVariant}
                     </Text>
                     {promptVariants.find(v => v.id === selectedVariant)?.is_default && (
@@ -815,6 +816,7 @@ export default function AdvancedGenerationControls({
                                   variant.id === 'v6_genre_disambiguation' ? '🎯 V6 — Genre Precision' :
                                   variant.id === 'v7_genre_term_disambiguation' ? '🛡️ V7 — Genre+Vocab Guardrails' :
                                   variant.id === 'v8_channel_split' ? '🎤 V8 — Channel Split' :
+                                  variant.id === 'v9_comprehensive_exclude' ? '🚫 V9 — Comprehensive EXCLUDE' :
                                   variant.id;
                     const isSelected = selectedVariant === variant.id;
                     return (

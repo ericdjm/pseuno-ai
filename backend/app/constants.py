@@ -12,8 +12,8 @@ This module contains tunable values that are used across multiple modules
 # Maximum characters for a Suno prompt (hard limit from Suno)
 SUNO_PROMPT_MAX_CHARS = 500
 
-# Maximum characters for the exclude field
-SUNO_EXCLUDE_MAX_CHARS = 100
+# Maximum characters for the exclude field (V9: increased from 100 to 300)
+SUNO_EXCLUDE_MAX_CHARS = 300
 
 # ===========================================================================
 # Lyrics Generation Limits
@@ -68,4 +68,4 @@ V8_ROLE_CONFIDENCE_THRESHOLD = 0.7
 V8_REGEX_ENABLED = True
 
 # Set of variant IDs that use V8 channel split logic
-V8_SPLIT_ENABLED_VARIANTS = {"v8_channel_split"}
+V8_SPLIT_ENABLED_VARIANTS = {"v8_channel_split", "v9_comprehensive_exclude"}
