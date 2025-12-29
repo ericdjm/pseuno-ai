@@ -74,4 +74,3 @@ register_variant(
     genre_disambiguation_agent=GENRE_DISAMBIGUATION_AGENT_V2,
     is_default=False,
 )
-

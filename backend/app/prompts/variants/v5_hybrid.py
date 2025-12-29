@@ -65,5 +65,5 @@ register_variant(
     lyrics_agent=LYRICS_AGENT,
     lyrics_repair_agent=LYRICS_REPAIR_AGENT,
     profile_inference_agent=PROFILE_INFERENCE_AGENT,
-    is_default=True,
+    is_default=False,
 )

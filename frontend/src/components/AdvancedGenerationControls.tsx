@@ -16,7 +16,13 @@ import {
   Collapse,
   Select,
   Tooltip,
+  Menu,
+  MenuButton,
+  MenuList,
+  MenuItem,
+  Portal,
 } from '@chakra-ui/react';
+import { ChevronDownIcon } from '@chakra-ui/icons';
 import { useState, useEffect } from 'react';
 import type { ChangeEvent } from 'react';
 import {
@@ -751,39 +757,84 @@ export default function AdvancedGenerationControls({
                 </Tooltip>
               </HStack>
             </FormLabel>
-            <Select
-              value={selectedVariant}
-              onChange={(e: ChangeEvent<HTMLSelectElement>) => 
-                setSelectedVariant(e.target.value as PromptVariant)
-              }
-              bg="gray.800"
-              borderColor="gray.600"
-              _hover={{ borderColor: 'gray.500' }}
-            >
-              {promptVariants.map((variant: PromptVariantInfo) => {
-                // Format prompt lengths as "2.2k + 5.3k" for multi-call variants
-                const formatLengths = (lengths: number[]) => {
-                  if (!lengths || lengths.length === 0) {
-                    return `${(variant.prompt_length / 1000).toFixed(1)}k`;
-                  }
-                  return lengths.map(l => `${(l / 1000).toFixed(1)}k`).join(' + ');
-                };
-                const label = variant.id === 'v1' ? '🎵 V1 — Baseline' : 
-                              variant.id === 'v2_reddit_tricks' ? '🚀 V2 — MAX Mode' :
-                              variant.id === 'v3_two_step' ? '⚡ V3 — Two-Step' :
-                              variant.id === 'v4_lyric_profile' ? '🎭 V4 — Lyric Profile' :
-                              variant.id === 'v5_hybrid' ? '🔥 V5 — Hybrid' :
-                              variant.id === 'v6_genre_disambiguation' ? '🎯 V6 — Genre Precision' :
-                              variant.id === 'v7_genre_term_disambiguation' ? '🛡️ V7 — Anti-Drift' :
-                              variant.id;
-                return (
-                  <option key={variant.id} value={variant.id}>
-                    {label} ({formatLengths(variant.prompt_lengths)})
-                    {variant.is_default ? ' ★' : ''}
-                  </option>
-                );
-              })}
-            </Select>
+            <Menu matchWidth autoSelect={false}>
+              <MenuButton
+                as={Button}
+                rightIcon={<ChevronDownIcon />}
+                bg="gray.800"
+                borderColor="gray.600"
+                borderWidth="1px"
+                _hover={{ borderColor: 'gray.500', bg: 'gray.800' }}
+                _active={{ bg: 'gray.700' }}
+                fontWeight="normal"
+                w="100%"
+                textAlign="left"
+                px={4}
+              >
+                <HStack justify="space-between" w="100%" pr={2}>
+                  <HStack spacing={2}>
+                    <Text>
+                      {selectedVariant === 'v1' ? '🎵 V1 — Baseline' : 
+                       selectedVariant === 'v2_reddit_tricks' ? '🚀 V2 — MAX Mode' :
+                       selectedVariant === 'v3_two_step' ? '⚡ V3 — Two-Step' :
+                       selectedVariant === 'v4_lyric_profile' ? '🎭 V4 — Lyric Profile' :
+                       selectedVariant === 'v5_hybrid' ? '🔥 V5 — Hybrid' :
+                       selectedVariant === 'v6_genre_disambiguation' ? '🎯 V6 — Genre Precision' :
+                       selectedVariant === 'v7_genre_term_disambiguation' ? '🛡️ V7 — Anti-Drift' :
+                       selectedVariant}
+                    </Text>
+                    {promptVariants.find(v => v.id === selectedVariant)?.is_default && (
+                      <Text as="span" fontStyle="italic" color="gray.500" fontSize="sm">recommended</Text>
+                    )}
+                  </HStack>
+                </HStack>
+              </MenuButton>
+              <Portal>
+                <MenuList bg="gray.800" borderColor="gray.600" zIndex={1500}>
+                  {promptVariants.map((variant: PromptVariantInfo) => {
+                    const formatLengths = (lengths: number[]) => {
+                      if (!lengths || lengths.length === 0) {
+                        const total = (variant.prompt_length / 1000).toFixed(1);
+                        return `${total}k`;
+                      }
+                      const parts = lengths.map(l => `${(l / 1000).toFixed(1)}k`).join(' + ');
+                      const total = (lengths.reduce((a, b) => a + b, 0) / 1000).toFixed(1);
+                      return `${parts} = ${total}k`;
+                    };
+                    const label = variant.id === 'v1' ? '🎵 V1 — Baseline' : 
+                                  variant.id === 'v2_reddit_tricks' ? '🚀 V2 — MAX Mode' :
+                                  variant.id === 'v3_two_step' ? '⚡ V3 — Two-Step' :
+                                  variant.id === 'v4_lyric_profile' ? '🎭 V4 — Lyric Profile' :
+                                  variant.id === 'v5_hybrid' ? '🔥 V5 — Hybrid' :
+                                  variant.id === 'v6_genre_disambiguation' ? '🎯 V6 — Genre Precision' :
+                                  variant.id === 'v7_genre_term_disambiguation' ? '🛡️ V7 — Anti-Drift' :
+                                  variant.id;
+                    const isSelected = selectedVariant === variant.id;
+                    return (
+                      <MenuItem
+                        key={variant.id}
+                        onClick={() => setSelectedVariant(variant.id as PromptVariant)}
+                        bg={isSelected ? 'gray.700' : 'transparent'}
+                        _hover={{ bg: 'gray.600' }}
+                        _focus={{ bg: isSelected ? 'gray.700' : 'transparent', boxShadow: 'none' }}
+                      >
+                        <HStack justify="space-between" w="100%">
+                          <HStack spacing={2}>
+                            <Text>{label}</Text>
+                            {variant.is_default && (
+                              <Text fontStyle="italic" color="gray.500" fontSize="sm">recommended</Text>
+                            )}
+                          </HStack>
+                          <Text color="gray.500" fontSize="sm" ml={4}>
+                            {formatLengths(variant.prompt_lengths)}
+                          </Text>
+                        </HStack>
+                      </MenuItem>
+                    );
+                  })}
+                </MenuList>
+              </Portal>
+            </Menu>
           </FormControl>
         </Collapse>
 

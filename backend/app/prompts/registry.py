@@ -24,7 +24,7 @@ Usage:
     all_variants = list_variants()
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Literal
 
 # Type for variant architecture
@@ -35,75 +35,86 @@ Architecture = Literal["single_step", "two_step"]
 class PromptVariant:
     """
     A prompt variant configuration.
-    
+
     Attributes:
         id: Unique identifier (e.g., "v1", "v2_reddit_tricks")
         description: Human-readable description for UI
         architecture: "single_step" or "two_step"
         uses_lyric_profile: Whether this variant uses lyric profile controls
-        
+
         # Single-step prompts (architecture="single_step")
         song_agent: Full song generation prompt
         repair_agent: Repair/fix prompt for validation failures
-        
+
         # Two-step prompts (architecture="two_step")
         style_agent: Style generation prompt (step 1)
         style_repair_agent: Repair prompt for style validation failures
         lyrics_agent: Lyrics generation prompt (step 2)
         lyrics_repair_agent: Repair prompt for lyrics validation failures
         profile_inference_agent: Fast prompt for inferring lyric profile (V4 only)
-        
+
         # Optional metadata
         is_default: Whether this is the default variant
         experimental: Mark as experimental (shown with warning in UI)
         deprecated: Mark as deprecated (hidden from UI by default)
     """
+
     id: str
     description: str
     architecture: Architecture = "single_step"
     uses_lyric_profile: bool = False
-    
+
     # Single-step prompts
     song_agent: Optional[str] = None
     repair_agent: Optional[str] = None
-    
+
     # Two-step prompts
     style_agent: Optional[str] = None
     style_repair_agent: Optional[str] = None
     lyrics_agent: Optional[str] = None
     lyrics_repair_agent: Optional[str] = None
     profile_inference_agent: Optional[str] = None  # For V4: fast profile inference
-    genre_disambiguation_agent: Optional[str] = None  # For V6: pre-style genre enrichment
-    
+    genre_disambiguation_agent: Optional[str] = (
+        None  # For V6: pre-style genre enrichment
+    )
+
     # Metadata
     is_default: bool = False
     experimental: bool = False
     deprecated: bool = False
-    
+
     def __post_init__(self):
         """Validate the variant configuration."""
         if self.architecture == "single_step":
             if not self.song_agent:
                 raise ValueError(f"Variant {self.id}: single_step requires song_agent")
             if not self.repair_agent:
-                raise ValueError(f"Variant {self.id}: single_step requires repair_agent")
+                raise ValueError(
+                    f"Variant {self.id}: single_step requires repair_agent"
+                )
         elif self.architecture == "two_step":
             if not self.style_agent:
                 raise ValueError(f"Variant {self.id}: two_step requires style_agent")
             if not self.style_repair_agent:
-                raise ValueError(f"Variant {self.id}: two_step requires style_repair_agent")
+                raise ValueError(
+                    f"Variant {self.id}: two_step requires style_repair_agent"
+                )
             if not self.lyrics_agent:
                 raise ValueError(f"Variant {self.id}: two_step requires lyrics_agent")
             if not self.lyrics_repair_agent:
-                raise ValueError(f"Variant {self.id}: two_step requires lyrics_repair_agent")
+                raise ValueError(
+                    f"Variant {self.id}: two_step requires lyrics_repair_agent"
+                )
             if self.uses_lyric_profile and not self.profile_inference_agent:
-                raise ValueError(f"Variant {self.id}: uses_lyric_profile requires profile_inference_agent")
-    
+                raise ValueError(
+                    f"Variant {self.id}: uses_lyric_profile requires profile_inference_agent"
+                )
+
     @property
     def two_step(self) -> bool:
         """Backwards compatibility property."""
         return self.architecture == "two_step"
-    
+
     @property
     def prompt_length(self) -> int:
         """Total prompt length in characters (for UI display)."""
@@ -113,7 +124,7 @@ class PromptVariant:
     def prompt_lengths(self) -> List[int]:
         """
         Individual prompt lengths for each LLM call (for UI display).
-        
+
         Single-step: [song_agent, repair_agent]
         Two-step: [style_agent, style_repair, lyrics_agent, lyrics_repair]
         Two-step with profile: [profile_inference, style_agent, style_repair, lyrics_agent, lyrics_repair]
@@ -127,14 +138,16 @@ class PromptVariant:
                 lengths.append(len(self.genre_disambiguation_agent))
             if self.profile_inference_agent:
                 lengths.append(len(self.profile_inference_agent))
-            lengths.extend([
-                len(self.style_agent or ""),
-                len(self.style_repair_agent or ""),
-                len(self.lyrics_agent or ""),
-                len(self.lyrics_repair_agent or ""),
-            ])
+            lengths.extend(
+                [
+                    len(self.style_agent or ""),
+                    len(self.style_repair_agent or ""),
+                    len(self.lyrics_agent or ""),
+                    len(self.lyrics_repair_agent or ""),
+                ]
+            )
             return lengths
-    
+
     def to_dict(self) -> Dict:
         """Convert to legacy dict format for backwards compatibility."""
         result = {
@@ -180,7 +193,7 @@ def register_variant(
 ) -> PromptVariant:
     """
     Register a new prompt variant.
-    
+
     Example:
         register_variant(
             id="v5_experimental",
@@ -192,7 +205,7 @@ def register_variant(
     """
     if id in _REGISTRY:
         raise ValueError(f"Variant '{id}' is already registered")
-    
+
     variant = PromptVariant(
         id=id,
         description=description,
@@ -210,7 +223,7 @@ def register_variant(
         experimental=experimental,
         deprecated=deprecated,
     )
-    
+
     _REGISTRY[id] = variant
     return variant
 
@@ -229,13 +242,13 @@ def list_variants(
 ) -> List[PromptVariant]:
     """List all registered variants."""
     variants = list(_REGISTRY.values())
-    
+
     if not include_deprecated:
         variants = [v for v in variants if not v.deprecated]
-    
+
     if not include_experimental:
         variants = [v for v in variants if not v.experimental]
-    
+
     return variants
 
 
@@ -256,4 +269,3 @@ def to_legacy_dict() -> Dict[str, Dict]:
     For backwards compatibility during migration.
     """
     return {v.id: v.to_dict() for v in _REGISTRY.values()}
-
