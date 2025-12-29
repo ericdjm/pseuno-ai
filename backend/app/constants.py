@@ -56,3 +56,16 @@ MAX_TAG_CHARS = 40
 
 SAVED_PROMPT_TITLE_MAX_CHARS = 255
 SAVED_PROMPT_NOTES_MAX_CHARS = 2000
+
+# ===========================================================================
+# V8 Channel Split Constants
+# ===========================================================================
+
+# Minimum confidence threshold for role assignment from genre disambiguation
+V8_ROLE_CONFIDENCE_THRESHOLD = 0.7
+
+# Whether to enable regex fallback for split detection (can be disabled for testing)
+V8_REGEX_ENABLED = True
+
+# Set of variant IDs that use V8 channel split logic
+V8_SPLIT_ENABLED_VARIANTS = {"v8_channel_split"}

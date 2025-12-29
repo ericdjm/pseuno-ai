@@ -15,6 +15,11 @@ import httpx
 from langgraph.graph import END, StateGraph
 
 from app.config import Settings
+from app.constants import (
+    V8_ROLE_CONFIDENCE_THRESHOLD,
+    V8_REGEX_ENABLED,
+    V8_SPLIT_ENABLED_VARIANTS,
+)
 from app.prompts import get_variant
 from app.schemas.advanced import AdvancedGenerateRequest, LyricControls
 from app.services.debug_trace import DebugTracer
@@ -98,6 +103,43 @@ class _ParsedLyricsOutput:
 @dataclass(frozen=True)
 class _LLMResponse:
     content: str
+
+
+@dataclass
+class SplitDecision:
+    """
+    V8 channel split decision result.
+    
+    Indicates whether style guidance should be split into VOCAL_REFERENCE vs MUSIC_TARGET,
+    and if so, which artist plays which role.
+    """
+    split_active: bool
+    music_target_artist: Optional[str] = None
+    vocal_reference_artist: Optional[str] = None
+    source: str = "none"  # "role_schema" | "regex" | "none"
+    role_confidence: float = 0.0
+
+
+def _normalize_artist_name_v8(name: str) -> str:
+    """
+    Normalize an artist name for comparison (V8 channel split).
+    
+    This is intentionally simple and deterministic:
+    - trim whitespace
+    - lowercase
+    - replace & with 'and'
+    - collapse whitespace runs to single space
+    - strip surrounding punctuation
+    
+    Does NOT attempt fuzzy matching.
+    """
+    if not name:
+        return ""
+    normalized = name.strip().lower()
+    normalized = normalized.replace("&", "and")
+    normalized = re.sub(r"\s+", " ", normalized)
+    normalized = normalized.strip(".,!?;:'\"()-")
+    return normalized
 
 
 class OpenAIChatClient:
@@ -868,6 +910,263 @@ class AgentPromptGraph:
 
         return suggestions[:5]  # Cap at 5 total
 
+    # =========================================================================
+    # V8 Channel Split Logic
+    # =========================================================================
+
+    def _decide_style_split_v8_from_roles(
+        self, genre_data: Optional[Dict[str, Any]]
+    ) -> SplitDecision:
+        """
+        V8 Step 2.3b: Schema-based split decision using role fields from genre disambiguation.
+        
+        Returns a SplitDecision with split_active=True only if:
+        - exactly one vocal_reference and one music_target are found
+        - both have role_confidence >= V8_ROLE_CONFIDENCE_THRESHOLD
+        - normalized names are different
+        """
+        if not genre_data or not genre_data.get("artists"):
+            return SplitDecision(split_active=False, source="none")
+        
+        artists = genre_data.get("artists", [])
+        
+        vocal_refs = []
+        music_targets = []
+        
+        for artist in artists:
+            role = artist.get("role", "unspecified")
+            confidence = artist.get("role_confidence", 0.0)
+            name = artist.get("name", "")
+            
+            if role == "vocal_reference" and confidence >= V8_ROLE_CONFIDENCE_THRESHOLD:
+                vocal_refs.append((name, confidence))
+            elif role == "music_target" and confidence >= V8_ROLE_CONFIDENCE_THRESHOLD:
+                music_targets.append((name, confidence))
+        
+        # Must have exactly one of each
+        if len(vocal_refs) != 1 or len(music_targets) != 1:
+            return SplitDecision(split_active=False, source="none")
+        
+        vocal_name, vocal_conf = vocal_refs[0]
+        music_name, music_conf = music_targets[0]
+        
+        # Names must differ after normalization
+        if _normalize_artist_name_v8(vocal_name) == _normalize_artist_name_v8(music_name):
+            return SplitDecision(split_active=False, source="none")
+        
+        return SplitDecision(
+            split_active=True,
+            music_target_artist=music_name,
+            vocal_reference_artist=vocal_name,
+            source="role_schema",
+            role_confidence=min(vocal_conf, music_conf),
+        )
+
+    def _decide_style_split_v8_from_regex(
+        self, style_request: str
+    ) -> SplitDecision:
+        """
+        V8 Step 2.3c: Regex fallback for split detection.
+        
+        Only used if schema-based detection didn't produce a confident split.
+        Uses high-confidence patterns only. If ambiguous, returns no split.
+        """
+        if not V8_REGEX_ENABLED or not style_request:
+            return SplitDecision(split_active=False, source="none")
+        
+        # High-confidence patterns (ordered)
+        # Pattern format: (regex, vocal_group_idx, music_group_idx)
+        patterns = [
+            # "lead singer of X singing/vocals for/over/with Y"
+            (r"lead\s+singer\s+of\s+(.+?)\s+(?:singing|vocals?)\s+(?:for|over|with)\s+(.+?)(?:\s+(?:music|instrumentation|style|sound))?$", 1, 2),
+            # "singer of X for Y"
+            (r"singer\s+of\s+(.+?)\s+(?:for|singing\s+for)\s+(.+?)$", 1, 2),
+            # "X vocals with/over Y instrumentation/music"
+            (r"(.+?)\s+vocals?\s+(?:with|over|for)\s+(.+?)\s+(?:instrumentation|music|sound|arrangement)", 1, 2),
+            # "vocals like/by X over/with Y"
+            (r"vocals?\s+(?:like|by)\s+(.+?)\s+(?:over|with)\s+(.+?)(?:\s+(?:instrumentation|music))?$", 1, 2),
+            # "X-style vocals ... music/arranged like Y"
+            (r"(.+?)(?:-style)?\s+vocals?\s+.*?(?:music|composition|arranged)\s+(?:like|as)\s+(.+?)$", 1, 2),
+            # "instrumentation of/like Y ... vocals by/like X"
+            (r"instrumentation\s+(?:of|like)\s+(.+?)\s+.*?vocals?\s+(?:by|like)\s+(.+?)$", 2, 1),
+        ]
+        
+        for pattern, vocal_idx, music_idx in patterns:
+            match = re.search(pattern, style_request, re.IGNORECASE)
+            if match:
+                try:
+                    vocal_artist = match.group(vocal_idx).strip()
+                    music_artist = match.group(music_idx).strip()
+                    
+                    # Both must be non-empty and different
+                    if not vocal_artist or not music_artist:
+                        continue
+                    if _normalize_artist_name_v8(vocal_artist) == _normalize_artist_name_v8(music_artist):
+                        continue
+                    
+                    return SplitDecision(
+                        split_active=True,
+                        music_target_artist=music_artist,
+                        vocal_reference_artist=vocal_artist,
+                        source="regex",
+                        role_confidence=0.8,  # Regex matches are reasonably confident
+                    )
+                except (IndexError, AttributeError):
+                    continue
+        
+        return SplitDecision(split_active=False, source="none")
+
+    def _decide_style_split_v8(
+        self,
+        style_request: str,
+        genre_data: Optional[Dict[str, Any]],
+        tracer: DebugTracer,
+    ) -> SplitDecision:
+        """
+        V8 Step 2.3d: Unified split decision with precedence.
+        
+        Precedence:
+        1. Schema-based role detection (from genre disambiguation V3)
+        2. Regex fallback (high-confidence patterns only)
+        3. No split
+        
+        Emits a DebugTrace span with the decision.
+        """
+        # Try schema-based first
+        decision = self._decide_style_split_v8_from_roles(genre_data)
+        
+        # If no split from roles, try regex
+        if not decision.split_active:
+            decision = self._decide_style_split_v8_from_regex(style_request)
+        
+        # Emit debug span
+        with tracer.span("style.split", "parse") as span:
+            span.set_meta("split_active", decision.split_active)
+            span.set_meta("source", decision.source)
+            span.set_meta("role_confidence", decision.role_confidence)
+            if decision.split_active:
+                span.set_meta("music_target_artist", decision.music_target_artist)
+                span.set_meta("vocal_reference_artist", decision.vocal_reference_artist)
+            span.set_artifact("style_request_original", style_request)
+        
+        return decision
+
+    def _format_style_context_v8(
+        self,
+        context_pack: Dict[str, Any],
+        split: SplitDecision,
+        genre_data: Optional[Dict[str, Any]],
+    ) -> str:
+        """
+        V8 Step 2.4: Format style context with explicit MUSIC_TARGET vs VOCAL_REFERENCE blocks.
+        
+        When split is active, enforces a strict anti-leakage contract:
+        - MUSIC_TARGET is authoritative for genre/instrumentation/arrangement/production
+        - VOCAL_REFERENCE is authoritative for vocal timbre/range/delivery ONLY
+        """
+        lines = [
+            "Generate SUNO PROMPT, EXCLUDE, WEIRDNESS, and STYLE INFLUENCE for:",
+            f"  style_request: {context_pack.get('user_style_request', '')}",
+            f"  reference_artists: {context_pack.get('selected_artists', [])}",
+            f"  tags: {context_pack.get('tags', [])}",
+        ]
+        
+        if not split.split_active:
+            # Fallback: use standard format with genre disambiguation
+            if genre_data:
+                genre_section = self._format_genre_context_section(genre_data)
+                return "\n".join(lines) + genre_section
+            return "\n".join(lines)
+        
+        # Split is active: build explicit MUSIC_TARGET and VOCAL_REFERENCE blocks
+        
+        # Find artist data in genre_data
+        music_artist_data = None
+        vocal_artist_data = None
+        if genre_data and genre_data.get("artists"):
+            for artist in genre_data["artists"]:
+                artist_name = artist.get("name", "")
+                if _normalize_artist_name_v8(artist_name) == _normalize_artist_name_v8(split.music_target_artist or ""):
+                    music_artist_data = artist
+                elif _normalize_artist_name_v8(artist_name) == _normalize_artist_name_v8(split.vocal_reference_artist or ""):
+                    vocal_artist_data = artist
+        
+        # MUSIC_TARGET block
+        lines.append("")
+        lines.append("═══════════════════════════════════════════════════════════════════════════════")
+        lines.append("MUSIC_TARGET (AUTHORITATIVE for genre / instrumentation / arrangement / production)")
+        lines.append("═══════════════════════════════════════════════════════════════════════════════")
+        lines.append(f"ARTIST: {split.music_target_artist}")
+        lines.append("USE FOR: genre, instruments, arrangement, dynamics, production texture")
+        lines.append("DO NOT USE FOR: vocal timbre/range/delivery")
+        
+        if music_artist_data:
+            lines.append("")
+            lines.append("GENRE / VOCAB / INSTRUMENT GUIDANCE (do not copy verbatim; translate into Suno-friendly prose):")
+            
+            # Era
+            era = music_artist_data.get("era", {})
+            if era.get("label"):
+                lines.append(f"  ERA: {era.get('label')} (basis: {era.get('basis', 'unspecified')})")
+            
+            # Genres
+            genres = music_artist_data.get("genres", [])
+            if genres:
+                lines.append(f"  GENRE_TARGETS: {', '.join(genres)}")
+            not_genres = music_artist_data.get("not_genres", [])
+            if not_genres:
+                lines.append(f"  GENRE_AVOID: {', '.join(not_genres)}")
+            
+            # Terms
+            terms_to_use = music_artist_data.get("terms_to_use", [])
+            if terms_to_use:
+                lines.append(f"  VOCAB_TO_USE: {', '.join(terms_to_use)}")
+            terms_to_avoid = music_artist_data.get("terms_to_avoid", [])
+            if terms_to_avoid:
+                lines.append(f"  VOCAB_TO_AVOID: {', '.join(terms_to_avoid)}")
+            
+            # Instruments
+            instruments_to_use = music_artist_data.get("instruments_to_use", [])
+            if instruments_to_use:
+                lines.append(f"  INSTRUMENTS_TO_USE: {', '.join(instruments_to_use)}")
+            instruments_to_avoid = music_artist_data.get("instruments_to_avoid", [])
+            if instruments_to_avoid:
+                lines.append(f"  INSTRUMENTS_TO_AVOID: {', '.join(instruments_to_avoid)}")
+        
+        lines.append("")
+        lines.append("HARD RULE: All non-vocal musical content MUST be derived from MUSIC_TARGET only.")
+        
+        # VOCAL_REFERENCE block
+        lines.append("")
+        lines.append("═══════════════════════════════════════════════════════════════════════════════")
+        lines.append("VOCAL_REFERENCE (VOICE-ONLY: timbre / register / delivery)")
+        lines.append("═══════════════════════════════════════════════════════════════════════════════")
+        lines.append(f"ARTIST: {split.vocal_reference_artist}")
+        lines.append("USE FOR: vocal timbre/tone, vocal register, delivery style")
+        lines.append("DO NOT USE FOR: genre, instrumentation, arrangement, production aesthetic")
+        
+        if vocal_artist_data:
+            lines.append("")
+            lines.append("VOCAL GUIDANCE (voice-only; do not introduce band/genre facts):")
+            
+            # Only include vocal-specific fields
+            vocal_style_to_use = vocal_artist_data.get("vocal_style_to_use", [])
+            if vocal_style_to_use:
+                lines.append(f"  VOCAL_STYLE_TO_USE: {', '.join(vocal_style_to_use)}")
+            vocal_style_to_avoid = vocal_artist_data.get("vocal_style_to_avoid", [])
+            if vocal_style_to_avoid:
+                lines.append(f"  VOCAL_STYLE_TO_AVOID: {', '.join(vocal_style_to_avoid)}")
+        
+        lines.append("")
+        lines.append("HARD RULE: Do NOT borrow genre/instruments/production from VOCAL_REFERENCE.")
+        
+        # Global notes from genre_data
+        if genre_data and genre_data.get("global_notes"):
+            lines.append("")
+            lines.append(f"NOTES: {' '.join(genre_data['global_notes'])}")
+        
+        return "\n".join(lines)
+
     async def _run_style_branch(
         self,
         context_pack: Dict[str, Any],
@@ -880,18 +1179,27 @@ class AgentPromptGraph:
         style_model = ctx.style_model
         logger.info("Style branch: starting (model=%s)", style_model)
 
-        # V6: Run genre disambiguation first (best-effort)
+        # V6+: Run genre disambiguation first (best-effort)
         genre_data = None
         if ctx.genre_disambiguation_prompt:
             genre_data = await self._run_genre_disambiguation(context_pack, tracer, ctx)
 
-        # Format context for style generation
-        style_context = self._format_style_context(context_pack)
+        # V8: Check for channel split if enabled
+        split_decision = SplitDecision(split_active=False, source="none")
+        if ctx.variant_id in V8_SPLIT_ENABLED_VARIANTS:
+            style_request = context_pack.get("user_style_request", "")
+            split_decision = self._decide_style_split_v8(style_request, genre_data, tracer)
 
-        # Inject genre disambiguation context if available
-        if genre_data:
-            genre_section = self._format_genre_context_section(genre_data)
-            style_context = style_context + genre_section
+        # Format context for style generation
+        if ctx.variant_id in V8_SPLIT_ENABLED_VARIANTS:
+            # V8: Use dedicated formatter that handles split and genre data together
+            style_context = self._format_style_context_v8(context_pack, split_decision, genre_data)
+        else:
+            # V6/V7: Use standard formatter with genre section injected
+            style_context = self._format_style_context(context_pack)
+            if genre_data:
+                genre_section = self._format_genre_context_section(genre_data)
+                style_context = style_context + genre_section
 
         style_prompt = ctx.style_prompt
 

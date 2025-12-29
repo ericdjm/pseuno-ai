@@ -95,6 +95,7 @@ PromptVariant = Literal[
     "v5_hybrid",
     "v6_genre_disambiguation",
     "v7_genre_term_disambiguation",
+    "v8_channel_split",
 ]
 
 # Lyric control enums - user can set to 'auto' to let the model infer

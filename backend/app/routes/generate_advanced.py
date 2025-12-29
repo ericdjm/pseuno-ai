@@ -33,7 +33,9 @@ class PromptVariantInfo(BaseModel):
     is_default: bool = False
     prompt_length: int = 0  # Total length of system prompts in characters
     prompt_lengths: List[int] = []  # Individual lengths per LLM call
-    prompt_lengths_breakdown: Dict[str, int] = {}  # Semantic breakdown: style/combined, lyrics, repair, total
+    prompt_lengths_breakdown: Dict[str, int] = (
+        {}
+    )  # Semantic breakdown: style/combined, lyrics, repair, total
 
 
 class PromptVariantsResponse(BaseModel):

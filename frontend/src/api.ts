@@ -53,7 +53,8 @@ export type PromptVariant =
   | 'v4_lyric_profile'
   | 'v5_hybrid'
   | 'v6_genre_disambiguation'
-  | 'v7_genre_term_disambiguation';
+  | 'v7_genre_term_disambiguation'
+  | 'v8_channel_split';
 
 // Lyric control types
 export type LyricAudience = 'auto' | 'kids' | 'general' | 'adult';
