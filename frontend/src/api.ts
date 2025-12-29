@@ -86,12 +86,21 @@ export interface AdvancedGenerateRequest {
   lyric_controls?: LyricControls;
 }
 
+export interface PromptLengthsBreakdown {
+  combined?: number;  // Single-step only
+  style?: number;     // Two-step only
+  lyrics?: number;    // Two-step only
+  repair: number;
+  total: number;
+}
+
 export interface PromptVariantInfo {
   id: string;
   description: string;
   is_default: boolean;
   prompt_length: number;
   prompt_lengths: number[];  // Individual lengths per LLM call
+  prompt_lengths_breakdown: PromptLengthsBreakdown;
 }
 
 export interface PromptVariantsResponse {

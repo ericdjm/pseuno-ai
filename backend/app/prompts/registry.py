@@ -148,6 +148,45 @@ class PromptVariant:
             )
             return lengths
 
+    @property
+    def prompt_lengths_breakdown(self) -> Dict[str, int]:
+        """
+        Semantic breakdown of prompt lengths for UI display.
+
+        Returns dict with keys: style, lyrics, repair, total
+        For single-step: combined (instead of style), repair, total
+        """
+        if self.architecture == "single_step":
+            combined = len(self.song_agent or "")
+            repair = len(self.repair_agent or "")
+            return {
+                "combined": combined,
+                "repair": repair,
+                "total": combined + repair,
+            }
+        else:
+            # Style chain: genre_disambig + style_agent
+            style = len(self.style_agent or "")
+            if self.genre_disambiguation_agent:
+                style += len(self.genre_disambiguation_agent)
+
+            # Lyrics chain: profile_inference + lyrics_agent
+            lyrics = len(self.lyrics_agent or "")
+            if self.profile_inference_agent:
+                lyrics += len(self.profile_inference_agent)
+
+            # Repair: style_repair + lyrics_repair
+            repair = len(self.style_repair_agent or "") + len(
+                self.lyrics_repair_agent or ""
+            )
+
+            return {
+                "style": style,
+                "lyrics": lyrics,
+                "repair": repair,
+                "total": style + lyrics + repair,
+            }
+
     def to_dict(self) -> Dict:
         """Convert to legacy dict format for backwards compatibility."""
         result = {

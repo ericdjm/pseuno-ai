@@ -2,7 +2,7 @@
 Minimal generation routes for the Suno formatter agent.
 """
 
-from typing import List
+from typing import Dict, List
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -33,6 +33,7 @@ class PromptVariantInfo(BaseModel):
     is_default: bool = False
     prompt_length: int = 0  # Total length of system prompts in characters
     prompt_lengths: List[int] = []  # Individual lengths per LLM call
+    prompt_lengths_breakdown: Dict[str, int] = {}  # Semantic breakdown: style/combined, lyrics, repair, total
 
 
 class PromptVariantsResponse(BaseModel):
@@ -53,6 +54,7 @@ async def list_prompt_variants_endpoint():
             is_default=v.is_default,
             prompt_length=v.prompt_length,
             prompt_lengths=v.prompt_lengths,
+            prompt_lengths_breakdown=v.prompt_lengths_breakdown,
         )
         for v in list_variants()
     ]

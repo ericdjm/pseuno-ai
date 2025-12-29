@@ -792,14 +792,19 @@ export default function AdvancedGenerationControls({
               <Portal>
                 <MenuList bg="gray.800" borderColor="gray.600" zIndex={1500}>
                   {promptVariants.map((variant: PromptVariantInfo) => {
-                    const formatLengths = (lengths: number[]) => {
-                      if (!lengths || lengths.length === 0) {
-                        const total = (variant.prompt_length / 1000).toFixed(1);
-                        return `${total}k`;
+                    const formatBreakdown = () => {
+                      const b = variant.prompt_lengths_breakdown;
+                      if (!b) return `${(variant.prompt_length / 1000).toFixed(1)}k`;
+                      
+                      const fmt = (n: number) => `${(n / 1000).toFixed(1)}k`;
+                      
+                      if (b.combined !== undefined) {
+                        // Single-step: COMBINED(X), REPAIR(Y), TOTAL(Z)
+                        return `COMBINED(${fmt(b.combined)}), REPAIR(${fmt(b.repair)}), TOTAL(${fmt(b.total)})`;
+                      } else {
+                        // Two-step: STYLE(X), LYRICS(Y), REPAIR(Z), TOTAL(T)
+                        return `STYLE(${fmt(b.style || 0)}), LYRICS(${fmt(b.lyrics || 0)}), REPAIR(${fmt(b.repair)}), TOTAL(${fmt(b.total)})`;
                       }
-                      const parts = lengths.map(l => `${(l / 1000).toFixed(1)}k`).join(' + ');
-                      const total = (lengths.reduce((a, b) => a + b, 0) / 1000).toFixed(1);
-                      return `${parts} = ${total}k`;
                     };
                     const label = variant.id === 'v1' ? '🎵 V1 — Baseline' : 
                                   variant.id === 'v2_reddit_tricks' ? '🚀 V2 — MAX Mode' :
@@ -832,7 +837,7 @@ export default function AdvancedGenerationControls({
                             )}
                           </HStack>
                           <Text color="gray.500" fontSize="xs" ml={4}>
-                            {formatLengths(variant.prompt_lengths)}
+                            {formatBreakdown()}
                           </Text>
                         </HStack>
                       </MenuItem>
