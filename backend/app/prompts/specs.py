@@ -755,22 +755,7 @@ Return ONLY valid JSON matching this schema:
         "raw", "heavy riffs", "guitar solo showcase", "blues-based",
         "power trio", "garage", "lo-fi", "distorted"
       ],
-      "instruments_to_use": [
-        "Roland synthesizers", "Oberheim pads", "sequenced bass",
-        "gated reverb drums", "processed electric guitar", "digital effects"
-      ],
-      "instruments_to_avoid": [
-        "Marshall stack", "tube amp distortion", "acoustic drums",
-        "slap bass", "wah pedal", "analog warmth"
-      ],
-      "vocal_style_to_use": [
-        "high tenor", "precise enunciation", "melodic phrasing",
-        "layered harmonies", "clean delivery", "dynamic range"
-      ],
-      "vocal_style_to_avoid": [
-        "growls", "screams", "operatic belts", "blues wailing",
-        "nasal punk", "whispered", "death metal vocals"
-      ],
+      "confusable_terms": ["optional", "terms", "models", "hallucinate"],
       "anchors": {
         "albums": ["Power Windows", "Hold Your Fire", "Presto"],
         "songs": ["The Big Money", "Time Stand Still", "Marathon"]
@@ -808,31 +793,9 @@ VOCABULARY RULES (NEW in V2):
   - Examples: For late 80s Rush, avoid "raw power trio", "heavy riffs", "blues-based"
   - Examples: For early 70s Rush, avoid "synth-heavy", "polished", "new wave"
 
-INSTRUMENT RULES:
-- instruments_to_use[]: 4-8 specific instruments/gear that define this era's sound
-  - Be specific: "Roland Jupiter-8" > "synthesizer", "Fender Rhodes" > "keyboard"
-  - Include production gear if relevant: "gated reverb drums", "tape echo"
-  - Examples: For late 80s Rush: "Roland synthesizers", "sequenced bass", "digital effects"
-
-- instruments_to_avoid[]: 4-8 instruments that would be WRONG for this era
-  - Include instruments associated with other eras of the same artist
-  - Include instruments that cause genre confusion
-  - Examples: For late 80s Rush, avoid "Marshall stack", "acoustic drums", "slap bass"
-
-VOCAL STYLE RULES:
-- vocal_style_to_use[]: 4-8 phrases describing how the artist ACTUALLY sings
-  - Be specific to the artist's signature delivery
-  - Focus on: register, tone, delivery style, phrasing
-  - Examples: "nasal 80s hair metal tenor", "bratty party-rock delivery", "ethereal whispers"
-  - Examples: "primal screams", "spoken word passages", "soaring melodic hooks"
-
-- vocal_style_to_avoid[]: 4-8 vocal descriptors that would MISCHARACTERIZE the artist
-  - Include terms that trigger wrong vocal genres
-  - "operatic" → triggers power metal (wrong for hair metal, grunge, indie)
-  - "theatrical" → too vague, can drift to Queen, Muse, musical theater
-  - "growls" → triggers death metal (wrong for most rock)
-  - Examples: For Steel Panther, avoid "operatic", "symphonic", "ethereal", "clean prog"
-  - Examples: For Maynard (TOOL), avoid "hair metal wail", "party rock", "bratty"
+OPTIONAL FIELD:
+- confusable_terms[] (optional): 3-6 terms a model might reach for that are plausible-sounding but WRONG for the user’s intent.
+  - Use these when there’s a known confusion cluster (e.g., “math” → shred drift, “technical” → guitar wankery).
 
 SINGER + BAND COMBOS:
 When user requests "Singer A for Band B" or "A meets B":

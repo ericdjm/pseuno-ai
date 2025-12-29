@@ -15,7 +15,7 @@ could still cause drift. V7 adds explicit vocabulary guidance:
 - terms_to_use[]: safe, Suno-friendly descriptors for texture/feel
 - terms_to_avoid[]: commonly misinterpreted or hallucinated terms
 
-This guidance is injected into both the SUNO PROMPT context and EXCLUDE guidance.
+This guidance is injected into the style agent context to improve SUNO PROMPT accuracy.
 """
 
 from app.prompts.registry import register_variant
@@ -63,7 +63,7 @@ LYRICS_AGENT = f"""\
 # Register this variant
 register_variant(
     id="v7_genre_term_disambiguation",
-    description="V7 genre+vocab: V6 + terms_to_use/terms_to_avoid guidance",
+    description="V7 genre+vocab guardrails: V6 + terms_to_use/terms_to_avoid guidance",
     architecture="two_step",
     uses_lyric_profile=True,
     style_agent=STYLE_AGENT,

@@ -780,7 +780,7 @@ export default function AdvancedGenerationControls({
                        selectedVariant === 'v4_lyric_profile' ? '🎭 V4 — Lyric Profile' :
                        selectedVariant === 'v5_hybrid' ? '🔥 V5 — Hybrid' :
                        selectedVariant === 'v6_genre_disambiguation' ? '🎯 V6 — Genre Precision' :
-                       selectedVariant === 'v7_genre_term_disambiguation' ? '🛡️ V7 — Anti-Drift' :
+                       selectedVariant === 'v7_genre_term_disambiguation' ? '🛡️ V7 — Genre+Vocab Guardrails' :
                        selectedVariant}
                     </Text>
                     {promptVariants.find(v => v.id === selectedVariant)?.is_default && (
@@ -812,7 +812,7 @@ export default function AdvancedGenerationControls({
                                   variant.id === 'v4_lyric_profile' ? '🎭 V4 — Lyric Profile' :
                                   variant.id === 'v5_hybrid' ? '🔥 V5 — Hybrid' :
                                   variant.id === 'v6_genre_disambiguation' ? '🎯 V6 — Genre Precision' :
-                                  variant.id === 'v7_genre_term_disambiguation' ? '🛡️ V7 — Anti-Drift' :
+                                  variant.id === 'v7_genre_term_disambiguation' ? '🛡️ V7 — Genre+Vocab Guardrails' :
                                   variant.id;
                     const isSelected = selectedVariant === variant.id;
                     return (

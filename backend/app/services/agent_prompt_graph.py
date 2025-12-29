@@ -786,8 +786,6 @@ class AgentPromptGraph:
             "═══════════════════════════════════════════════════════════════════════════════",
         ]
 
-        all_terms_to_avoid = []  # Collect for EXCLUDE guidance
-
         for artist in genre_data.get("artists", []):
             name = artist.get("name", "Unknown")
             era = artist.get("era", {})
@@ -813,7 +811,6 @@ class AgentPromptGraph:
             terms_to_avoid = artist.get("terms_to_avoid", [])
             if terms_to_avoid:
                 lines.append(f"  VOCAB_TO_AVOID: {', '.join(terms_to_avoid)}")
-                all_terms_to_avoid.extend(terms_to_avoid)
 
             # INSTRUMENTS_TO_USE
             instruments_to_use = artist.get("instruments_to_use", [])
@@ -826,7 +823,6 @@ class AgentPromptGraph:
                 lines.append(
                     f"  INSTRUMENTS_TO_AVOID: {', '.join(instruments_to_avoid)}"
                 )
-                all_terms_to_avoid.extend(instruments_to_avoid)  # Also feed to EXCLUDE
 
             # VOCAL_STYLE_TO_USE
             vocal_style_to_use = artist.get("vocal_style_to_use", [])
@@ -839,7 +835,6 @@ class AgentPromptGraph:
                 lines.append(
                     f"  VOCAL_STYLE_TO_AVOID: {', '.join(vocal_style_to_avoid)}"
                 )
-                all_terms_to_avoid.extend(vocal_style_to_avoid)  # Also feed to EXCLUDE
 
             # ANCHOR_REFERENCES
             anchors = artist.get("anchors", {})
@@ -869,13 +864,6 @@ class AgentPromptGraph:
             "- Do NOT use VOCAB_TO_AVOID, INSTRUMENTS_TO_AVOID, or VOCAL_STYLE_TO_AVOID"
         )
         lines.append("- Treat GENRE_AVOID as hard negatives")
-
-        # EXCLUDE guidance (feed terms_to_avoid into exclude context)
-        if all_terms_to_avoid:
-            # Pick up to 4 most important drift blockers for EXCLUDE
-            exclude_suggestions = all_terms_to_avoid[:4]
-            lines.append("")
-            lines.append(f"EXCLUDE SHOULD INCLUDE: {', '.join(exclude_suggestions)}")
 
         return "\n".join(lines)
 
