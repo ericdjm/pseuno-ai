@@ -784,7 +784,7 @@ export default function AdvancedGenerationControls({
                        selectedVariant}
                     </Text>
                     {promptVariants.find(v => v.id === selectedVariant)?.is_default && (
-                      <Text as="span" fontStyle="italic" color="gray.500" fontSize="sm">recommended</Text>
+                      <Text as="span">★</Text>
                     )}
                   </HStack>
                 </HStack>
@@ -816,16 +816,22 @@ export default function AdvancedGenerationControls({
                         onClick={() => setSelectedVariant(variant.id as PromptVariant)}
                         bg={isSelected ? 'gray.700' : 'transparent'}
                         _hover={{ bg: 'gray.600' }}
-                        _focus={{ bg: isSelected ? 'gray.700' : 'transparent', boxShadow: 'none' }}
+                        _active={{ bg: 'gray.600' }}
+                        sx={{
+                          '&:focus:not(:hover)': {
+                            bg: isSelected ? 'gray.700' : 'transparent',
+                            boxShadow: 'none',
+                          },
+                        }}
                       >
                         <HStack justify="space-between" w="100%">
                           <HStack spacing={2}>
                             <Text>{label}</Text>
                             {variant.is_default && (
-                              <Text fontStyle="italic" color="gray.500" fontSize="sm">recommended</Text>
+                              <Text>★</Text>
                             )}
                           </HStack>
-                          <Text color="gray.500" fontSize="sm" ml={4}>
+                          <Text color="gray.500" fontSize="xs" ml={4}>
                             {formatLengths(variant.prompt_lengths)}
                           </Text>
                         </HStack>
