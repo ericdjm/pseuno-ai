@@ -938,6 +938,10 @@ class AgentPromptGraph:
             confidence = artist.get("role_confidence", 0.0)
             name = artist.get("name", "")
             
+            # Skip artists with empty names (defensive: matches regex path validation)
+            if not name:
+                continue
+            
             if role == "vocal_reference" and confidence >= V8_ROLE_CONFIDENCE_THRESHOLD:
                 vocal_refs.append((name, confidence))
             elif role == "music_target" and confidence >= V8_ROLE_CONFIDENCE_THRESHOLD:

@@ -68,4 +68,8 @@ V8_ROLE_CONFIDENCE_THRESHOLD = 0.7
 V8_REGEX_ENABLED = True
 
 # Set of variant IDs that use V8 channel split logic
-V8_SPLIT_ENABLED_VARIANTS = {"v8_channel_split", "v9_comprehensive_exclude"}
+V8_SPLIT_ENABLED_VARIANTS = {
+    "v8_channel_split",
+    "v9_comprehensive_exclude",
+    "v10_suno_friendly",
+}

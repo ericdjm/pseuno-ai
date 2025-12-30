@@ -1,0 +1,66 @@
+[
+  {
+    "name": "V10: 70s progressive rock (Suno-friendly production blockers)",
+    "user_prompt": "Epic 70s progressive rock with long instrumental sections",
+    "lyrics_about": "cosmic journey through space and time",
+    "selected_artists": ["Pink Floyd", "Yes", "Genesis"],
+    "user_style_request": "Classic 70s progressive rock, analog warmth, live feel",
+    "tags": ["progressive rock", "70s", "epic"],
+    "expected_exclude_contains": ["overcompressed", "robotic drums", "modern production", "digital sound", "synthetic"],
+    "expected_exclude_should_not_contain": ["brick-wall compression", "quantized drums", "digital clipping"],
+    "notes": "Should use musical descriptors, NOT audio engineering terms"
+  },
+  {
+    "name": "V10: Live jazz recording (Suno-friendly studio blockers)",
+    "user_prompt": "Intimate live jazz trio recording",
+    "lyrics_about": "late night in a smoky club",
+    "selected_artists": ["Bill Evans Trio", "Keith Jarrett"],
+    "user_style_request": "Live jazz recording, room ambience, natural dynamics",
+    "tags": ["jazz", "live", "intimate"],
+    "expected_exclude_contains": ["overproduced", "too polished", "mechanical feel", "rigid tempo", "studio sheen"],
+    "expected_exclude_should_not_contain": ["studio overdubs", "click track", "pitch correction"],
+    "notes": "Should use vibe descriptors, NOT recording technique terms"
+  },
+  {
+    "name": "V10: Lo-fi hip-hop (Suno-friendly polish blockers)",
+    "user_prompt": "Chill lo-fi hip-hop beats for studying",
+    "lyrics_about": "rainy afternoon memories",
+    "selected_artists": ["Nujabes", "J Dilla"],
+    "user_style_request": "Lo-fi hip-hop, warm and hazy, vinyl crackle",
+    "tags": ["lo-fi", "hip-hop", "chill"],
+    "expected_exclude_contains": ["pristine", "crystal clear", "radio ready", "too clean", "overproduced"],
+    "expected_exclude_should_not_contain": ["brick-wall limiting", "mastering chain"],
+    "notes": "Should use listener-facing quality descriptors"
+  },
+  {
+    "name": "V10 vs V9 comparison: 70s rock",
+    "user_prompt": "Classic 70s hard rock with heavy guitars",
+    "lyrics_about": "rock and roll lifestyle",
+    "selected_artists": ["Led Zeppelin", "Black Sabbath"],
+    "user_style_request": "70s hard rock, raw and powerful, analog warmth",
+    "tags": ["hard rock", "70s", "classic rock"],
+    "comparison_variant": "v9_comprehensive_exclude",
+    "notes": "Run this with both V9 and V10 to compare EXCLUDE terminology in Suno"
+  },
+  {
+    "name": "V10 vs V9 comparison: acoustic folk",
+    "user_prompt": "Stripped-down acoustic folk with fingerpicked guitar",
+    "lyrics_about": "walking through autumn woods",
+    "selected_artists": ["Nick Drake", "Iron & Wine"],
+    "user_style_request": "Intimate acoustic folk, natural room sound",
+    "tags": ["folk", "acoustic", "intimate"],
+    "comparison_variant": "v9_comprehensive_exclude",
+    "notes": "Run this with both V9 and V10 to compare EXCLUDE terminology in Suno"
+  },
+  {
+    "name": "V10 vs V9 comparison: live recording",
+    "user_prompt": "Live concert recording with crowd ambience",
+    "lyrics_about": "the energy of live performance",
+    "selected_artists": ["Talking Heads", "LCD Soundsystem"],
+    "user_style_request": "Live concert feel, audience energy, raw performance",
+    "tags": ["live", "concert", "energetic"],
+    "comparison_variant": "v9_comprehensive_exclude",
+    "notes": "Run this with both V9 and V10 to compare studio-blocker terminology in Suno"
+  }
+]
+

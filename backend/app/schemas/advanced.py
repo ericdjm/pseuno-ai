@@ -77,6 +77,7 @@ class DebugTrace(BaseModel):
         default_factory=list, description="Ordered timeline of spans"
     )
 
+
 from app.constants import (
     SUNO_PROMPT_MAX_CHARS,
     LYRICS_TOPIC_MAX_CHARS,
@@ -97,6 +98,7 @@ PromptVariant = Literal[
     "v7_genre_term_disambiguation",
     "v8_channel_split",
     "v9_comprehensive_exclude",
+    "v10_suno_friendly",
 ]
 
 # Lyric control enums - user can set to 'auto' to let the model infer
@@ -104,18 +106,20 @@ LyricAudience = Literal["auto", "kids", "general", "adult"]
 LyricDirectness = Literal["auto", "direct", "balanced", "metaphor_heavy"]
 LyricHumor = Literal["auto", "none", "light", "comedic", "crude"]
 LyricExplicitness = Literal["auto", "clean", "innuendo", "explicit"]
-LyricPersona = Literal["auto", "earnest", "playful", "aggressive", "romantic", "melancholic"]
+LyricPersona = Literal[
+    "auto", "earnest", "playful", "aggressive", "romantic", "melancholic"
+]
 LyricDensity = Literal[
     "auto",
-    "sparse",    # Fewer words, more breathing room, atmospheric
+    "sparse",  # Fewer words, more breathing room, atmospheric
     "standard",  # Normal lyric density
-    "dense",     # Lots of lyrics, wordy, rap-influenced or storytelling
+    "dense",  # Lots of lyrics, wordy, rap-influenced or storytelling
 ]
 LyricPacing = Literal[
     "auto",
-    "slow",   # Rhyme every line (AABB), more syllables per line, ballad feel
-    "mid",    # Standard pacing
-    "fast",   # Rhyme every other line (ABAB/ABCB), fewer syllables, punchy
+    "slow",  # Rhyme every line (AABB), more syllables per line, ballad feel
+    "mid",  # Standard pacing
+    "fast",  # Rhyme every other line (ABAB/ABCB), fewer syllables, punchy
 ]
 
 
@@ -165,7 +169,9 @@ class LyricProfile(BaseModel):
     directness: Literal["direct", "balanced", "metaphor_heavy"] = "balanced"
     humor: Literal["none", "light", "comedic", "crude"] = "none"
     explicitness: Literal["clean", "innuendo", "explicit"] = "clean"
-    persona: Literal["earnest", "playful", "aggressive", "romantic", "melancholic"] = "earnest"
+    persona: Literal["earnest", "playful", "aggressive", "romantic", "melancholic"] = (
+        "earnest"
+    )
     density: Literal["sparse", "standard", "dense"] = "standard"
     pacing: Literal["slow", "mid", "fast"] = "mid"
     devices: list[str] = Field(

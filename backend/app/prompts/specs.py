@@ -370,6 +370,35 @@ Techniques:
 - Production texture > generic quality words: "saturated analog warmth" not "high quality"
 """
 
+# V10: Suno-Friendly — emphasizes musical descriptors Suno understands
+SUNO_PROMPT_SPEC_V10 = f"""\
+═══════════════════════════════════════════════════════════════════════════════
+SUNO PROMPT SPEC (V10 — Suno-Friendly)
+═══════════════════════════════════════════════════════════════════════════════
+Formula: [Era/Location Origin] + [Genre + 2-3 Subgenres] + [3-5 Evocative Adjectives] + [2-3 Vocal Style Descriptors] + [Production Character]
+CRITICAL: Total must be ≤{SUNO_PROMPT_MAX_CHARS} characters.
+
+LANGUAGE GUIDANCE:
+Use musical/stylistic terms Suno understands. Avoid audio engineering jargon.
+- GOOD: "warm", "crisp", "punchy", "lush", "raw", "polished", "gritty"
+- AVOID: "brick-wall compression", "sidechain", "parallel processing", "dithering"
+
+BAD:
+- "An upbeat pop song with catchy melodies" (generic, no era, no texture)
+- "Like Taylor Swift mixed with Billie Eilish" (artist names forbidden)
+- "Wide stereo image with multiband compression" (engineering terms Suno won't parse)
+
+GOOD:
+- "2010s Pacific Northwest indie rock, cascading reverb, nostalgic warmth, male high-tenor with breathy intimacy, lo-fi tape hiss"
+- "Late 70s London punk, raw and aggressive, sneering male vocals, garage recording, distorted guitars"
+
+Techniques:
+- Lead with era + geography: "late-90s Midwest emo" not just "emo"
+- Specify vocal register and delivery: "breathy alto" not just "female vocals"
+- Production texture as vibe: "warm analog feel" not "tube saturation at 2dB"
+- Instrument textures: "shimmering guitars", "punchy drums", "thick bass"
+"""
+
 SUNO_PROMPT_SPEC_V2 = f"""\
 ═══════════════════════════════════════════════════════════════════════════════
 SUNO PROMPT SPEC
@@ -491,6 +520,58 @@ Live jazz recording:
 "studio overdubs, click track, auto-tune, synthetic instruments, EDM drops, heavily compressed, pop production, layered synths, drum machines, pitch correction"
 
 Think: What would a fan of this era/genre HATE if it appeared?
+"""
+
+# ===========================================================================
+# EXCLUDE SPEC V10 (Suno-Friendly — musical descriptors over technical terms)
+# ===========================================================================
+
+EXCLUDE_SPEC_V10 = """\
+═══════════════════════════════════════════════════════════════════════════════
+EXCLUDE SPEC (V10 — Suno-Friendly)
+═══════════════════════════════════════════════════════════════════════════════
+Purpose: Prevent genre drift using musical descriptors Suno understands.
+
+Character limit: ≤300 chars
+Format: One line, comma-separated, 8-12 items total
+
+IMPORTANT: Use musical/stylistic terms, NOT audio engineering jargon.
+Suno generates music from style descriptions, not mixing instructions.
+
+BUILD YOUR EXCLUDE FROM THESE SOURCES:
+
+1. GENRE BLOCKERS (high-level genres to avoid)
+   - Use genre names Suno recognizes: "EDM", "trap", "country", "nu-metal"
+   - These are your primary guardrails
+
+2. INSTRUMENT/SOUND BLOCKERS (specific sounds to avoid)
+   - Use instrument names: "808 bass", "synth leads", "drum machine"
+   - Use texture words: "auto-tune", "vocoder", "distorted guitars"
+
+3. VIBE/FEEL BLOCKERS (stylistic qualities to avoid)
+   - Instead of "brick-wall compression" → "overcompressed", "no dynamics", "loud and flat"
+   - Instead of "quantized drums" → "robotic drums", "mechanical timing", "stiff drums"
+   - Instead of "digital clipping" → "harsh digital", "distorted mix"
+   - Instead of "studio overdubs" → "overproduced", "too polished", "studio sheen"
+   - Instead of "click track" → "rigid tempo", "mechanical feel"
+
+4. ERA MISMATCHES (wrong decade vibes)
+   - 70s request → "modern production", "digital sound", "synthetic"
+   - Live request → "studio polish", "overproduced", "too clean"
+   - Lo-fi request → "pristine", "crystal clear", "radio ready"
+
+EXAMPLES (Suno-friendly excludes):
+
+70s progressive rock:
+"EDM, trap, nu-metal, synth arpeggios, 808 bass, modern production, overcompressed, robotic drums, auto-tune, digital sound, synthetic textures"
+
+Indie rock (2010s):
+"EDM, country, pop-punk, auto-tune, trap hi-hats, 808 bass, synth leads, overproduced, too polished, stadium sound, stiff drums"
+
+Live jazz recording:
+"overproduced, too polished, auto-tune, synthetic instruments, EDM drops, drum machines, rigid tempo, mechanical feel, studio sheen"
+
+Think: Describe what you DON'T want as if you're talking to a musician, not an audio engineer.
 """
 
 # ===========================================================================

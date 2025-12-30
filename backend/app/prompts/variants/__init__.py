@@ -22,6 +22,7 @@ from app.prompts.variants import v6_genre_disambiguation
 from app.prompts.variants import v7_genre_term_disambiguation
 from app.prompts.variants import v8_channel_split
 from app.prompts.variants import v9_comprehensive_exclude
+from app.prompts.variants import v10_suno_friendly
 
 # List of all variant modules (for documentation)
 ALL_VARIANTS = [
@@ -34,5 +35,5 @@ ALL_VARIANTS = [
     v7_genre_term_disambiguation,
     v8_channel_split,
     v9_comprehensive_exclude,
+    v10_suno_friendly,
 ]
-
