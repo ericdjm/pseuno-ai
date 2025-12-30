@@ -35,7 +35,7 @@ export interface SpotifyProfileResponse {
   top_artists: SpotifyArtist[];
   top_tracks: SpotifyTrack[];
   taste_profile: TasteProfile;
-  time_range: string;
+  time_range: TimeRange;
 }
 
 export interface AuthStatus {
@@ -87,6 +87,26 @@ export interface AdvancedGenerateRequest {
   style_model?: string;
   lyrics_model?: string;
   lyric_controls?: LyricControls;
+}
+
+export interface SpotifySunoPromptRequest {
+  artists?: string[];
+  suno_prompt?: string;
+  change_request?: string;
+  time_range?: TimeRange;
+}
+
+export interface SpotifySunoPromptContext {
+  time_range: TimeRange;
+  top_artists: SpotifyArtist[];
+  previous_generation?: string;
+  change_request?: string;
+}
+
+export interface SpotifySunoPromptResponse {
+  suno_prompt: string;
+  selected_artists: string[];
+  context: SpotifySunoPromptContext;
 }
 
 export interface PromptLengthsBreakdown {
@@ -355,6 +375,23 @@ export async function generateAdvanced(
     body: JSON.stringify(payload),
   });
   return handleResponse<AdvancedGenerateResponse>(response);
+}
+
+/**
+ * Generate a Suno prompt from Spotify taste
+ */
+export async function generateSpotifySunoPrompt(
+  payload: SpotifySunoPromptRequest
+): Promise<SpotifySunoPromptResponse> {
+  const response = await fetch(`${API_BASE}/generate/spotify-suno-prompt`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  return handleResponse<SpotifySunoPromptResponse>(response);
 }
 
 /**

@@ -13,6 +13,7 @@ import {
   Wrap,
   WrapItem,
   useToast,
+  useDisclosure,
   Collapse,
   Select,
   Tooltip,
@@ -21,6 +22,13 @@ import {
   MenuList,
   MenuItem,
   Portal,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
+  ModalCloseButton,
 } from '@chakra-ui/react';
 import { ChevronDownIcon } from '@chakra-ui/icons';
 import { useState, useEffect } from 'react';
@@ -28,6 +36,7 @@ import type { ChangeEvent } from 'react';
 import {
   generateAdvanced,
   generateLyricsOnly,
+  generateSpotifySunoPrompt,
   getPromptVariants,
   getModels,
   AdvancedGenerateRequest,
@@ -108,6 +117,13 @@ export default function AdvancedGenerationControls({
   const [lyricPersona, setLyricPersona] = useState<LyricPersona>('auto');
   const [lyricDensity, setLyricDensity] = useState<LyricDensity>('auto');
   const [lyricPacing, setLyricPacing] = useState<LyricPacing>('auto');
+  const [isSpotifyPromptLoading, setIsSpotifyPromptLoading] = useState(false);
+  const [spotifyChangeRequest, setSpotifyChangeRequest] = useState('');
+  const {
+    isOpen: isSpotifyPromptOpen,
+    onOpen: openSpotifyPrompt,
+    onClose: closeSpotifyPrompt,
+  } = useDisclosure();
 
   // Fetch available prompt variants and models on mount
   useEffect(() => {
@@ -322,6 +338,74 @@ export default function AdvancedGenerationControls({
     }
   };
 
+  const handleSpotifyPrompt = async (changeRequest?: string) => {
+    if (!profile) {
+      toast({
+        title: 'Connect Spotify',
+        description: 'Sign in with Spotify to generate from your taste profile.',
+        status: 'warning',
+        duration: 4000,
+      });
+      return;
+    }
+
+    if (!profile.top_artists?.length) {
+      toast({
+        title: 'Connect Spotify',
+        description: 'Sign in with Spotify to generate from your taste profile.',
+        status: 'warning',
+        duration: 4000,
+      });
+      return;
+    }
+
+    const artists = parseList(artistInput)
+      .map((a) => a.slice(0, MAX_ARTIST_NAME_LEN))
+      .slice(0, MAX_ARTISTS_COUNT);
+    const trimmedPrompt = songPrompt.trim();
+    const trimmedChange = (changeRequest || '').trim();
+
+    setIsSpotifyPromptLoading(true);
+    try {
+      const response = await generateSpotifySunoPrompt({
+        artists: artists.length > 0 ? artists : undefined,
+        suno_prompt: trimmedPrompt || undefined,
+        change_request: trimmedChange || undefined,
+        time_range: profile.time_range,
+      });
+
+      setSongPrompt(response.suno_prompt.slice(0, MAX_STYLE_PROMPT_LEN));
+      setArtistInput(
+        response.selected_artists.join(', ').slice(0, MAX_ARTISTS_INPUT_LEN)
+      );
+
+      toast({
+        title: 'Spotify prompt ready',
+        description: 'Your Song Style Prompt has been updated.',
+        status: 'success',
+        duration: 4000,
+      });
+    } catch (error) {
+      toast({
+        title: 'Spotify prompt failed',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        status: 'error',
+        duration: 5000,
+      });
+    } finally {
+      setIsSpotifyPromptLoading(false);
+    }
+  };
+
+  const handleSpotifyPromptClick = () => {
+    if (songPrompt.trim()) {
+      setSpotifyChangeRequest('');
+      openSpotifyPrompt();
+      return;
+    }
+    handleSpotifyPrompt();
+  };
+
 
   const getButtonLabel = () => {
     if (styleMode === 'savedSunoPrompt') {
@@ -419,16 +503,38 @@ export default function AdvancedGenerationControls({
               maxLength={MAX_STYLE_PROMPT_LEN}
               onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setSongPrompt(e.target.value.slice(0, MAX_STYLE_PROMPT_LEN))}
             />
-            <HStack justify="space-between" mt={1}>
-              <Text fontSize="xs" color="gray.500">
-                Max {MAX_STYLE_PROMPT_LEN} characters
-              </Text>
-              <Text
-                fontSize="xs"
-                color={songPrompt.length >= MAX_STYLE_PROMPT_LEN ? 'orange.300' : 'gray.500'}
+            <HStack justify="space-between" mt={2} align="center" wrap="wrap" gap={2}>
+              <Tooltip
+                label={
+                  profile?.top_artists?.length
+                    ? 'Generate a Suno prompt from your Spotify taste'
+                    : 'Connect Spotify to enable this'
+                }
+                placement="top"
               >
-                {songPrompt.length}/{MAX_STYLE_PROMPT_LEN}
-              </Text>
+                <span>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={handleSpotifyPromptClick}
+                    isLoading={isSpotifyPromptLoading}
+                    isDisabled={!profile?.top_artists?.length || isLoading}
+                  >
+                    Generate from Spotify
+                  </Button>
+                </span>
+              </Tooltip>
+              <HStack spacing={3}>
+                <Text fontSize="xs" color="gray.500">
+                  Max {MAX_STYLE_PROMPT_LEN} characters
+                </Text>
+                <Text
+                  fontSize="xs"
+                  color={songPrompt.length >= MAX_STYLE_PROMPT_LEN ? 'orange.300' : 'gray.500'}
+                >
+                  {songPrompt.length}/{MAX_STYLE_PROMPT_LEN}
+                </Text>
+              </HStack>
             </HStack>
           </FormControl>
         </Collapse>
@@ -991,6 +1097,42 @@ export default function AdvancedGenerationControls({
       >
         {getButtonLabel()}
       </Button>
+
+      <Modal isOpen={isSpotifyPromptOpen} onClose={closeSpotifyPrompt} isCentered>
+        <ModalOverlay />
+        <ModalContent bg="gray.800">
+          <ModalHeader>Update Spotify Prompt</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <Text color="gray.400" fontSize="sm" mb={3}>
+              What would you like to change?
+            </Text>
+            <Textarea
+              placeholder="Optional changes (e.g., make it darker, more cinematic, add acoustic guitars)"
+              value={spotifyChangeRequest}
+              maxLength={MAX_STYLE_PROMPT_LEN}
+              onChange={(e: ChangeEvent<HTMLTextAreaElement>) =>
+                setSpotifyChangeRequest(e.target.value.slice(0, MAX_STYLE_PROMPT_LEN))
+              }
+            />
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="ghost" mr={3} onClick={closeSpotifyPrompt}>
+              Cancel
+            </Button>
+            <Button
+              colorScheme="green"
+              onClick={async () => {
+                await handleSpotifyPrompt(spotifyChangeRequest);
+                closeSpotifyPrompt();
+              }}
+              isLoading={isSpotifyPromptLoading}
+            >
+              Regenerate
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </Box>
   );
 }

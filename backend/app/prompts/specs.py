@@ -274,6 +274,35 @@ LYRICS
 ...
 """
 
+# Spotify Suno prompt task (prompt-only generation)
+SPOTIFY_SUNO_PROMPT_TASK = f"""\
+═══════════════════════════════════════════════════════════════════════════════
+TASK
+═══════════════════════════════════════════════════════════════════════════════
+Input fields:
+- selected_artists: Style references (extract sonic DNA, not names).
+- previous_generation: Prior Suno prompt (optional; regenerate, do not copy).
+- change_request: User request for changes (optional).
+
+Process:
+1. Infer era, location, subgenre, textures, vocals, and production from selected_artists
+   and the optional text inputs.
+2. If previous_generation is provided, regenerate a new prompt:
+   - Apply change_request if present.
+   - If change_request is empty, still produce a fresh alternative.
+3. Output ONLY the Suno prompt text (no labels or headers).
+4. Constraints: ≤{SUNO_PROMPT_MAX_CHARS} chars, no artist names.
+"""
+
+SPOTIFY_SUNO_PROMPT_REWRITE_TASK = f"""\
+═══════════════════════════════════════════════════════════════════════════════
+TASK
+═══════════════════════════════════════════════════════════════════════════════
+You rewrite a Suno prompt to comply with constraints.
+Output ONLY the revised Suno prompt text (no labels or headers).
+Constraints: ≤{SUNO_PROMPT_MAX_CHARS} chars, no artist names.
+"""
+
 # ===========================================================================
 # LYRICS SPEC
 # ===========================================================================

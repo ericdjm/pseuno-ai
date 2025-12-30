@@ -80,12 +80,14 @@ class DebugTrace(BaseModel):
 
 from app.constants import (
     SUNO_PROMPT_MAX_CHARS,
+    SUNO_PROMPT_EDIT_MAX_CHARS,
     LYRICS_TOPIC_MAX_CHARS,
     MAX_ARTISTS_COUNT,
     MAX_ARTIST_NAME_CHARS,
     MAX_TAGS_COUNT,
     MAX_TAG_CHARS,
 )
+from app.schemas.spotify import SpotifyArtist
 
 # Available prompt variants for A/B testing
 PromptVariant = Literal[
@@ -121,6 +123,8 @@ LyricPacing = Literal[
     "mid",  # Standard pacing
     "fast",  # Rhyme every other line (ABAB/ABCB), fewer syllables, punchy
 ]
+
+TimeRange = Literal["short_term", "medium_term", "long_term"]
 
 
 class LyricControls(BaseModel):
@@ -286,3 +290,62 @@ class LyricsOnlyResponse(BaseModel):
 
     song_title: str = Field(description="Generated song title")
     lyrics: str = Field(description="Generated lyrics")
+
+
+class SpotifySunoPromptRequest(BaseModel):
+    """
+    Request for generating a Suno prompt from Spotify taste.
+    """
+
+    artists: list[str] = Field(
+        default_factory=list,
+        max_length=MAX_ARTISTS_COUNT,
+        description="Optional artist influences (names never shown in prompt)",
+    )
+    suno_prompt: Optional[str] = Field(
+        default=None,
+        max_length=SUNO_PROMPT_MAX_CHARS,
+        description="Optional previous Suno prompt to regenerate from",
+    )
+    change_request: Optional[str] = Field(
+        default=None,
+        max_length=SUNO_PROMPT_EDIT_MAX_CHARS,
+        description="Optional change request for regeneration",
+    )
+    time_range: TimeRange = Field(
+        default="medium_term",
+        description="Spotify time range for taste data",
+    )
+
+    @model_validator(mode="after")
+    def validate_artists(self):
+        cleaned: list[str] = []
+        seen = set()
+        for artist in self.artists:
+            if not artist or not artist.strip():
+                continue
+            trimmed = artist.strip()[:MAX_ARTIST_NAME_CHARS]
+            key = trimmed.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            cleaned.append(trimmed)
+        self.artists = cleaned[:MAX_ARTISTS_COUNT]
+        return self
+
+
+class SpotifySunoPromptContext(BaseModel):
+    """Context returned alongside the generated Suno prompt."""
+
+    time_range: TimeRange
+    top_artists: list[SpotifyArtist]
+    previous_generation: Optional[str] = None
+    change_request: Optional[str] = None
+
+
+class SpotifySunoPromptResponse(BaseModel):
+    """Response for Spotify Suno prompt generation."""
+
+    suno_prompt: str
+    selected_artists: list[str]
+    context: SpotifySunoPromptContext

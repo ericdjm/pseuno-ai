@@ -15,6 +15,9 @@ SUNO_PROMPT_MAX_CHARS = 500
 # Maximum characters for the exclude field (V9: increased from 100 to 300)
 SUNO_EXCLUDE_MAX_CHARS = 300
 
+# Maximum characters for change requests when regenerating prompts
+SUNO_PROMPT_EDIT_MAX_CHARS = 500
+
 # ===========================================================================
 # Lyrics Generation Limits
 # ===========================================================================
