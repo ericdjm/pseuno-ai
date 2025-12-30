@@ -117,8 +117,7 @@ LyricDensity = Literal[
 ]
 LyricPacing = Literal[
     "auto",
-    "slow",  # Rhyme every line (AABB), more syllables per line, ballad feel
-    "mid",  # Standard pacing
+    "standard",  # Rhyme every line (AABB), more syllables per line
     "fast",  # Rhyme every other line (ABAB/ABCB), fewer syllables, punchy
 ]
 
@@ -155,7 +154,7 @@ class LyricControls(BaseModel):
     )
     pacing: LyricPacing = Field(
         default="auto",
-        description="Tempo feel: slow (rhyme every line), mid, or fast (rhyme every other line)",
+        description="Rhyme density: standard (every line) or fast (every other line). Genre-dependent.",
     )
 
 
@@ -173,7 +172,7 @@ class LyricProfile(BaseModel):
         "earnest"
     )
     density: Literal["sparse", "standard", "dense"] = "standard"
-    pacing: Literal["slow", "mid", "fast"] = "mid"
+    pacing: Literal["standard", "fast"] = "standard"
     devices: list[str] = Field(
         default_factory=list,
         description="Lyric devices to lean on (e.g., call_and_response, internal_rhyme)",

@@ -725,9 +725,8 @@ export default function AdvancedGenerationControls({
                       borderColor="gray.600"
                     >
                       <option value="auto">Auto</option>
-                      <option value="slow">Slow (rhyme every line)</option>
-                      <option value="mid">Mid (standard)</option>
-                      <option value="fast">Fast (punchy, sparse rhymes)</option>
+                      <option value="standard">Standard (rhyme every line)</option>
+                      <option value="fast">Fast (rhyme every other line)</option>
                     </Select>
                   </FormControl>
                 </HStack>

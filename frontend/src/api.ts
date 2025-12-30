@@ -65,7 +65,7 @@ export type LyricHumor = 'auto' | 'none' | 'light' | 'comedic' | 'crude';
 export type LyricExplicitness = 'auto' | 'clean' | 'innuendo' | 'explicit';
 export type LyricPersona = 'auto' | 'earnest' | 'playful' | 'aggressive' | 'romantic' | 'melancholic';
 export type LyricDensity = 'auto' | 'sparse' | 'standard' | 'dense';
-export type LyricPacing = 'auto' | 'slow' | 'mid' | 'fast';
+export type LyricPacing = 'auto' | 'standard' | 'fast';
 
 export interface LyricControls {
   audience?: LyricAudience;
@@ -133,7 +133,7 @@ export interface LyricProfile {
   explicitness: 'clean' | 'innuendo' | 'explicit';
   persona: 'earnest' | 'playful' | 'aggressive' | 'romantic' | 'melancholic';
   density: 'sparse' | 'standard' | 'dense';
-  pacing: 'slow' | 'mid' | 'fast';
+  pacing: 'standard' | 'fast';
   devices?: string[];
   avoid?: string[];
 }

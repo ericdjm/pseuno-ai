@@ -16,6 +16,7 @@ Usage:
 
 from app.constants import (
     SUNO_PROMPT_MAX_CHARS,
+    SUNO_EXCLUDE_MAX_CHARS,
 )
 
 # ===========================================================================
@@ -191,7 +192,7 @@ Process:
 LYRIC PROFILE generation rules:
 - Output as JSON: {"density": "...", "pacing": "...", "directness": "...", "persona": "..."}
 - density: "sparse" | "standard" | "dense" — based on genre (ballads=sparse, rap=dense)
-- pacing: "slow" | "mid" | "fast" — based on tempo feel (AABB rhymes for slow, sparse rhymes for fast)
+- pacing: "standard" | "fast" — let genre guide. standard=AABB (rhyme every line), fast=ABAB (every other)
 - directness: "direct" | "balanced" | "metaphor_heavy" — kids/holiday=direct, art rock=metaphor_heavy
 - persona: "earnest" | "playful" | "aggressive" | "romantic" | "melancholic" — match the mood
 """
@@ -475,13 +476,13 @@ Think: what would RUIN this song if it crept in?
 # EXCLUDE SPEC V9 (Comprehensive — leverages genre disambiguation data)
 # ===========================================================================
 
-EXCLUDE_SPEC_V9 = """\
+EXCLUDE_SPEC_V9 = f"""\
 ═══════════════════════════════════════════════════════════════════════════════
 EXCLUDE SPEC (V9 — Comprehensive)
 ═══════════════════════════════════════════════════════════════════════════════
 Purpose: Prevent genre drift with comprehensive, data-driven exclusions.
 
-Character limit: ≤300 chars
+Character limit: ≤{SUNO_EXCLUDE_MAX_CHARS} chars
 Format: One line, comma-separated, 8-12 items total
 
 BUILD YOUR EXCLUDE FROM THESE SOURCES (in order of priority):
@@ -528,13 +529,13 @@ Think: What would a fan of this era/genre HATE if it appeared?
 # EXCLUDE SPEC V10 (Suno-Friendly — musical descriptors over technical terms)
 # ===========================================================================
 
-EXCLUDE_SPEC_V10 = """\
+EXCLUDE_SPEC_V10 = f"""\
 ═══════════════════════════════════════════════════════════════════════════════
 EXCLUDE SPEC (V10 — Suno-Friendly)
 ═══════════════════════════════════════════════════════════════════════════════
 Purpose: Prevent genre drift using musical descriptors Suno understands.
 
-Character limit: ≤300 chars
+Character limit: ≤{SUNO_EXCLUDE_MAX_CHARS} chars
 Format: One line, comma-separated, 8-12 items total
 
 IMPORTANT: Use musical/stylistic terms, NOT audio engineering jargon.
@@ -608,10 +609,11 @@ DENSITY:
 - standard: 4 lines per section. Normal for most genres.
 - dense: 6-8 lines per section. Wordy, storytelling, rapid-fire.
 
-PACING (affects rhyme scheme):
-- slow: Rhyme every line (AABB). More syllables (10-14). Ballad feel.
-- mid: Standard ABAB or ABCB rhyme. Balanced syllables (8-12).
-- fast: Sparse rhymes, fewer syllables (6-10). Punchy, clipped.
+PACING (affects rhyme scheme — independent of density!):
+- standard: Rhyme every line (AABB). More syllables (10-14).
+- fast: Rhyme every other line (ABAB/ABCB). Fewer syllables (6-10). Punchy.
+
+Let genre guide pacing. A sparse ballad still rhymes every line.
 
 DIRECTNESS:
 - direct: Say what you mean. Clear, simple. For kids/holiday/party.
@@ -749,10 +751,9 @@ DENSITY:
 - "standard": 4 lines/section. Most genres.
 - "dense": 6-8 lines/section. Rap, metal, storytelling.
 
-PACING:
-- "slow": AABB rhymes, 10-14 syllables. Ballads.
-- "mid": ABAB rhymes, 8-12 syllables. Standard.
-- "fast": Sparse rhymes, 6-10 syllables. Punk, thrash.
+PACING (independent of density — let genre guide this choice):
+- "standard": AABB rhymes, 10-14 syllables. Rhyme every line.
+- "fast": ABAB/ABCB rhymes, 6-10 syllables. Rhyme every other line.
 
 DIRECTNESS:
 - "direct": Clear, literal. Party, comedy.
@@ -783,7 +784,7 @@ AUDIENCE:
 - "adult": Mature themes.
 
 Example: artists=["Steel Panther", "TOOL"], topic="cocaine trip"
-Output: {"density": "dense", "pacing": "fast", "directness": "direct", "persona": "aggressive", "humor": "crude", "explicitness": "explicit", "audience": "adult"}
+Output: {"density": "dense", "pacing": "standard", "directness": "direct", "persona": "aggressive", "humor": "crude", "explicitness": "explicit", "audience": "adult"}
 """
 
 # ===========================================================================
