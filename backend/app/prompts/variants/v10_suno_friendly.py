@@ -81,5 +81,5 @@ register_variant(
     lyrics_repair_agent=LYRICS_REPAIR_AGENT,
     profile_inference_agent=PROFILE_INFERENCE_AGENT,
     genre_disambiguation_agent=GENRE_DISAMBIGUATION_AGENT_V3,
-    is_default=False,  # V9 remains default; V10 is for A/B testing
+    is_default=True,  # V10 is the default (Suno-friendly language)
 )

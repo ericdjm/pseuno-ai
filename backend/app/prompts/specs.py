@@ -479,8 +479,9 @@ EXCLUDE SPEC (V9 — Comprehensive)
 ═══════════════════════════════════════════════════════════════════════════════
 Purpose: Prevent genre drift with comprehensive, data-driven exclusions.
 
-Character limit: ≤300 chars
-Format: One line, comma-separated, 8-12 items total
+Character limit: ≤500 chars
+Format: One line, comma-separated, 12-20 items total
+Be comprehensive! Use the full budget to block genre drift from multiple angles.
 
 BUILD YOUR EXCLUDE FROM THESE SOURCES (in order of priority):
 
@@ -506,18 +507,18 @@ BUILD YOUR EXCLUDE FROM THESE SOURCES (in order of priority):
 
 SYNTHESIS RULE:
 Combine items from all categories into a single comma-separated line.
-Prioritize the most impactful blockers. Aim for 8-12 items total.
+Use the full 500-character budget! Aim for 12-20 items covering genres, instruments, production, and era mismatches.
 
-EXAMPLES (full comprehensive excludes):
+EXAMPLES (use the full 500 chars — be thorough!):
 
 70s progressive rock:
-"EDM, trap, nu-metal, synth arpeggios, 808 bass, trap hi-hats, brick-wall compression, digital clipping, auto-tune, click track precision, quantized drums"
+"EDM, trap, nu-metal, synth arpeggios, 808 bass, trap hi-hats, brick-wall compression, digital clipping, auto-tune, click track precision, quantized drums, modern pop production, dubstep wobble, sample packs, programmed beats, polished radio mix, pitch correction, synthetic strings"
 
 Indie rock (2010s):
-"EDM, country, pop-punk, auto-tune, trap hi-hats, 808 bass, synth leads, heavily compressed master, vocal tuning artifacts, stadium reverb, overproduced drums"
+"EDM, country, pop-punk, auto-tune, trap hi-hats, 808 bass, synth leads, heavily compressed master, vocal tuning artifacts, stadium reverb, overproduced drums, slick pop production, orchestral swells, nu-metal aggression, hair metal shred, smooth jazz, lite FM, commercial jingles"
 
 Live jazz recording:
-"studio overdubs, click track, auto-tune, synthetic instruments, EDM drops, heavily compressed, pop production, layered synths, drum machines, pitch correction"
+"studio overdubs, click track, auto-tune, synthetic instruments, EDM drops, heavily compressed, pop production, layered synths, drum machines, pitch correction, radio-ready polish, perfect timing, grid-locked beats, electronic drums, processed vocals, reverb wash, modern mastering"
 
 Think: What would a fan of this era/genre HATE if it appeared?
 """
@@ -532,8 +533,9 @@ EXCLUDE SPEC (V10 — Suno-Friendly)
 ═══════════════════════════════════════════════════════════════════════════════
 Purpose: Prevent genre drift using musical descriptors Suno understands.
 
-Character limit: ≤300 chars
-Format: One line, comma-separated, 8-12 items total
+Character limit: ≤500 chars
+Format: One line, comma-separated, 12-20 items total
+Be comprehensive! Use the full budget to block genre drift from multiple angles.
 
 IMPORTANT: Use musical/stylistic terms, NOT audio engineering jargon.
 Suno generates music from style descriptions, not mixing instructions.
@@ -560,16 +562,16 @@ BUILD YOUR EXCLUDE FROM THESE SOURCES:
    - Live request → "studio polish", "overproduced", "too clean"
    - Lo-fi request → "pristine", "crystal clear", "radio ready"
 
-EXAMPLES (Suno-friendly excludes):
+EXAMPLES (Suno-friendly excludes — use the full 500 chars!):
 
 70s progressive rock:
-"EDM, trap, nu-metal, synth arpeggios, 808 bass, modern production, overcompressed, robotic drums, auto-tune, digital sound, synthetic textures"
+"EDM, trap, nu-metal, synth arpeggios, 808 bass, modern production, overcompressed, robotic drums, auto-tune, digital sound, synthetic textures, dubstep drops, sample-based beats, radio-ready polish, stiff timing, programmed drums, slick pop vocals, modern hip-hop, metalcore"
 
 Indie rock (2010s):
-"EDM, country, pop-punk, auto-tune, trap hi-hats, 808 bass, synth leads, overproduced, too polished, stadium sound, stiff drums"
+"EDM, country, pop-punk, auto-tune, trap hi-hats, 808 bass, synth leads, overproduced, too polished, stadium sound, stiff drums, nu-metal, hair metal, smooth jazz, lite FM, orchestral swells, commercial jingle, programmed beats, harsh digital, robotic feel"
 
 Live jazz recording:
-"overproduced, too polished, auto-tune, synthetic instruments, EDM drops, drum machines, rigid tempo, mechanical feel, studio sheen"
+"overproduced, too polished, auto-tune, synthetic instruments, EDM drops, drum machines, rigid tempo, mechanical feel, studio sheen, perfect timing, grid-locked beats, processed vocals, radio mix, compressed dynamics, programmed, robotic drums, electronic, sample-based, harsh digital"
 
 Think: Describe what you DON'T want as if you're talking to a musician, not an audio engineer.
 """
