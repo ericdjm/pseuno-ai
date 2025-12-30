@@ -57,4 +57,5 @@ register_variant(
     style_repair_agent=STYLE_REPAIR_AGENT,
     lyrics_agent=LYRICS_AGENT,
     lyrics_repair_agent=LYRICS_REPAIR_AGENT,
+    deprecated=True,  # Hidden from UI, superseded by V5+
 )

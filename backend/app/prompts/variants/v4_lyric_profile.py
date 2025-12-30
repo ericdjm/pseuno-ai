@@ -65,4 +65,5 @@ register_variant(
     lyrics_agent=LYRICS_AGENT,
     lyrics_repair_agent=LYRICS_REPAIR_AGENT,
     profile_inference_agent=PROFILE_INFERENCE_AGENT,
+    deprecated=True,  # Hidden from UI, superseded by V5+
 )

@@ -417,6 +417,8 @@ ACCURACY PRINCIPLES:
 - Use the actual subgenre, not adjacent ones (prog ≠ math, grunge ≠ post-grunge, folk ≠ country)
 - When artists span eras, use their peak/most iconic period
 - Describe textures you can HEAR, not Wikipedia genre labels
+- AVOID "math" / "math rock" / "math metal" unless the artist IS a math band (Battles, Don Caballero).
+  "Math" is extremely strong in Suno — use "polyrhythmic", "odd time signatures", "complex" instead.
 
 OUTPUT FORMAT (follow exactly):
 
@@ -479,9 +481,8 @@ EXCLUDE SPEC (V9 — Comprehensive)
 ═══════════════════════════════════════════════════════════════════════════════
 Purpose: Prevent genre drift with comprehensive, data-driven exclusions.
 
-Character limit: ≤500 chars
-Format: One line, comma-separated, 12-20 items total
-Be comprehensive! Use the full budget to block genre drift from multiple angles.
+Character limit: ≤300 chars
+Format: One line, comma-separated, 8-12 items total
 
 BUILD YOUR EXCLUDE FROM THESE SOURCES (in order of priority):
 
@@ -507,18 +508,18 @@ BUILD YOUR EXCLUDE FROM THESE SOURCES (in order of priority):
 
 SYNTHESIS RULE:
 Combine items from all categories into a single comma-separated line.
-Use the full 500-character budget! Aim for 12-20 items covering genres, instruments, production, and era mismatches.
+Prioritize the most impactful blockers. Aim for 8-12 items total.
 
-EXAMPLES (use the full 500 chars — be thorough!):
+EXAMPLES (full comprehensive excludes):
 
 70s progressive rock:
-"EDM, trap, nu-metal, synth arpeggios, 808 bass, trap hi-hats, brick-wall compression, digital clipping, auto-tune, click track precision, quantized drums, modern pop production, dubstep wobble, sample packs, programmed beats, polished radio mix, pitch correction, synthetic strings"
+"EDM, trap, nu-metal, synth arpeggios, 808 bass, trap hi-hats, brick-wall compression, digital clipping, auto-tune, click track precision, quantized drums"
 
 Indie rock (2010s):
-"EDM, country, pop-punk, auto-tune, trap hi-hats, 808 bass, synth leads, heavily compressed master, vocal tuning artifacts, stadium reverb, overproduced drums, slick pop production, orchestral swells, nu-metal aggression, hair metal shred, smooth jazz, lite FM, commercial jingles"
+"EDM, country, pop-punk, auto-tune, trap hi-hats, 808 bass, synth leads, heavily compressed master, vocal tuning artifacts, stadium reverb, overproduced drums"
 
 Live jazz recording:
-"studio overdubs, click track, auto-tune, synthetic instruments, EDM drops, heavily compressed, pop production, layered synths, drum machines, pitch correction, radio-ready polish, perfect timing, grid-locked beats, electronic drums, processed vocals, reverb wash, modern mastering"
+"studio overdubs, click track, auto-tune, synthetic instruments, EDM drops, heavily compressed, pop production, layered synths, drum machines, pitch correction"
 
 Think: What would a fan of this era/genre HATE if it appeared?
 """
@@ -533,9 +534,8 @@ EXCLUDE SPEC (V10 — Suno-Friendly)
 ═══════════════════════════════════════════════════════════════════════════════
 Purpose: Prevent genre drift using musical descriptors Suno understands.
 
-Character limit: ≤500 chars
-Format: One line, comma-separated, 12-20 items total
-Be comprehensive! Use the full budget to block genre drift from multiple angles.
+Character limit: ≤300 chars
+Format: One line, comma-separated, 8-12 items total
 
 IMPORTANT: Use musical/stylistic terms, NOT audio engineering jargon.
 Suno generates music from style descriptions, not mixing instructions.
@@ -562,16 +562,16 @@ BUILD YOUR EXCLUDE FROM THESE SOURCES:
    - Live request → "studio polish", "overproduced", "too clean"
    - Lo-fi request → "pristine", "crystal clear", "radio ready"
 
-EXAMPLES (Suno-friendly excludes — use the full 500 chars!):
+EXAMPLES (Suno-friendly excludes):
 
 70s progressive rock:
-"EDM, trap, nu-metal, synth arpeggios, 808 bass, modern production, overcompressed, robotic drums, auto-tune, digital sound, synthetic textures, dubstep drops, sample-based beats, radio-ready polish, stiff timing, programmed drums, slick pop vocals, modern hip-hop, metalcore"
+"EDM, trap, nu-metal, synth arpeggios, 808 bass, modern production, overcompressed, robotic drums, auto-tune, digital sound, synthetic textures"
 
 Indie rock (2010s):
-"EDM, country, pop-punk, auto-tune, trap hi-hats, 808 bass, synth leads, overproduced, too polished, stadium sound, stiff drums, nu-metal, hair metal, smooth jazz, lite FM, orchestral swells, commercial jingle, programmed beats, harsh digital, robotic feel"
+"EDM, country, pop-punk, auto-tune, trap hi-hats, 808 bass, synth leads, overproduced, too polished, stadium sound, stiff drums"
 
 Live jazz recording:
-"overproduced, too polished, auto-tune, synthetic instruments, EDM drops, drum machines, rigid tempo, mechanical feel, studio sheen, perfect timing, grid-locked beats, processed vocals, radio mix, compressed dynamics, programmed, robotic drums, electronic, sample-based, harsh digital"
+"overproduced, too polished, auto-tune, synthetic instruments, EDM drops, drum machines, rigid tempo, mechanical feel, studio sheen"
 
 Think: Describe what you DON'T want as if you're talking to a musician, not an audio engineer.
 """
@@ -941,7 +941,10 @@ When user requests "Singer A for Band B" or "A meets B":
 - This prevents the vocal style from one artist bleeding into instrumental descriptions
 
 COMMON DRIFT PATTERNS TO BLOCK:
-- "math" / "math metal" → often triggers shreddy, virtuosic output (wrong for most prog)
+- "math" / "math metal" / "mathcore" → VERY STRONG in Suno, triggers shreddy virtuosic output.
+  NEVER use "math" in genres[] or terms_to_use[] unless the artist's ACTUAL primary genre
+  explicitly contains "math" (e.g., Battles, Don Caballero, Dillinger Escape Plan, Polyphia).
+  For complex progressive music, use "polyrhythmic", "odd time signatures", "complex rhythms" instead.
 - "technical" → triggers guitar wankery instead of atmospheric textures
 - "progressive" alone → too vague, can drift to prog rock OR djent
 - "heavy" → can trigger death metal textures for metal bands
@@ -1102,7 +1105,10 @@ VOCAL STYLE RULES:
 - vocal_style_to_avoid[]: 3-6 vocal approaches that would be wrong
 
 COMMON DRIFT PATTERNS TO BLOCK:
-- "math" / "math metal" → often triggers shreddy, virtuosic output (wrong for most prog)
+- "math" / "math metal" / "mathcore" → VERY STRONG in Suno, triggers shreddy virtuosic output.
+  NEVER use "math" in genres[] or terms_to_use[] unless the artist's ACTUAL primary genre
+  explicitly contains "math" (e.g., Battles, Don Caballero, Dillinger Escape Plan).
+  For complex progressive music, use "polyrhythmic", "odd time signatures", "complex rhythms" instead.
 - "technical" → triggers guitar wankery instead of atmospheric textures
 - "progressive" alone → too vague, can drift to prog rock OR djent
 - "heavy" → can trigger death metal textures for metal bands

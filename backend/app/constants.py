@@ -12,8 +12,8 @@ This module contains tunable values that are used across multiple modules
 # Maximum characters for a Suno prompt (hard limit from Suno)
 SUNO_PROMPT_MAX_CHARS = 500
 
-# Maximum characters for the exclude field (V9+: increased from 100 to 500)
-SUNO_EXCLUDE_MAX_CHARS = 500
+# Maximum characters for the exclude field (V9: increased from 100 to 300)
+SUNO_EXCLUDE_MAX_CHARS = 300
 
 # ===========================================================================
 # Lyrics Generation Limits

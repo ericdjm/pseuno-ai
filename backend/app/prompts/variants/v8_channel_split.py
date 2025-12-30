@@ -76,5 +76,5 @@ register_variant(
     profile_inference_agent=PROFILE_INFERENCE_AGENT,
     genre_disambiguation_agent=GENRE_DISAMBIGUATION_AGENT_V3,
     is_default=False,
+    deprecated=True,  # Hidden from UI, superseded by V9+
 )
-
