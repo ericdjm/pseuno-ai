@@ -192,7 +192,7 @@ Process:
 LYRIC PROFILE generation rules:
 - Output as JSON: {"density": "...", "pacing": "...", "directness": "...", "persona": "..."}
 - density: "sparse" | "standard" | "dense" — based on genre (ballads=sparse, rap=dense)
-- pacing: "standard" | "fast" — let genre guide. standard=AABB (rhyme every line), fast=ABAB (every other)
+- pacing: "standard" | "fast" — default to standard (AABB). Only use fast for punk/thrash/hardcore.
 - directness: "direct" | "balanced" | "metaphor_heavy" — kids/holiday=direct, art rock=metaphor_heavy
 - persona: "earnest" | "playful" | "aggressive" | "romantic" | "melancholic" — match the mood
 """
@@ -610,10 +610,10 @@ DENSITY:
 - dense: 6-8 lines per section. Wordy, storytelling, rapid-fire.
 
 PACING (affects rhyme scheme — independent of density!):
-- standard: Rhyme every line (AABB). More syllables (10-14).
-- fast: Rhyme every other line (ABAB/ABCB). Fewer syllables (6-10). Punchy.
+- standard: Rhyme every line (AABB). More syllables (10-14). USE THIS BY DEFAULT.
+- fast: Rhyme every other line (ABAB/ABCB). Fewer syllables (6-10). Punchy. ONLY for punk/thrash/hardcore.
 
-Let genre guide pacing. A sparse ballad still rhymes every line.
+Default to standard. Most genres rhyme every line. Fast is rare.
 
 DIRECTNESS:
 - direct: Say what you mean. Clear, simple. For kids/holiday/party.
@@ -751,9 +751,9 @@ DENSITY:
 - "standard": 4 lines/section. Most genres.
 - "dense": 6-8 lines/section. Rap, metal, storytelling.
 
-PACING (independent of density — let genre guide this choice):
-- "standard": AABB rhymes, 10-14 syllables. Rhyme every line.
-- "fast": ABAB/ABCB rhymes, 6-10 syllables. Rhyme every other line.
+PACING (independent of density — default to standard):
+- "standard": AABB rhymes, 10-14 syllables. Rhyme every line. DEFAULT for most genres.
+- "fast": ABAB/ABCB rhymes, 6-10 syllables. Only for punk/thrash/hardcore.
 
 DIRECTNESS:
 - "direct": Clear, literal. Party, comedy.
