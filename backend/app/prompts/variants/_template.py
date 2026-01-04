@@ -32,7 +32,7 @@ from app.prompts.specs import (
     EXCLUDE_SPEC,
     PARAMETER_SPEC,
     VOCAL_FORMATTING_SPEC,
-    LYRIC_PROFILE_SPEC,       # Density, pacing, etc.
+    LYRIC_PROFILE_SPEC,       # lines_per_section, rhyme_scheme, etc.
 )
 
 # ===========================================================================

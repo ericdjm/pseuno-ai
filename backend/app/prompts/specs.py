@@ -103,7 +103,7 @@ Constraints:
 - EXCLUDE: 1 line, comma-separated, ≥2 items, no trailing period.
 - WEIRDNESS: Single integer 0-100.
 - STYLE INFLUENCE: Single integer 0-100.
-- LYRIC PROFILE: JSON object with lines_per_section, pacing, directness, persona fields.
+- LYRIC PROFILE: JSON object with lines_per_section, rhyme_scheme, directness, persona fields.
 """
 
 OUTPUT_CONTRACT_LYRICS = """\
@@ -126,6 +126,13 @@ LYRICS constraints:
 - Follow lines_per_section from LYRIC PROFILE (2_lines, 4_lines, 6_lines, or 8_lines).
 - Reuse chorus lyrics across repetitions (same words).
 - [Intro], [Breakdown], [Outro] have no lyrics (tag only).
+
+RHYME SCHEME adaptation (match pattern to section length):
+- 2 lines: AA (all schemes collapse to couplet)
+- 4 lines: AABB (aabb), ABAB (abab), ABCB (abcb), AAAA (aaaa)
+- 6 lines: AABBCC (aabb), ABABAB or ABABCC (abab), AABCCB (abcb), AAAAAA (aaaa)
+- 8 lines: AABBCCDD (aabb), ABABCDCD (abab), ABCBDEFE (abcb), AAAAAAAA (aaaa)
+- 3 lines (rare): AAB (aabb/abab/abcb) or AAA (aaaa)
 """
 
 # Legacy alias
@@ -190,11 +197,11 @@ Process:
 6. Infer LYRIC PROFILE based on genre, style, and lyrics_about topic.
 
 LYRIC PROFILE generation rules:
-- Output as JSON with ALL 9 fields: lines_per_section, line_length, pov, pacing, directness, persona, humor, explicitness, audience
+- Output as JSON with ALL 9 fields: lines_per_section, line_length, pov, rhyme_scheme, directness, persona, humor, explicitness, audience
 - lines_per_section: "2_lines" | "4_lines" | "6_lines" | "8_lines" — based on genre (ballads=2_lines, rap/hip-hop=8_lines)
 - line_length: "sparse" | "short" | "default" | "long" — syllables per line
 - pov: "first" | "second" | "third" | "none" — point of view
-- pacing: "standard" | "fast" — default to standard (AABB). Only use fast for punk/thrash/hardcore.
+- rhyme_scheme: "aabb" | "abab" | "abcb" | "aaaa" | "internal" — default to aabb (most reliable)
 - directness: "direct" | "balanced" | "metaphor_heavy" — kids/holiday=direct, art rock=metaphor_heavy
 - persona: "earnest" | "playful" | "aggressive" | "romantic" | "melancholic" — match the mood
 - humor: "none" | "light" | "comedic" | "crude"
@@ -235,7 +242,7 @@ Input fields:
 - style_request: User's style description (use for mood, genre tropes).
 - reference_artists: Artists to channel (extract their lyrical DNA).
 - lyrics_about: Lyrical topic (use for meaning and content).
-- lyric_profile: Density, pacing, directness, persona, humor, explicitness.
+- lyric_profile: lines_per_section, rhyme_scheme, directness, persona, humor, explicitness.
 
 Process:
 1. Read style_request and reference_artists to understand the vibe.
@@ -315,6 +322,14 @@ Content rules:
 - Choruses: 0 or 2+. Never exactly 1 chorus (awkward structure).
 - Reuse chorus lyrics across repetitions.
 - Prioritize punchy, impactful lines over filler. Each line should earn its place.
+
+Rhyme scheme adaptation (match pattern to section length):
+- 2 lines: AA (all schemes collapse to couplet)
+- 4 lines: AABB (aabb), ABAB (abab), ABCB (abcb), AAAA (aaaa)
+- 6 lines: AABBCC (aabb), ABABAB/ABABCC (abab), AABCCB (abcb), AAAAAA (aaaa)
+- 8 lines: AABBCCDD (aabb), ABABCDCD (abab), ABCBDEFE (abcb), AAAAAAAA (aaaa)
+- 3 lines (rare): AAB (aabb/abab/abcb) or AAA (aaaa)
+- internal: Focus on within-line rhymes; end rhymes are secondary.
 """
 
 # ===========================================================================
@@ -615,11 +630,19 @@ LINES PER SECTION:
 - 6_lines: 6 lines per section. Storytelling, detailed.
 - 8_lines: 8 lines per section. Rap, hip-hop, rock — very common.
 
-PACING (affects rhyme scheme — independent of lines_per_section!):
-- standard: Rhyme every line (AABB). More syllables (10-14). USE THIS BY DEFAULT.
-- fast: Rhyme every other line (ABAB/ABCB). Fewer syllables (6-10). Punchy. ONLY for punk/thrash/hardcore.
+RHYME SCHEME (default to aabb — most reliable):
+- aabb: Couplet rhymes (AA BB CC DD). DEFAULT for most genres.
+- abab: Alternating rhymes (AB AB CD CD).
+- abcb: Common in folk/pop ballads (AB CB).
+- aaaa: Mono-rhyme, hooky, chant-like. Often for choruses.
+- internal: Rap/hip-hop feel; prioritize internal rhyme, end rhymes optional.
 
-Default to standard. Most genres rhyme every line. Fast is rare.
+RHYME SCHEME × SECTION LENGTH (adapt pattern to fit):
+- 2_lines: AA (all schemes collapse to couplet)
+- 4_lines: AABB, ABAB, ABCB, AAAA — all work naturally
+- 6_lines: AABBCC (aabb), ABABAB/ABABCC (abab), AABCCB (abcb), AAAAAA (aaaa)
+- 8_lines: AABBCCDD (aabb), ABABCDCD (abab), ABCBDEFE (abcb), AAAAAAAA (aaaa)
+- 3_lines (rare): AAB or AAA — pick based on scheme (aabb→AAB, aaaa→AAA)
 
 DIRECTNESS:
 - direct: Say what you mean. Clear, simple. For kids/holiday/party.
@@ -689,7 +712,7 @@ Common fixes:
 - EXCLUDE must be one line, comma-separated, ≥2 items.
 - WEIRDNESS must be a single integer 0-100.
 - STYLE INFLUENCE must be a single integer 0-100.
-- LYRIC PROFILE must be valid JSON with lines_per_section, pacing, directness, persona fields.
+- LYRIC PROFILE must be valid JSON with lines_per_section, rhyme_scheme, directness, persona fields.
 """
 
 LYRICS_REPAIR_AGENT = """\
@@ -750,7 +773,7 @@ CRITICAL: Consider the reference artists' known characteristics:
 - Party/fun artists (LMFAO, Pitbull) → humor: "light", persona: "playful"
 
 Output format (ALL 9 fields required):
-{"lines_per_section": "...", "line_length": "...", "pov": "...", "pacing": "...", "directness": "...", "persona": "...", "humor": "...", "explicitness": "...", "audience": "..."}
+{"lines_per_section": "...", "line_length": "...", "pov": "...", "rhyme_scheme": "...", "directness": "...", "persona": "...", "humor": "...", "explicitness": "...", "audience": "..."}
 
 LINES_PER_SECTION:
 - "2_lines": 2 lines/section. Ballads, ambient.
@@ -770,9 +793,18 @@ POV (point of view):
 - "third": he/she/they perspective.
 - "none": Observational, abstract, no personal pronouns.
 
-PACING (independent of lines_per_section — default to standard):
-- "standard": AABB rhymes, 10-14 syllables. Rhyme every line. DEFAULT for most genres.
-- "fast": ABAB/ABCB rhymes, 6-10 syllables. Only for punk/thrash/hardcore.
+RHYME_SCHEME (default to aabb — most reliable):
+- "aabb": Couplet rhymes (AA BB CC DD). DEFAULT for most genres.
+- "abab": Alternating rhymes (AB AB CD CD).
+- "abcb": Folk/pop ballads (AB CB DE FE).
+- "aaaa": Mono-rhyme, hooky, chant-like. Often for choruses.
+- "internal": Rap/hip-hop; internal rhyme focus, end rhymes optional.
+
+NOTE: Rhyme patterns adapt to section length:
+- 2_lines → AA (all schemes)
+- 4_lines → AABB/ABAB/ABCB/AAAA
+- 6_lines → AABBCC/ABABAB/AABCCB/AAAAAA
+- 8_lines → AABBCCDD/ABABCDCD/etc.
 
 DIRECTNESS:
 - "direct": Clear, literal. Party, comedy.
@@ -803,7 +835,7 @@ AUDIENCE:
 - "adult": Mature themes.
 
 Example: artists=["Steel Panther", "TOOL"], topic="cocaine trip"
-Output: {"lines_per_section": "8_lines", "line_length": "default", "pov": "first", "pacing": "standard", "directness": "direct", "persona": "aggressive", "humor": "crude", "explicitness": "explicit", "audience": "adult"}
+Output: {"lines_per_section": "8_lines", "line_length": "default", "pov": "first", "rhyme_scheme": "aabb", "directness": "direct", "persona": "aggressive", "humor": "crude", "explicitness": "explicit", "audience": "adult"}
 """
 
 # ===========================================================================

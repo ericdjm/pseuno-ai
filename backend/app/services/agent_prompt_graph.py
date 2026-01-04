@@ -1315,7 +1315,6 @@ class AgentPromptGraph:
                 inferred_profile, profile_artifacts = await self._infer_lyric_profile(
                     context_pack, ctx
                 )
-                span.set_meta("inferred_profile", inferred_profile)
                 span.set_artifact(
                     "system_prompt", profile_artifacts.get("system_prompt", "")
                 )
@@ -1326,13 +1325,18 @@ class AgentPromptGraph:
                     "raw_response", profile_artifacts.get("raw_response", "")
                 )
 
-            logger.info("Lyrics branch: inferred profile: %s", inferred_profile)
+                logger.info("Lyrics branch: inferred profile: %s", inferred_profile)
 
-            # Merge explicit user overrides into inferred profile
-            lyric_profile = inferred_profile.copy()
-            for key, value in user_lyric_controls.items():
-                lyric_profile[key] = value
-                logger.info("Lyrics branch: user override %s=%s", key, value)
+                # Merge explicit user overrides into inferred profile
+                lyric_profile = inferred_profile.copy()
+                for key, value in user_lyric_controls.items():
+                    lyric_profile[key] = value
+                    logger.info("Lyrics branch: user override %s=%s", key, value)
+
+                # Set both in span metadata for debug trace
+                span.set_meta("inferred_profile", inferred_profile)
+                span.set_meta("user_overrides", user_lyric_controls)
+                span.set_meta("final_profile", lyric_profile)
 
             # Build lyrics context with profile + style info
             lyrics_context = self._format_lyrics_context_v4_parallel(
@@ -1466,7 +1470,7 @@ class AgentPromptGraph:
                 "lines_per_section": profile.get("lines_per_section", "4_lines"),
                 "line_length": profile.get("line_length", "default"),
                 "pov": profile.get("pov", "none"),
-                "pacing": profile.get("pacing", "mid"),
+                "rhyme_scheme": profile.get("rhyme_scheme", "aabb"),
                 "directness": profile.get("directness", "balanced"),
                 "persona": profile.get("persona", "earnest"),
                 "humor": profile.get("humor", "none"),
@@ -1484,7 +1488,7 @@ class AgentPromptGraph:
                 "lines_per_section": "4_lines",
                 "line_length": "default",
                 "pov": "none",
-                "pacing": "mid",
+                "rhyme_scheme": "aabb",
                 "directness": "balanced",
                 "persona": "earnest",
                 "humor": "none",
@@ -1534,7 +1538,7 @@ class AgentPromptGraph:
             f"  lines_per_section: {lyric_controls.get('lines_per_section', '4_lines')}",
             f"  line_length: {self._format_line_length_range(line_length)}",
             f"  pov: {lyric_controls.get('pov', 'none')}",
-            f"  pacing: {lyric_controls.get('pacing', 'mid')}",
+            f"  rhyme_scheme: {lyric_controls.get('rhyme_scheme', 'aabb')}",
             f"  directness: {lyric_controls.get('directness', 'balanced')}",
             f"  persona: {lyric_controls.get('persona', 'earnest')}",
             f"  audience: {lyric_controls.get('audience', 'general')}",
@@ -1643,7 +1647,7 @@ class AgentPromptGraph:
             "lines_per_section": "4_lines",
             "line_length": "default",
             "pov": "none",
-            "pacing": "mid",
+            "rhyme_scheme": "aabb",
         }
 
         if not lyric_controls:
@@ -1666,8 +1670,8 @@ class AgentPromptGraph:
             resolved["line_length"] = lyric_controls.line_length
         if lyric_controls.pov != "auto":
             resolved["pov"] = lyric_controls.pov
-        if lyric_controls.pacing != "auto":
-            resolved["pacing"] = lyric_controls.pacing
+        if lyric_controls.rhyme_scheme != "auto":
+            resolved["rhyme_scheme"] = lyric_controls.rhyme_scheme
 
         return resolved
 
@@ -1699,8 +1703,8 @@ class AgentPromptGraph:
             overrides["line_length"] = lyric_controls.line_length
         if lyric_controls.pov and lyric_controls.pov != "auto":
             overrides["pov"] = lyric_controls.pov
-        if lyric_controls.pacing and lyric_controls.pacing != "auto":
-            overrides["pacing"] = lyric_controls.pacing
+        if lyric_controls.rhyme_scheme and lyric_controls.rhyme_scheme != "auto":
+            overrides["rhyme_scheme"] = lyric_controls.rhyme_scheme
 
         return overrides
 
@@ -1755,7 +1759,7 @@ class AgentPromptGraph:
             f"  lines_per_section: {lyric_controls.get('lines_per_section', '4_lines')}",
             f"  line_length: {self._format_line_length_range(line_length)}",
             f"  pov: {lyric_controls.get('pov', 'none')}",
-            f"  pacing: {lyric_controls.get('pacing', 'mid')}",
+            f"  rhyme_scheme: {lyric_controls.get('rhyme_scheme', 'aabb')}",
             f"  directness: {lyric_controls.get('directness', 'balanced')}",
             f"  persona: {lyric_controls.get('persona', 'earnest')}",
             f"  audience: {lyric_controls.get('audience', 'general')}",
@@ -1806,7 +1810,7 @@ class AgentPromptGraph:
                 "lines_per_section",
                 "line_length",
                 "pov",
-                "pacing",
+                "rhyme_scheme",
                 "directness",
                 "persona",
                 "audience",
@@ -1814,10 +1818,16 @@ class AgentPromptGraph:
                 "explicitness",
             }
             result = {k: v for k, v in profile.items() if k in valid_keys}
-            # Ensure fields are present with defaults
+            # Ensure all profile fields are present with defaults
             result.setdefault("lines_per_section", "4_lines")
             result.setdefault("line_length", "default")
             result.setdefault("pov", "none")
+            result.setdefault("rhyme_scheme", "aabb")
+            result.setdefault("directness", "balanced")
+            result.setdefault("persona", "earnest")
+            result.setdefault("humor", "none")
+            result.setdefault("explicitness", "clean")
+            result.setdefault("audience", "general")
             return result
         except (json.JSONDecodeError, AttributeError):
             logger.warning("Failed to parse lyric profile JSON: %s", raw[:100])

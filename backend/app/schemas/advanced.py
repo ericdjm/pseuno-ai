@@ -134,10 +134,13 @@ LyricPOV = Literal[
     "third",  # he/she/they
     "none",  # observational, abstract, imagery-only (no personal pronouns)
 ]
-LyricPacing = Literal[
-    "auto",
-    "standard",  # Rhyme every line (AABB), more syllables per line
-    "fast",  # Rhyme every other line (ABAB/ABCB), fewer syllables, punchy
+LyricRhymeScheme = Literal[
+    "auto",  # Default; heavily biased toward AABB
+    "aabb",  # Rhyme every line (most reliable)
+    "abab",  # Alternating rhymes
+    "abcb",  # Common in folk/pop ballads
+    "aaaa",  # Hooky, chant-like (often chorus)
+    "internal",  # Rap/hip-hop feel; internal rhyme focus
 ]
 
 
@@ -179,9 +182,9 @@ class LyricControls(BaseModel):
         default="auto",
         description="Point of view: first (I/me), second (you/your), third (he/she/they), or none (observational).",
     )
-    pacing: LyricPacing = Field(
+    rhyme_scheme: LyricRhymeScheme = Field(
         default="auto",
-        description="Rhyme density: standard (every line) or fast (every other line). Genre-dependent.",
+        description="End-rhyme scheme: aabb (default), abab, abcb, aaaa, or internal. Auto biases heavily toward AABB.",
     )
 
 
@@ -201,7 +204,7 @@ class LyricProfile(BaseModel):
     lines_per_section: Literal["2_lines", "4_lines", "6_lines", "8_lines"] = "4_lines"
     line_length: Literal["sparse", "short", "default", "long"] = "default"
     pov: Literal["first", "second", "third", "none"] = "none"
-    pacing: Literal["standard", "fast"] = "standard"
+    rhyme_scheme: Literal["aabb", "abab", "abcb", "aaaa", "internal"] = "aabb"
     devices: list[str] = Field(
         default_factory=list,
         description="Lyric devices to lean on (e.g., call_and_response, internal_rhyme)",

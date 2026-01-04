@@ -45,7 +45,7 @@ import {
   LyricLinesPerSection,
   LyricLineLength,
   LyricPOV,
-  LyricPacing,
+  LyricRhymeScheme,
 } from '../api';
 
 type StyleMode = 'songStylePrompt' | 'savedSunoPrompt';
@@ -111,7 +111,7 @@ export default function AdvancedGenerationControls({
   const [lyricLinesPerSection, setLyricLinesPerSection] = useState<LyricLinesPerSection>('auto');
   const [lyricLineLength, setLyricLineLength] = useState<LyricLineLength>('auto');
   const [lyricPOV, setLyricPOV] = useState<LyricPOV>('auto');
-  const [lyricPacing, setLyricPacing] = useState<LyricPacing>('auto');
+  const [lyricRhymeScheme, setLyricRhymeScheme] = useState<LyricRhymeScheme>('auto');
 
   // Fetch available prompt variants and models on mount
   useEffect(() => {
@@ -265,7 +265,7 @@ export default function AdvancedGenerationControls({
         if (lyricLinesPerSection !== 'auto') lyricControls.lines_per_section = lyricLinesPerSection;
         if (lyricLineLength !== 'auto') lyricControls.line_length = lyricLineLength;
         if (lyricPOV !== 'auto') lyricControls.pov = lyricPOV;
-        if (lyricPacing !== 'auto') lyricControls.pacing = lyricPacing;
+        if (lyricRhymeScheme !== 'auto') lyricControls.rhyme_scheme = lyricRhymeScheme;
         const hasLyricControls = Object.keys(lyricControls).length > 0;
 
         // Check if using a two-step variant
@@ -759,17 +759,20 @@ export default function AdvancedGenerationControls({
                   </FormControl>
 
                   <FormControl flex="1" minW="140px">
-                    <FormLabel fontSize="sm" color="gray.400">Pacing</FormLabel>
+                    <FormLabel fontSize="sm" color="gray.400">Rhyme scheme</FormLabel>
                     <Select
                       size="sm"
-                      value={lyricPacing}
-                      onChange={(e: ChangeEvent<HTMLSelectElement>) => setLyricPacing(e.target.value as LyricPacing)}
+                      value={lyricRhymeScheme}
+                      onChange={(e: ChangeEvent<HTMLSelectElement>) => setLyricRhymeScheme(e.target.value as LyricRhymeScheme)}
                       bg="gray.800"
                       borderColor="gray.600"
                     >
-                      <option value="auto">Auto</option>
-                      <option value="standard">Standard (rhyme every line)</option>
-                      <option value="fast">Fast (rhyme every other line)</option>
+                      <option value="auto">Auto (AABB bias)</option>
+                      <option value="aabb">AABB</option>
+                      <option value="abab">ABAB</option>
+                      <option value="abcb">ABCB</option>
+                      <option value="aaaa">AAAA</option>
+                      <option value="internal">Internal rhyme</option>
                     </Select>
                   </FormControl>
                 </HStack>

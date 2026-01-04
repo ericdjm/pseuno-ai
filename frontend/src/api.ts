@@ -71,7 +71,7 @@ export type LyricLinesPerSection = 'auto' | '2_lines' | '4_lines' | '6_lines' | 
 export type LyricLineLength = 'auto' | 'sparse' | 'short' | 'default' | 'long';
 // Point of view / person control
 export type LyricPOV = 'auto' | 'first' | 'second' | 'third' | 'none';
-export type LyricPacing = 'auto' | 'standard' | 'fast';
+export type LyricRhymeScheme = 'auto' | 'aabb' | 'abab' | 'abcb' | 'aaaa' | 'internal';
 
 export interface LyricControls {
   audience?: LyricAudience;
@@ -82,7 +82,7 @@ export interface LyricControls {
   lines_per_section?: LyricLinesPerSection;
   line_length?: LyricLineLength;
   pov?: LyricPOV;
-  pacing?: LyricPacing;
+  rhyme_scheme?: LyricRhymeScheme;
 }
 
 export interface AdvancedGenerateRequest {
@@ -143,7 +143,7 @@ export interface LyricProfile {
   lines_per_section: '2_lines' | '4_lines' | '6_lines' | '8_lines';
   line_length: 'sparse' | 'short' | 'default' | 'long';
   pov: 'first' | 'second' | 'third' | 'none';
-  pacing: 'standard' | 'fast';
+  rhyme_scheme: 'aabb' | 'abab' | 'abcb' | 'aaaa' | 'internal';
   devices?: string[];
   avoid?: string[];
 }
