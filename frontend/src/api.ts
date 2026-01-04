@@ -64,7 +64,9 @@ export type LyricDirectness = 'auto' | 'direct' | 'balanced' | 'metaphor_heavy';
 export type LyricHumor = 'auto' | 'none' | 'light' | 'comedic' | 'crude';
 export type LyricExplicitness = 'auto' | 'clean' | 'innuendo' | 'explicit';
 export type LyricPersona = 'auto' | 'earnest' | 'playful' | 'aggressive' | 'romantic' | 'melancholic';
-export type LyricDensity = 'auto' | 'sparse' | 'standard' | 'dense';
+// Lines per section control (renamed from "density" for clarity)
+// Controls number of lines per section, NOT line length
+export type LyricLinesPerSection = 'auto' | 'short' | 'standard' | 'long' | 'double';
 export type LyricPacing = 'auto' | 'standard' | 'fast';
 
 export interface LyricControls {
@@ -73,7 +75,7 @@ export interface LyricControls {
   humor?: LyricHumor;
   explicitness?: LyricExplicitness;
   persona?: LyricPersona;
-  density?: LyricDensity;
+  lines_per_section?: LyricLinesPerSection;
   pacing?: LyricPacing;
 }
 
@@ -132,7 +134,7 @@ export interface LyricProfile {
   humor: 'none' | 'light' | 'comedic' | 'crude';
   explicitness: 'clean' | 'innuendo' | 'explicit';
   persona: 'earnest' | 'playful' | 'aggressive' | 'romantic' | 'melancholic';
-  density: 'sparse' | 'standard' | 'dense';
+  lines_per_section: 'short' | 'standard' | 'long' | 'double';
   pacing: 'standard' | 'fast';
   devices?: string[];
   avoid?: string[];

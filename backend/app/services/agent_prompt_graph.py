@@ -1462,8 +1462,12 @@ class AgentPromptGraph:
         try:
             profile = json.loads(raw.strip())
             # Validate expected keys with defaults
+            # Accept both "density" (legacy) and "lines_per_section" (new), prefer new
+            lines_per_section = profile.get(
+                "lines_per_section", profile.get("density", "standard")
+            )
             result = {
-                "density": profile.get("density", "standard"),
+                "lines_per_section": lines_per_section,
                 "pacing": profile.get("pacing", "mid"),
                 "directness": profile.get("directness", "balanced"),
                 "persona": profile.get("persona", "earnest"),
@@ -1479,7 +1483,7 @@ class AgentPromptGraph:
             )
             debug["parse_error"] = True
             return {
-                "density": "standard",
+                "lines_per_section": "standard",
                 "pacing": "mid",
                 "directness": "balanced",
                 "persona": "earnest",
@@ -1511,7 +1515,7 @@ class AgentPromptGraph:
             f"  tags: {context_pack.get('tags', [])}",
             "",
             "LYRIC PROFILE (apply these settings):",
-            f"  density: {lyric_controls.get('density', 'standard')}",
+            f"  lines_per_section: {lyric_controls.get('lines_per_section', 'standard')}",
             f"  pacing: {lyric_controls.get('pacing', 'mid')}",
             f"  directness: {lyric_controls.get('directness', 'balanced')}",
             f"  persona: {lyric_controls.get('persona', 'earnest')}",
@@ -1618,7 +1622,7 @@ class AgentPromptGraph:
             "humor": "none",
             "explicitness": "clean",
             "persona": "earnest",
-            "density": "standard",
+            "lines_per_section": "standard",
             "pacing": "mid",
         }
 
@@ -1636,8 +1640,8 @@ class AgentPromptGraph:
             resolved["explicitness"] = lyric_controls.explicitness
         if lyric_controls.persona != "auto":
             resolved["persona"] = lyric_controls.persona
-        if lyric_controls.density != "auto":
-            resolved["density"] = lyric_controls.density
+        if lyric_controls.lines_per_section != "auto":
+            resolved["lines_per_section"] = lyric_controls.lines_per_section
         if lyric_controls.pacing != "auto":
             resolved["pacing"] = lyric_controls.pacing
 
@@ -1665,8 +1669,8 @@ class AgentPromptGraph:
             overrides["explicitness"] = lyric_controls.explicitness
         if lyric_controls.persona and lyric_controls.persona != "auto":
             overrides["persona"] = lyric_controls.persona
-        if lyric_controls.density and lyric_controls.density != "auto":
-            overrides["density"] = lyric_controls.density
+        if lyric_controls.lines_per_section and lyric_controls.lines_per_section != "auto":
+            overrides["lines_per_section"] = lyric_controls.lines_per_section
         if lyric_controls.pacing and lyric_controls.pacing != "auto":
             overrides["pacing"] = lyric_controls.pacing
 
@@ -1719,7 +1723,7 @@ class AgentPromptGraph:
             f"  lyrics_about: {lyrics_about}",
             "",
             "LYRIC PROFILE (apply these settings):",
-            f"  density: {lyric_controls.get('density', 'standard')}",
+            f"  lines_per_section: {lyric_controls.get('lines_per_section', 'standard')}",
             f"  pacing: {lyric_controls.get('pacing', 'mid')}",
             f"  directness: {lyric_controls.get('directness', 'balanced')}",
             f"  persona: {lyric_controls.get('persona', 'earnest')}",
@@ -1767,9 +1771,10 @@ class AgentPromptGraph:
                 )
 
             profile = json.loads(text)
-            # Validate expected keys
+            # Validate expected keys (accept both legacy "density" and new "lines_per_section")
             valid_keys = {
-                "density",
+                "lines_per_section",
+                "density",  # legacy, will be mapped to lines_per_section
                 "pacing",
                 "directness",
                 "persona",
@@ -1777,7 +1782,13 @@ class AgentPromptGraph:
                 "humor",
                 "explicitness",
             }
-            return {k: v for k, v in profile.items() if k in valid_keys}
+            result = {k: v for k, v in profile.items() if k in valid_keys}
+            # Map legacy density to lines_per_section
+            if "density" in result and "lines_per_section" not in result:
+                result["lines_per_section"] = result.pop("density")
+            elif "density" in result:
+                del result["density"]  # Remove duplicate if both present
+            return result
         except (json.JSONDecodeError, AttributeError):
             logger.warning("Failed to parse lyric profile JSON: %s", raw[:100])
             return None

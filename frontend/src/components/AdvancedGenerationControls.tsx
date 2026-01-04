@@ -42,7 +42,7 @@ import {
   LyricHumor,
   LyricExplicitness,
   LyricPersona,
-  LyricDensity,
+  LyricLinesPerSection,
   LyricPacing,
 } from '../api';
 
@@ -106,7 +106,7 @@ export default function AdvancedGenerationControls({
   const [lyricHumor, setLyricHumor] = useState<LyricHumor>('auto');
   const [lyricExplicitness, setLyricExplicitness] = useState<LyricExplicitness>('auto');
   const [lyricPersona, setLyricPersona] = useState<LyricPersona>('auto');
-  const [lyricDensity, setLyricDensity] = useState<LyricDensity>('auto');
+  const [lyricLinesPerSection, setLyricLinesPerSection] = useState<LyricLinesPerSection>('auto');
   const [lyricPacing, setLyricPacing] = useState<LyricPacing>('auto');
 
   // Fetch available prompt variants and models on mount
@@ -258,7 +258,7 @@ export default function AdvancedGenerationControls({
         if (lyricHumor !== 'auto') lyricControls.humor = lyricHumor;
         if (lyricExplicitness !== 'auto') lyricControls.explicitness = lyricExplicitness;
         if (lyricPersona !== 'auto') lyricControls.persona = lyricPersona;
-        if (lyricDensity !== 'auto') lyricControls.density = lyricDensity;
+        if (lyricLinesPerSection !== 'auto') lyricControls.lines_per_section = lyricLinesPerSection;
         if (lyricPacing !== 'auto') lyricControls.pacing = lyricPacing;
         const hasLyricControls = Object.keys(lyricControls).length > 0;
 
@@ -700,18 +700,19 @@ export default function AdvancedGenerationControls({
 
                 <HStack spacing={4} flexWrap="wrap">
                   <FormControl flex="1" minW="140px">
-                    <FormLabel fontSize="sm" color="gray.400">Density</FormLabel>
+                    <FormLabel fontSize="sm" color="gray.400">Lines per section</FormLabel>
                     <Select
                       size="sm"
-                      value={lyricDensity}
-                      onChange={(e: ChangeEvent<HTMLSelectElement>) => setLyricDensity(e.target.value as LyricDensity)}
+                      value={lyricLinesPerSection}
+                      onChange={(e: ChangeEvent<HTMLSelectElement>) => setLyricLinesPerSection(e.target.value as LyricLinesPerSection)}
                       bg="gray.800"
                       borderColor="gray.600"
                     >
                       <option value="auto">Auto</option>
-                      <option value="sparse">Sparse (atmospheric)</option>
-                      <option value="standard">Standard</option>
-                      <option value="dense">Dense (wordy)</option>
+                      <option value="short">Short (2 lines)</option>
+                      <option value="standard">Standard (4 lines)</option>
+                      <option value="long">Long (6 lines)</option>
+                      <option value="double">Double (8 lines)</option>
                     </Select>
                   </FormControl>
 

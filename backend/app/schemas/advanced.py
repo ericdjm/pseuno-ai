@@ -109,11 +109,14 @@ LyricExplicitness = Literal["auto", "clean", "innuendo", "explicit"]
 LyricPersona = Literal[
     "auto", "earnest", "playful", "aggressive", "romantic", "melancholic"
 ]
-LyricDensity = Literal[
+# Lines per section control (renamed from "density" for clarity)
+# This controls the number of lines per section, NOT line length
+LyricLinesPerSection = Literal[
     "auto",
-    "sparse",  # Fewer words, more breathing room, atmospheric
-    "standard",  # Normal lyric density
-    "dense",  # Lots of lyrics, wordy, rap-influenced or storytelling
+    "short",  # 2 lines per section (atmospheric, ballads)
+    "standard",  # 4 lines per section (most genres)
+    "long",  # 6 lines per section (storytelling, detailed)
+    "double",  # 8 lines per section (rap, hip-hop, rock - very common)
 ]
 LyricPacing = Literal[
     "auto",
@@ -148,9 +151,9 @@ class LyricControls(BaseModel):
         default="auto",
         description="Emotional stance of the lyrics: earnest, playful, aggressive, romantic, or melancholic",
     )
-    density: LyricDensity = Field(
+    lines_per_section: LyricLinesPerSection = Field(
         default="auto",
-        description="How many lyrics: sparse (atmospheric), standard, or dense (wordy)",
+        description="Lines per section: short (2), standard (4), long (6), or double (8). Controls section length, NOT line length.",
     )
     pacing: LyricPacing = Field(
         default="auto",
@@ -171,7 +174,7 @@ class LyricProfile(BaseModel):
     persona: Literal["earnest", "playful", "aggressive", "romantic", "melancholic"] = (
         "earnest"
     )
-    density: Literal["sparse", "standard", "dense"] = "standard"
+    lines_per_section: Literal["short", "standard", "long", "double"] = "standard"
     pacing: Literal["standard", "fast"] = "standard"
     devices: list[str] = Field(
         default_factory=list,

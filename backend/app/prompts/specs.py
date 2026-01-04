@@ -103,7 +103,7 @@ Constraints:
 - EXCLUDE: 1 line, comma-separated, ≥2 items, no trailing period.
 - WEIRDNESS: Single integer 0-100.
 - STYLE INFLUENCE: Single integer 0-100.
-- LYRIC PROFILE: JSON object with density, pacing, directness, persona fields.
+- LYRIC PROFILE: JSON object with lines_per_section, pacing, directness, persona fields.
 """
 
 OUTPUT_CONTRACT_LYRICS = """\
@@ -123,7 +123,7 @@ SONG TITLE constraints:
 LYRICS constraints:
 - Section tags: [Intro], [Verse], [Pre-Chorus], [Chorus], [Post-Chorus], [Bridge], [Breakdown], [Outro]
 - Tag modifiers allowed: [Verse, soft, introspective, breathy vocals]
-- 4 lines per section (standard). Adjust based on density control.
+- Follow lines_per_section from LYRIC PROFILE (short=2, standard=4, long=6, double=8).
 - Reuse chorus lyrics across repetitions (same words).
 - [Intro], [Breakdown], [Outro] have no lyrics (tag only).
 """
@@ -190,8 +190,8 @@ Process:
 6. Infer LYRIC PROFILE based on genre, style, and lyrics_about topic.
 
 LYRIC PROFILE generation rules:
-- Output as JSON: {"density": "...", "pacing": "...", "directness": "...", "persona": "..."}
-- density: "sparse" | "standard" | "dense" — based on genre (ballads=sparse, rap=dense)
+- Output as JSON: {"lines_per_section": "...", "pacing": "...", "directness": "...", "persona": "..."}
+- lines_per_section: "short" | "standard" | "long" | "double" — based on genre (ballads=short, rap/hip-hop=double)
 - pacing: "standard" | "fast" — default to standard (AABB). Only use fast for punk/thrash/hardcore.
 - directness: "direct" | "balanced" | "metaphor_heavy" — kids/holiday=direct, art rock=metaphor_heavy
 - persona: "earnest" | "playful" | "aggressive" | "romantic" | "melancholic" — match the mood
@@ -604,12 +604,13 @@ LYRIC_PROFILE_SPEC = """\
 ═══════════════════════════════════════════════════════════════════════════════
 LYRIC PROFILE (apply from user message)
 ═══════════════════════════════════════════════════════════════════════════════
-DENSITY:
-- sparse: 2 lines per section. Atmospheric, breathing room.
-- standard: 4 lines per section. Normal for most genres.
-- dense: 6-8 lines per section. Wordy, storytelling, rapid-fire.
+LINES PER SECTION:
+- short: 2 lines per section. Atmospheric, ballads.
+- standard: 4 lines per section. Common default.
+- long: 6 lines per section. Storytelling, detailed.
+- double: 8 lines per section. Rap, hip-hop, rock — very common.
 
-PACING (affects rhyme scheme — independent of density!):
+PACING (affects rhyme scheme — independent of lines_per_section!):
 - standard: Rhyme every line (AABB). More syllables (10-14). USE THIS BY DEFAULT.
 - fast: Rhyme every other line (ABAB/ABCB). Fewer syllables (6-10). Punchy. ONLY for punk/thrash/hardcore.
 
@@ -683,7 +684,7 @@ Common fixes:
 - EXCLUDE must be one line, comma-separated, ≥2 items.
 - WEIRDNESS must be a single integer 0-100.
 - STYLE INFLUENCE must be a single integer 0-100.
-- LYRIC PROFILE must be valid JSON with density, pacing, directness, persona fields.
+- LYRIC PROFILE must be valid JSON with lines_per_section, pacing, directness, persona fields.
 """
 
 LYRICS_REPAIR_AGENT = """\
@@ -703,7 +704,7 @@ LYRICS rules:
 - [Intro], [Breakdown], [Outro] have no lyrics (tag only).
 - Choruses: 0 or 2+. Never exactly 1 chorus.
 - Tag modifiers allowed: [Verse, soft, introspective]
-- 4 lines per section (standard).
+- Preserve the lines_per_section setting from the original (do NOT change line counts unless fixing other issues).
 """
 
 STYLE_REPAIR_AGENT_PROSE = f"""\
@@ -744,14 +745,15 @@ CRITICAL: Consider the reference artists' known characteristics:
 - Party/fun artists (LMFAO, Pitbull) → humor: "light", persona: "playful"
 
 Output format (ALL 7 fields required):
-{"density": "...", "pacing": "...", "directness": "...", "persona": "...", "humor": "...", "explicitness": "...", "audience": "..."}
+{"lines_per_section": "...", "pacing": "...", "directness": "...", "persona": "...", "humor": "...", "explicitness": "...", "audience": "..."}
 
-DENSITY:
-- "sparse": 2-3 lines/section. Ballads, ambient.
-- "standard": 4 lines/section. Most genres.
-- "dense": 6-8 lines/section. Rap, metal, storytelling.
+LINES_PER_SECTION:
+- "short": 2 lines/section. Ballads, ambient.
+- "standard": 4 lines/section. Common default.
+- "long": 6 lines/section. Storytelling, detailed.
+- "double": 8 lines/section. Rap, hip-hop, rock — very common.
 
-PACING (independent of density — default to standard):
+PACING (independent of lines_per_section — default to standard):
 - "standard": AABB rhymes, 10-14 syllables. Rhyme every line. DEFAULT for most genres.
 - "fast": ABAB/ABCB rhymes, 6-10 syllables. Only for punk/thrash/hardcore.
 
@@ -784,7 +786,7 @@ AUDIENCE:
 - "adult": Mature themes.
 
 Example: artists=["Steel Panther", "TOOL"], topic="cocaine trip"
-Output: {"density": "dense", "pacing": "standard", "directness": "direct", "persona": "aggressive", "humor": "crude", "explicitness": "explicit", "audience": "adult"}
+Output: {"lines_per_section": "double", "pacing": "standard", "directness": "direct", "persona": "aggressive", "humor": "crude", "explicitness": "explicit", "audience": "adult"}
 """
 
 # ===========================================================================
