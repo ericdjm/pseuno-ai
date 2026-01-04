@@ -1462,12 +1462,10 @@ class AgentPromptGraph:
         try:
             profile = json.loads(raw.strip())
             # Validate expected keys with defaults
-            # Accept both "density" (legacy) and "lines_per_section" (new), prefer new
-            lines_per_section = profile.get(
-                "lines_per_section", profile.get("density", "standard")
-            )
             result = {
-                "lines_per_section": lines_per_section,
+                "lines_per_section": profile.get("lines_per_section", "4_lines"),
+                "line_length": profile.get("line_length", "default"),
+                "pov": profile.get("pov", "none"),
                 "pacing": profile.get("pacing", "mid"),
                 "directness": profile.get("directness", "balanced"),
                 "persona": profile.get("persona", "earnest"),
@@ -1483,7 +1481,9 @@ class AgentPromptGraph:
             )
             debug["parse_error"] = True
             return {
-                "lines_per_section": "standard",
+                "lines_per_section": "4_lines",
+                "line_length": "default",
+                "pov": "none",
                 "pacing": "mid",
                 "directness": "balanced",
                 "persona": "earnest",
@@ -1503,10 +1503,26 @@ class AgentPromptGraph:
         ]
         return "\n".join(lines)
 
+    # Syllable range mapping for line_length presets
+    LINE_LENGTH_SYLLABLES = {
+        "sparse": (3, 5),
+        "short": (5, 8),
+        "default": (8, 12),
+        "long": (12, 16),
+    }
+
+    def _format_line_length_range(self, line_length: str) -> str:
+        """Format line_length as 'preset (N-M syllables)'."""
+        if line_length in self.LINE_LENGTH_SYLLABLES:
+            lo, hi = self.LINE_LENGTH_SYLLABLES[line_length]
+            return f"{line_length} ({lo}-{hi} syllables)"
+        return line_length
+
     def _format_lyrics_context_v4_parallel(
         self, context_pack: Dict[str, Any], lyric_controls: Dict[str, str]
     ) -> str:
         """Format lyrics context for V4 parallel mode (includes style info + profile)."""
+        line_length = lyric_controls.get("line_length", "default")
         lines = [
             "Generate SONG TITLE and LYRICS for:",
             f"  style_request: {context_pack.get('user_style_request', '')}",
@@ -1515,7 +1531,9 @@ class AgentPromptGraph:
             f"  tags: {context_pack.get('tags', [])}",
             "",
             "LYRIC PROFILE (apply these settings):",
-            f"  lines_per_section: {lyric_controls.get('lines_per_section', 'standard')}",
+            f"  lines_per_section: {lyric_controls.get('lines_per_section', '4_lines')}",
+            f"  line_length: {self._format_line_length_range(line_length)}",
+            f"  pov: {lyric_controls.get('pov', 'none')}",
             f"  pacing: {lyric_controls.get('pacing', 'mid')}",
             f"  directness: {lyric_controls.get('directness', 'balanced')}",
             f"  persona: {lyric_controls.get('persona', 'earnest')}",
@@ -1622,7 +1640,9 @@ class AgentPromptGraph:
             "humor": "none",
             "explicitness": "clean",
             "persona": "earnest",
-            "lines_per_section": "standard",
+            "lines_per_section": "4_lines",
+            "line_length": "default",
+            "pov": "none",
             "pacing": "mid",
         }
 
@@ -1642,6 +1662,10 @@ class AgentPromptGraph:
             resolved["persona"] = lyric_controls.persona
         if lyric_controls.lines_per_section != "auto":
             resolved["lines_per_section"] = lyric_controls.lines_per_section
+        if lyric_controls.line_length != "auto":
+            resolved["line_length"] = lyric_controls.line_length
+        if lyric_controls.pov != "auto":
+            resolved["pov"] = lyric_controls.pov
         if lyric_controls.pacing != "auto":
             resolved["pacing"] = lyric_controls.pacing
 
@@ -1671,6 +1695,10 @@ class AgentPromptGraph:
             overrides["persona"] = lyric_controls.persona
         if lyric_controls.lines_per_section and lyric_controls.lines_per_section != "auto":
             overrides["lines_per_section"] = lyric_controls.lines_per_section
+        if lyric_controls.line_length and lyric_controls.line_length != "auto":
+            overrides["line_length"] = lyric_controls.line_length
+        if lyric_controls.pov and lyric_controls.pov != "auto":
+            overrides["pov"] = lyric_controls.pov
         if lyric_controls.pacing and lyric_controls.pacing != "auto":
             overrides["pacing"] = lyric_controls.pacing
 
@@ -1717,13 +1745,16 @@ class AgentPromptGraph:
         lyric_controls: Dict[str, Any],
     ) -> str:
         """Format context for V4 lyrics agent (with lyric profile)."""
+        line_length = lyric_controls.get("line_length", "default")
         lines = [
             "Generate SONG TITLE and LYRICS for:",
             f"  suno_prompt: {suno_prompt}",
             f"  lyrics_about: {lyrics_about}",
             "",
             "LYRIC PROFILE (apply these settings):",
-            f"  lines_per_section: {lyric_controls.get('lines_per_section', 'standard')}",
+            f"  lines_per_section: {lyric_controls.get('lines_per_section', '4_lines')}",
+            f"  line_length: {self._format_line_length_range(line_length)}",
+            f"  pov: {lyric_controls.get('pov', 'none')}",
             f"  pacing: {lyric_controls.get('pacing', 'mid')}",
             f"  directness: {lyric_controls.get('directness', 'balanced')}",
             f"  persona: {lyric_controls.get('persona', 'earnest')}",
@@ -1771,10 +1802,10 @@ class AgentPromptGraph:
                 )
 
             profile = json.loads(text)
-            # Validate expected keys (accept both legacy "density" and new "lines_per_section")
             valid_keys = {
                 "lines_per_section",
-                "density",  # legacy, will be mapped to lines_per_section
+                "line_length",
+                "pov",
                 "pacing",
                 "directness",
                 "persona",
@@ -1783,11 +1814,10 @@ class AgentPromptGraph:
                 "explicitness",
             }
             result = {k: v for k, v in profile.items() if k in valid_keys}
-            # Map legacy density to lines_per_section
-            if "density" in result and "lines_per_section" not in result:
-                result["lines_per_section"] = result.pop("density")
-            elif "density" in result:
-                del result["density"]  # Remove duplicate if both present
+            # Ensure fields are present with defaults
+            result.setdefault("lines_per_section", "4_lines")
+            result.setdefault("line_length", "default")
+            result.setdefault("pov", "none")
             return result
         except (json.JSONDecodeError, AttributeError):
             logger.warning("Failed to parse lyric profile JSON: %s", raw[:100])

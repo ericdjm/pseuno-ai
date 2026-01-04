@@ -123,7 +123,7 @@ SONG TITLE constraints:
 LYRICS constraints:
 - Section tags: [Intro], [Verse], [Pre-Chorus], [Chorus], [Post-Chorus], [Bridge], [Breakdown], [Outro]
 - Tag modifiers allowed: [Verse, soft, introspective, breathy vocals]
-- Follow lines_per_section from LYRIC PROFILE (short=2, standard=4, long=6, double=8).
+- Follow lines_per_section from LYRIC PROFILE (2_lines, 4_lines, 6_lines, or 8_lines).
 - Reuse chorus lyrics across repetitions (same words).
 - [Intro], [Breakdown], [Outro] have no lyrics (tag only).
 """
@@ -190,11 +190,16 @@ Process:
 6. Infer LYRIC PROFILE based on genre, style, and lyrics_about topic.
 
 LYRIC PROFILE generation rules:
-- Output as JSON: {"lines_per_section": "...", "pacing": "...", "directness": "...", "persona": "..."}
-- lines_per_section: "short" | "standard" | "long" | "double" — based on genre (ballads=short, rap/hip-hop=double)
+- Output as JSON with ALL 9 fields: lines_per_section, line_length, pov, pacing, directness, persona, humor, explicitness, audience
+- lines_per_section: "2_lines" | "4_lines" | "6_lines" | "8_lines" — based on genre (ballads=2_lines, rap/hip-hop=8_lines)
+- line_length: "sparse" | "short" | "default" | "long" — syllables per line
+- pov: "first" | "second" | "third" | "none" — point of view
 - pacing: "standard" | "fast" — default to standard (AABB). Only use fast for punk/thrash/hardcore.
 - directness: "direct" | "balanced" | "metaphor_heavy" — kids/holiday=direct, art rock=metaphor_heavy
 - persona: "earnest" | "playful" | "aggressive" | "romantic" | "melancholic" — match the mood
+- humor: "none" | "light" | "comedic" | "crude"
+- explicitness: "clean" | "innuendo" | "explicit"
+- audience: "kids" | "general" | "adult"
 """
 
 TASK_LYRICS = """\
@@ -605,10 +610,10 @@ LYRIC_PROFILE_SPEC = """\
 LYRIC PROFILE (apply from user message)
 ═══════════════════════════════════════════════════════════════════════════════
 LINES PER SECTION:
-- short: 2 lines per section. Atmospheric, ballads.
-- standard: 4 lines per section. Common default.
-- long: 6 lines per section. Storytelling, detailed.
-- double: 8 lines per section. Rap, hip-hop, rock — very common.
+- 2_lines: 2 lines per section. Atmospheric, ballads.
+- 4_lines: 4 lines per section. Common default.
+- 6_lines: 6 lines per section. Storytelling, detailed.
+- 8_lines: 8 lines per section. Rap, hip-hop, rock — very common.
 
 PACING (affects rhyme scheme — independent of lines_per_section!):
 - standard: Rhyme every line (AABB). More syllables (10-14). USE THIS BY DEFAULT.
@@ -744,14 +749,26 @@ CRITICAL: Consider the reference artists' known characteristics:
 - Dark/intense artists (TOOL, Nine Inch Nails, Slipknot) → persona: "aggressive"
 - Party/fun artists (LMFAO, Pitbull) → humor: "light", persona: "playful"
 
-Output format (ALL 7 fields required):
-{"lines_per_section": "...", "pacing": "...", "directness": "...", "persona": "...", "humor": "...", "explicitness": "...", "audience": "..."}
+Output format (ALL 9 fields required):
+{"lines_per_section": "...", "line_length": "...", "pov": "...", "pacing": "...", "directness": "...", "persona": "...", "humor": "...", "explicitness": "...", "audience": "..."}
 
 LINES_PER_SECTION:
-- "short": 2 lines/section. Ballads, ambient.
-- "standard": 4 lines/section. Common default.
-- "long": 6 lines/section. Storytelling, detailed.
-- "double": 8 lines/section. Rap, hip-hop, rock — very common.
+- "2_lines": 2 lines/section. Ballads, ambient.
+- "4_lines": 4 lines/section. Common default.
+- "6_lines": 6 lines/section. Storytelling, detailed.
+- "8_lines": 8 lines/section. Rap, hip-hop, rock — very common.
+
+LINE_LENGTH (syllables per line):
+- "sparse": 3-5 syllables. Minimal, atmospheric.
+- "short": 5-8 syllables. Punchy, concise.
+- "default": 8-12 syllables. Standard for most genres.
+- "long": 12-16 syllables. Wordy, rap-influenced.
+
+POV (point of view):
+- "first": I/me/my perspective.
+- "second": you/your perspective.
+- "third": he/she/they perspective.
+- "none": Observational, abstract, no personal pronouns.
 
 PACING (independent of lines_per_section — default to standard):
 - "standard": AABB rhymes, 10-14 syllables. Rhyme every line. DEFAULT for most genres.
@@ -786,7 +803,7 @@ AUDIENCE:
 - "adult": Mature themes.
 
 Example: artists=["Steel Panther", "TOOL"], topic="cocaine trip"
-Output: {"lines_per_section": "double", "pacing": "standard", "directness": "direct", "persona": "aggressive", "humor": "crude", "explicitness": "explicit", "audience": "adult"}
+Output: {"lines_per_section": "8_lines", "line_length": "default", "pov": "first", "pacing": "standard", "directness": "direct", "persona": "aggressive", "humor": "crude", "explicitness": "explicit", "audience": "adult"}
 """
 
 # ===========================================================================

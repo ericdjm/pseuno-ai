@@ -43,6 +43,8 @@ import {
   LyricExplicitness,
   LyricPersona,
   LyricLinesPerSection,
+  LyricLineLength,
+  LyricPOV,
   LyricPacing,
 } from '../api';
 
@@ -107,6 +109,8 @@ export default function AdvancedGenerationControls({
   const [lyricExplicitness, setLyricExplicitness] = useState<LyricExplicitness>('auto');
   const [lyricPersona, setLyricPersona] = useState<LyricPersona>('auto');
   const [lyricLinesPerSection, setLyricLinesPerSection] = useState<LyricLinesPerSection>('auto');
+  const [lyricLineLength, setLyricLineLength] = useState<LyricLineLength>('auto');
+  const [lyricPOV, setLyricPOV] = useState<LyricPOV>('auto');
   const [lyricPacing, setLyricPacing] = useState<LyricPacing>('auto');
 
   // Fetch available prompt variants and models on mount
@@ -259,6 +263,8 @@ export default function AdvancedGenerationControls({
         if (lyricExplicitness !== 'auto') lyricControls.explicitness = lyricExplicitness;
         if (lyricPersona !== 'auto') lyricControls.persona = lyricPersona;
         if (lyricLinesPerSection !== 'auto') lyricControls.lines_per_section = lyricLinesPerSection;
+        if (lyricLineLength !== 'auto') lyricControls.line_length = lyricLineLength;
+        if (lyricPOV !== 'auto') lyricControls.pov = lyricPOV;
         if (lyricPacing !== 'auto') lyricControls.pacing = lyricPacing;
         const hasLyricControls = Object.keys(lyricControls).length > 0;
 
@@ -709,10 +715,46 @@ export default function AdvancedGenerationControls({
                       borderColor="gray.600"
                     >
                       <option value="auto">Auto</option>
-                      <option value="short">Short (2 lines)</option>
-                      <option value="standard">Standard (4 lines)</option>
-                      <option value="long">Long (6 lines)</option>
-                      <option value="double">Double (8 lines)</option>
+                      <option value="2_lines">2 lines</option>
+                      <option value="4_lines">4 lines</option>
+                      <option value="6_lines">6 lines</option>
+                      <option value="8_lines">8 lines</option>
+                    </Select>
+                  </FormControl>
+
+                  <FormControl flex="1" minW="140px">
+                    <FormLabel fontSize="sm" color="gray.400">Line length</FormLabel>
+                    <Select
+                      size="sm"
+                      value={lyricLineLength}
+                      onChange={(e: ChangeEvent<HTMLSelectElement>) => setLyricLineLength(e.target.value as LyricLineLength)}
+                      bg="gray.800"
+                      borderColor="gray.600"
+                    >
+                      <option value="auto">Auto</option>
+                      <option value="sparse">Sparse (3-5 syllables)</option>
+                      <option value="short">Short (5-8 syllables)</option>
+                      <option value="default">Default (8-12 syllables)</option>
+                      <option value="long">Long (12-16 syllables)</option>
+                    </Select>
+                  </FormControl>
+                </HStack>
+
+                <HStack spacing={4} flexWrap="wrap">
+                  <FormControl flex="1" minW="140px">
+                    <FormLabel fontSize="sm" color="gray.400">Point of view</FormLabel>
+                    <Select
+                      size="sm"
+                      value={lyricPOV}
+                      onChange={(e: ChangeEvent<HTMLSelectElement>) => setLyricPOV(e.target.value as LyricPOV)}
+                      bg="gray.800"
+                      borderColor="gray.600"
+                    >
+                      <option value="auto">Auto</option>
+                      <option value="first">First person (I/me/my)</option>
+                      <option value="second">Second person (you/your)</option>
+                      <option value="third">Third person (he/she/they)</option>
+                      <option value="none">None (observational)</option>
                     </Select>
                   </FormControl>
 

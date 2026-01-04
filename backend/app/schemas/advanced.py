@@ -109,14 +109,30 @@ LyricExplicitness = Literal["auto", "clean", "innuendo", "explicit"]
 LyricPersona = Literal[
     "auto", "earnest", "playful", "aggressive", "romantic", "melancholic"
 ]
-# Lines per section control (renamed from "density" for clarity)
+# Lines per section control
 # This controls the number of lines per section, NOT line length
 LyricLinesPerSection = Literal[
     "auto",
-    "short",  # 2 lines per section (atmospheric, ballads)
-    "standard",  # 4 lines per section (most genres)
-    "long",  # 6 lines per section (storytelling, detailed)
-    "double",  # 8 lines per section (rap, hip-hop, rock - very common)
+    "2_lines",  # 2 lines per section (atmospheric, ballads)
+    "4_lines",  # 4 lines per section (most genres)
+    "6_lines",  # 6 lines per section (storytelling, detailed)
+    "8_lines",  # 8 lines per section (rap, hip-hop, rock - very common)
+]
+# Line length control (syllables per line)
+LyricLineLength = Literal[
+    "auto",
+    "sparse",  # 3-5 syllables per line (minimal, atmospheric)
+    "short",  # 5-8 syllables per line (punchy, concise)
+    "default",  # 8-12 syllables per line (standard for most genres)
+    "long",  # 12-16 syllables per line (wordy, rap-influenced)
+]
+# Point of view / person control
+LyricPOV = Literal[
+    "auto",
+    "first",  # I/me/my
+    "second",  # you/your
+    "third",  # he/she/they
+    "none",  # observational, abstract, imagery-only (no personal pronouns)
 ]
 LyricPacing = Literal[
     "auto",
@@ -153,7 +169,15 @@ class LyricControls(BaseModel):
     )
     lines_per_section: LyricLinesPerSection = Field(
         default="auto",
-        description="Lines per section: short (2), standard (4), long (6), or double (8). Controls section length, NOT line length.",
+        description="Lines per section: 2_lines, 4_lines, 6_lines, or 8_lines.",
+    )
+    line_length: LyricLineLength = Field(
+        default="auto",
+        description="Syllables per line: sparse (3-5), short (5-8), default (8-12), or long (12-16).",
+    )
+    pov: LyricPOV = Field(
+        default="auto",
+        description="Point of view: first (I/me), second (you/your), third (he/she/they), or none (observational).",
     )
     pacing: LyricPacing = Field(
         default="auto",
@@ -174,7 +198,9 @@ class LyricProfile(BaseModel):
     persona: Literal["earnest", "playful", "aggressive", "romantic", "melancholic"] = (
         "earnest"
     )
-    lines_per_section: Literal["short", "standard", "long", "double"] = "standard"
+    lines_per_section: Literal["2_lines", "4_lines", "6_lines", "8_lines"] = "4_lines"
+    line_length: Literal["sparse", "short", "default", "long"] = "default"
+    pov: Literal["first", "second", "third", "none"] = "none"
     pacing: Literal["standard", "fast"] = "standard"
     devices: list[str] = Field(
         default_factory=list,
