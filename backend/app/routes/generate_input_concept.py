@@ -13,12 +13,18 @@ Later: Logged-in users can have genres populated from Spotify/profiles.
 
 import logging
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 
-from app.schemas.input_concept import InputConceptRequest, InputConceptResponse
+from app.schemas.input_concept import (
+    InputConceptRequest,
+    InputConceptResponse,
+    RefinementRequest,
+    RefinementResponse,
+)
 from app.services.input_concept_generator import (
     InputConceptGenerator,
     create_generator_with_providers,
+    refine_concept_with_llm,
 )
 
 logger = logging.getLogger(__name__)
@@ -101,4 +107,80 @@ async def generate_input_concept(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to generate input concept",
+        )
+
+
+@router.post(
+    "/refine-concept",
+    response_model=RefinementResponse,
+    summary="Refine an existing prompt based on user feedback",
+    description="""
+Refine an existing Suno concept based on user's change request.
+
+Uses an LLM to make targeted edits to the prompt while preserving
+the original intent and structure.
+
+**Input:**
+- `current_prompt`: The existing prompt text (1-500 chars)
+- `change_request`: What the user wants to change (1-500 chars)
+
+**Output:**
+- `refined_prompt`: The updated prompt incorporating requested changes
+- `changes_made`: Optional summary of changes (for debugging)
+
+**Example:**
+```
+{
+  "current_prompt": "A dreamy indie rock track...",
+  "change_request": "Make it more upbeat and add electronic elements"
+}
+```
+""",
+)
+async def refine_concept(
+    request: RefinementRequest,
+    fastapi_request: Request,
+) -> RefinementResponse:
+    """Refine an existing prompt based on user feedback."""
+
+    try:
+        # Get settings from app state
+        settings = fastapi_request.app.state.settings if hasattr(fastapi_request.app.state, 'settings') else None
+        if settings is None:
+            from app.config import get_settings
+            settings = get_settings()
+
+        # Call LLM refiner
+        refined_prompt = await refine_concept_with_llm(
+            current_prompt=request.current_prompt,
+            change_request=request.change_request,
+            settings=settings,
+        )
+
+        logger.info(
+            f"Refined concept: original_len={len(request.current_prompt)}, "
+            f"refined_len={len(refined_prompt)}"
+        )
+
+        return RefinementResponse(
+            refined_prompt=refined_prompt,
+            changes_made=None,  # Could extract diff summary later if needed
+        )
+
+    except RuntimeError as e:
+        # API key missing
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.exception("Error refining concept")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to refine concept",
         )

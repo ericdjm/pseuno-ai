@@ -23,6 +23,14 @@ import {
   Portal,
   Switch,
   IconButton,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalFooter,
+  ModalBody,
+  ModalCloseButton,
+  useDisclosure,
 } from '@chakra-ui/react';
 import { ChevronDownIcon, StarIcon } from '@chakra-ui/icons';
 import { useState, useEffect } from 'react';
@@ -31,6 +39,7 @@ import {
   generateAdvanced,
   generateLyricsOnly,
   generateInputConcept,
+  refineInputConcept,
   getPromptVariants,
   getModels,
   updateSavedPrompt,
@@ -184,6 +193,11 @@ export default function AdvancedGenerationControls({
 
   // Input concept generation state
   const [isGeneratingConcept, setIsGeneratingConcept] = useState(false);
+
+  // Refinement modal state
+  const { isOpen: isRefineModalOpen, onOpen: onRefineModalOpen, onClose: onRefineModalClose } = useDisclosure();
+  const [refineChangeRequest, setRefineChangeRequest] = useState('');
+  const [isRefining, setIsRefining] = useState(false);
 
   // Prompt variant and model selection state
   const [promptVariants, setPromptVariants] = useState<PromptVariantInfo[]>([]);
@@ -553,13 +567,26 @@ export default function AdvancedGenerationControls({
           <FormControl isRequired>
             <HStack justify="space-between" align="center" mb={1}>
               <FormLabel mb={0}>Song Style Prompt</FormLabel>
-              <Button
-                size="xs"
-                colorScheme="purple"
-                variant="outline"
-                isLoading={isGeneratingConcept}
-                loadingText="Generating..."
-                onClick={async () => {
+              <HStack spacing={2}>
+                <Button
+                  size="xs"
+                  colorScheme="blue"
+                  variant="outline"
+                  isDisabled={!songPrompt.trim()}
+                  onClick={() => {
+                    setRefineChangeRequest('');
+                    onRefineModalOpen();
+                  }}
+                >
+                  ✏️ Refine
+                </Button>
+                <Button
+                  size="xs"
+                  colorScheme="purple"
+                  variant="outline"
+                  isLoading={isGeneratingConcept}
+                  loadingText="Generating..."
+                  onClick={async () => {
                   setIsGeneratingConcept(true);
                   try {
                     // Parse genres from input if available
@@ -614,6 +641,7 @@ export default function AdvancedGenerationControls({
               >
                 ✨ Generate for me
               </Button>
+              </HStack>
             </HStack>
             <Textarea
               placeholder="Describe the style or sound you want"
@@ -1251,6 +1279,90 @@ export default function AdvancedGenerationControls({
       >
         {getButtonLabel()}
       </Button>
+
+      {/* Refinement Modal */}
+      <Modal isOpen={isRefineModalOpen} onClose={onRefineModalClose} size="lg">
+        <ModalOverlay />
+        <ModalContent bg="gray.900" borderColor="gray.700" borderWidth="1px">
+          <ModalHeader>Refine Prompt</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <VStack spacing={4} align="stretch">
+              <FormControl>
+                <FormLabel fontSize="sm">Current Prompt</FormLabel>
+                <Text
+                  p={3}
+                  bg="gray.800"
+                  borderRadius="md"
+                  fontSize="sm"
+                  color="gray.300"
+                  maxH="150px"
+                  overflowY="auto"
+                >
+                  {songPrompt}
+                </Text>
+              </FormControl>
+              <FormControl isRequired>
+                <FormLabel fontSize="sm">What do you want to change?</FormLabel>
+                <Textarea
+                  placeholder="E.g., make it more upbeat, add electronic elements, change to a darker mood..."
+                  value={refineChangeRequest}
+                  onChange={(e) => setRefineChangeRequest(e.target.value)}
+                  rows={4}
+                  maxLength={500}
+                />
+                <Text fontSize="xs" color="gray.500" mt={1}>
+                  {refineChangeRequest.length}/500 characters
+                </Text>
+              </FormControl>
+            </VStack>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="ghost" mr={3} onClick={onRefineModalClose}>
+              Cancel
+            </Button>
+            <Button
+              colorScheme="blue"
+              isDisabled={!refineChangeRequest.trim()}
+              isLoading={isRefining}
+              loadingText="Refining..."
+              onClick={async () => {
+                setIsRefining(true);
+                try {
+                  const result = await refineInputConcept({
+                    current_prompt: songPrompt,
+                    change_request: refineChangeRequest,
+                  });
+                  
+                  setSongPrompt(result.refined_prompt);
+                  
+                  toast({
+                    title: 'Prompt refined',
+                    description: 'Your prompt has been updated.',
+                    status: 'success',
+                    duration: 3000,
+                    isClosable: true,
+                  });
+                  
+                  onRefineModalClose();
+                } catch (error) {
+                  toast({
+                    title: 'Failed to refine prompt',
+                    description: error instanceof Error ? error.message : 'Unknown error',
+                    status: 'error',
+                    duration: 5000,
+                    isClosable: true,
+                  });
+                } finally {
+                  setIsRefining(false);
+                }
+              }}
+            >
+              Refine
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </Box>
   );
 }

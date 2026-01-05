@@ -230,6 +230,16 @@ export interface InputConceptResponse {
   mood: string | null;
 }
 
+export interface RefinementRequest {
+  current_prompt: string;
+  change_request: string;
+}
+
+export interface RefinementResponse {
+  refined_prompt: string;
+  changes_made: string | null;
+}
+
 export type TimeRange = 'short_term' | 'medium_term' | 'long_term';
 
 // === Saved Prompts Types ===
@@ -449,6 +459,26 @@ export async function generateInputConcept(
     body: JSON.stringify(payload),
   });
   return handleResponse<InputConceptResponse>(response);
+}
+
+/**
+ * Refine an existing prompt based on user feedback.
+ * 
+ * Uses an LLM to make targeted edits to the prompt while preserving
+ * the original intent.
+ */
+export async function refineInputConcept(
+  payload: RefinementRequest
+): Promise<RefinementResponse> {
+  const response = await fetch(`${API_BASE}/generate/refine-concept`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  return handleResponse<RefinementResponse>(response);
 }
 
 // === Saved Prompts Functions ===

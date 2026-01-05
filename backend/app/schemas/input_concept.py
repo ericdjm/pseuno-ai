@@ -57,3 +57,30 @@ class InputConceptResponse(BaseModel):
         default=None,
         description="Mood used in generation (echoed back or inferred)",
     )
+
+
+class RefinementRequest(BaseModel):
+    """Request to refine an existing prompt based on user feedback."""
+
+    current_prompt: str = Field(
+        description="The current prompt text to refine",
+        min_length=1,
+        max_length=500,
+    )
+    change_request: str = Field(
+        description="Description of what the user wants to change",
+        min_length=1,
+        max_length=500,
+    )
+
+
+class RefinementResponse(BaseModel):
+    """Response containing the refined prompt."""
+
+    refined_prompt: str = Field(
+        description="The refined prompt incorporating requested changes"
+    )
+    changes_made: Optional[str] = Field(
+        default=None,
+        description="Optional summary of changes made (for debugging)",
+    )

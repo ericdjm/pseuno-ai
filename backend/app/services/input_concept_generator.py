@@ -11,6 +11,7 @@ Design principles:
 - Simple: v1 uses templates with variance; can be upgraded to LLM-based later
 """
 
+import asyncio
 import random
 from dataclasses import dataclass
 from typing import List, Optional, Sequence
@@ -309,3 +310,108 @@ async def create_generator_with_providers(
     generator = InputConceptGenerator()
 
     return generator, composite
+
+
+# =============================================================================
+# PROMPT REFINEMENT
+# =============================================================================
+
+
+async def refine_concept_with_llm(
+    current_prompt: str,
+    change_request: str,
+    settings,
+) -> str:
+    """
+    Refine an existing prompt based on user feedback using LLM.
+
+    Uses the default model from settings to make targeted edits to the prompt
+    while preserving the original intent.
+    """
+    import httpx
+
+    # Decide which model/API to use
+    model = settings.llm_model
+    is_gemini = model in {
+        "gemini-3-flash-preview",
+        "gemini-3-pro-preview",
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-2.0-flash",
+    }
+
+    system_prompt = """You are a helpful assistant that refines Suno music prompts based on user feedback.
+
+Your task:
+1. Read the current prompt and the user's change request
+2. Make ONLY the changes the user requested
+3. Preserve all other aspects of the original prompt
+4. Keep the result concise (max 500 characters)
+5. Return ONLY the refined prompt, no explanations or preamble
+
+The prompt should describe a musical style/vibe in 2-3 clear sentences."""
+
+    user_message = f"""Current prompt:
+{current_prompt}
+
+Change request:
+{change_request}
+
+Refined prompt:"""
+
+    if is_gemini:
+        # Use Google Generative AI
+        if not settings.gemini_api_key:
+            raise RuntimeError("GEMINI_API_KEY is required for Gemini models")
+
+        import google.generativeai as genai
+
+        genai.configure(api_key=settings.gemini_api_key)
+        genai_model = genai.GenerativeModel(
+            model_name=model,
+            generation_config={
+                "temperature": 0.7,
+                "max_output_tokens": 500,
+            },
+        )
+
+        # Gemini doesn't have separate system/user, combine them
+        combined_prompt = f"{system_prompt}\n\n{user_message}"
+        response = await asyncio.to_thread(genai_model.generate_content, combined_prompt)
+        refined = response.text.strip()
+
+    else:
+        # Use OpenAI-compatible API
+        if not settings.openai_api_key:
+            raise RuntimeError("OPENAI_API_KEY is required for OpenAI models")
+
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+            "temperature": 0.7,
+            "max_tokens": 500,
+        }
+
+        headers = {
+            "Authorization": f"Bearer {settings.openai_api_key}",
+            "Content-Type": "application/json",
+        }
+
+        async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
+            response = await client.post(
+                "https://api.openai.com/v1/chat/completions",
+                json=payload,
+                headers=headers,
+            )
+            response.raise_for_status()
+            data = response.json()
+            refined = data["choices"][0]["message"]["content"].strip()
+
+    # Enforce max length
+    if len(refined) > 500:
+        refined = refined[:500].rsplit(" ", 1)[0]  # Trim at word boundary
+
+    return refined
