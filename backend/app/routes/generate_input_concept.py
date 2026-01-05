@@ -20,6 +20,8 @@ from app.schemas.input_concept import (
     InputConceptResponse,
     LyricsRefinementRequest,
     LyricsRefinementResponse,
+    LyricsTopicRequest,
+    LyricsTopicResponse,
     RefinementRequest,
     RefinementResponse,
 )
@@ -29,6 +31,7 @@ from app.services.input_concept_generator import (
     refine_concept_with_llm,
     refine_lyrics_with_llm,
 )
+from app.services.lyrics_topic_generator import generate_lyrics_topic
 
 logger = logging.getLogger(__name__)
 
@@ -254,4 +257,60 @@ async def refine_lyrics(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to refine lyrics",
+        )
+
+
+@router.post(
+    "/lyrics-topic",
+    response_model=LyricsTopicResponse,
+    summary="Generate a short lyrics topic from mood/genre influences",
+    description="""
+Generate a 1-2 sentence lyrics topic or theme based on influences.
+
+The topic is based on:
+- Mood tags (if provided)
+- Genre influences (used to infer moods if no moods provided)
+- Optional style prompt (for context alignment)
+
+The returned topic can be used as the `lyrics_about` field
+in `/generate/advanced` or `/generate/lyrics-only`.
+
+**v1 behavior:**
+- No login required
+- Template-based generation with mood-theme mapping
+- If no moods or genres provided, uses random seed moods
+""",
+)
+async def generate_lyrics_topic_endpoint(
+    request: LyricsTopicRequest,
+) -> LyricsTopicResponse:
+    """Generate a short lyrics topic from mood/genre influences."""
+
+    try:
+        result = await generate_lyrics_topic(
+            genres=request.genres,
+            moods=request.moods,
+            style_prompt=request.style_prompt,
+        )
+
+        logger.info(
+            f"Generated lyrics topic: chosen_moods={result.chosen_moods}"
+        )
+
+        return LyricsTopicResponse(
+            topic=result.topic,
+            chosen_moods=result.chosen_moods,
+            reasoning=result.reasoning,
+        )
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.exception("Error generating lyrics topic")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate lyrics topic",
         )

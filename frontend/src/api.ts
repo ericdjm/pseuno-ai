@@ -250,6 +250,20 @@ export interface LyricsRefinementResponse {
   changes_made: string | null;
 }
 
+// === Lyrics Topic Types ===
+
+export interface LyricsTopicRequest {
+  genres?: string[];
+  moods?: string[];
+  style_prompt?: string;
+}
+
+export interface LyricsTopicResponse {
+  topic: string;
+  chosen_moods: string[];
+  reasoning: string | null;
+}
+
 export type TimeRange = 'short_term' | 'medium_term' | 'long_term';
 
 // === Saved Prompts Types ===
@@ -469,6 +483,29 @@ export async function generateInputConcept(
     body: JSON.stringify(payload),
   });
   return handleResponse<InputConceptResponse>(response);
+}
+
+/**
+ * Generate a short lyrics topic/theme from mood/genre influences.
+ * 
+ * This is the "lyrics input side" of generation - the returned topic can be
+ * passed to generateAdvanced() or generateLyricsOnly() as the lyrics_about field.
+ * 
+ * v1: No login required. Template-based generation.
+ * If moods/genres are empty, uses random seed moods.
+ */
+export async function generateLyricsTopic(
+  payload: LyricsTopicRequest = {}
+): Promise<LyricsTopicResponse> {
+  const response = await fetch(`${API_BASE}/generate/lyrics-topic`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  return handleResponse<LyricsTopicResponse>(response);
 }
 
 /**

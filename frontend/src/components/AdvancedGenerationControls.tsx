@@ -31,6 +31,7 @@ import {
   generateAdvanced,
   generateLyricsOnly,
   generateInputConcept,
+  generateLyricsTopic,
   getPromptVariants,
   getModels,
   updateSavedPrompt,
@@ -184,6 +185,9 @@ export default function AdvancedGenerationControls({
 
   // Input concept generation state
   const [isGeneratingConcept, setIsGeneratingConcept] = useState(false);
+
+  // Lyrics topic generation state
+  const [isGeneratingLyricsTopic, setIsGeneratingLyricsTopic] = useState(false);
 
   // Prompt variant and model selection state
   const [promptVariants, setPromptVariants] = useState<PromptVariantInfo[]>([]);
@@ -793,7 +797,67 @@ export default function AdvancedGenerationControls({
         {/* Lyrics Topic - hidden when instrumental */}
         <Collapse in={!isInstrumental} animateOpacity>
           <FormControl isRequired>
-            <FormLabel>Lyrics Topic</FormLabel>
+            <HStack justify="space-between" align="center" mb={1}>
+              <FormLabel mb={0}>Lyrics Topic</FormLabel>
+              <Button
+                size="xs"
+                colorScheme="purple"
+                variant="outline"
+                isLoading={isGeneratingLyricsTopic}
+                loadingText="Generating..."
+                onClick={async () => {
+                  setIsGeneratingLyricsTopic(true);
+                  try {
+                    // Parse genres from input if available
+                    const genreList = genreInput
+                      .split(',')
+                      .map(g => g.trim())
+                      .filter(g => g.length > 0);
+                    
+                    // Use the current song prompt as style context if available
+                    const stylePromptContext = songPrompt.trim() || undefined;
+                    
+                    const result = await generateLyricsTopic({
+                      genres: genreList,
+                      style_prompt: stylePromptContext,
+                    });
+                    
+                    setLyricsAbout(result.topic);
+                    
+                    // Show which moods influenced the topic
+                    if (result.chosen_moods.length > 0) {
+                      toast({
+                        title: `Mood: ${result.chosen_moods.join(', ')}`,
+                        description: 'Topic generated! Edit as needed.',
+                        status: 'success',
+                        duration: 3000,
+                        isClosable: true,
+                      });
+                    } else {
+                      toast({
+                        title: 'Topic generated',
+                        description: 'Using random mood seed. Edit as needed.',
+                        status: 'success',
+                        duration: 3000,
+                        isClosable: true,
+                      });
+                    }
+                  } catch (error) {
+                    toast({
+                      title: 'Failed to generate topic',
+                      description: error instanceof Error ? error.message : 'Unknown error',
+                      status: 'error',
+                      duration: 5000,
+                      isClosable: true,
+                    });
+                  } finally {
+                    setIsGeneratingLyricsTopic(false);
+                  }
+                }}
+              >
+                ✨ Generate for me
+              </Button>
+            </HStack>
             <Input
               placeholder="What should the lyrics be about?"
               value={lyricsAbout}
