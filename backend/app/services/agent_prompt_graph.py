@@ -412,6 +412,8 @@ class AgentPromptGraph:
     def __init__(self, settings: Settings, llm: Optional[Any] = None):
         self.settings = settings
         self.llm = llm or self._create_llm_client(settings)
+        # Track injected LLM for testing (so _get_or_create_llm can reuse it)
+        self._injected_llm = llm
         # Build single-step graph at init time (two-step uses _generate_parallel_two_step)
         self._graph_single_step = self._build_single_step_graph()
 
@@ -436,6 +438,43 @@ class AgentPromptGraph:
             temperature=settings.llm_temperature,
             timeout=settings.http_timeout,
         )
+
+    @staticmethod
+    def _is_instrumental_request(request: AdvancedGenerateRequest) -> bool:
+        """
+        Detect if a request is for instrumental music (no lyrics).
+
+        Returns True when:
+        - lyrics_about is empty or whitespace-only, OR
+        - lyrics_about contains "instrumental" / "no lyrics" / "no vocals" phrases, OR
+        - tags include "instrumental"
+        """
+        lyrics_about = (request.lyrics_about or "").strip().lower()
+
+        # Empty lyrics_about → instrumental
+        if not lyrics_about:
+            return True
+
+        # Keyword detection in lyrics_about
+        instrumental_phrases = [
+            "instrumental",
+            "no lyrics",
+            "no vocal",
+            "no vocals",
+            "without lyrics",
+            "without vocals",
+        ]
+        for phrase in instrumental_phrases:
+            if phrase in lyrics_about:
+                return True
+
+        # Check tags for "instrumental"
+        tags = request.tags or []
+        for tag in tags:
+            if tag.strip().lower() == "instrumental":
+                return True
+
+        return False
 
     def _build_single_step_graph(self):
         """
@@ -553,6 +592,11 @@ class AgentPromptGraph:
 
     def _get_or_create_llm(self, model: str):
         """Get or create an LLM client for the specified model."""
+        # If a stub LLM was injected (for testing), always return it
+        # This allows FakeLLM to be used for all model calls in tests
+        if hasattr(self, "_injected_llm") and self._injected_llm:
+            return self._injected_llm
+
         # Cache LLM clients by model name
         if not hasattr(self, "_llm_cache"):
             self._llm_cache = {}
@@ -597,32 +641,103 @@ class AgentPromptGraph:
           └── Lyrics Branch: [infer_profile] → generate_lyrics → validate → [repair loop]
         → merge results
 
+        For instrumental requests, only the Style Branch runs (no lyrics/profile inference).
+
         This achieves ~2x latency improvement over sequential execution.
         """
+        # Check if this is an instrumental request (skip lyrics branch entirely)
+        is_instrumental = self._is_instrumental_request(request)
+
         logger.info(
-            "Starting parallel two-step generation (style=%s, lyrics=%s)",
+            "Starting parallel two-step generation (style=%s, lyrics=%s, instrumental=%s)",
             ctx.style_model,
             ctx.lyrics_model,
+            is_instrumental,
         )
 
         # Create tracer for this generation (show primary style model in summary)
-        # Include fast models used: profile inference and/or genre disambiguation
+        # Include fast models used: profile inference, genre disambiguation, or title gen
         fast_models = []
-        if ctx.uses_lyric_profile:
+        if ctx.uses_lyric_profile and not is_instrumental:
             fast_models.append(self.settings.profile_inference_model)
+        if is_instrumental:
+            # Instrumental uses cheap/fast model for title generation
+            fast_models.append(self.settings.title_generation_model)
         if ctx.genre_disambiguation_prompt:
             fast_models.append(self.settings.genre_disambiguation_model)
         fast_model_str = ", ".join(fast_models) if fast_models else None
 
         tracer = DebugTracer(
             variant=ctx.variant_id,
-            model=f"{ctx.style_model} / {ctx.lyrics_model}",
+            model=f"{ctx.style_model}"
+            + ("" if is_instrumental else f" / {ctx.lyrics_model}"),
             fast_model=fast_model_str,
             architecture="two_step",
         )
 
         # Build context pack first (shared by both branches)
         context_pack = self._build_context_pack(request)
+
+        # =========================================================================
+        # INSTRUMENTAL PATH: Style + title in parallel (skip lyrics branch)
+        # =========================================================================
+        if is_instrumental:
+            logger.info("Instrumental mode: running style + title in parallel")
+
+            # Record a span indicating lyrics was skipped
+            with tracer.span("lyrics.skipped", "branch") as span:
+                span.set_meta("reason", "instrumental_request")
+                span.set_meta("lyrics_about", request.lyrics_about or "")
+
+            # Run style and title generation in parallel
+            style_task = self._run_style_branch(context_pack, tracer, ctx)
+            title_task = self._generate_instrumental_title(request.user_prompt, tracer)
+
+            style_result, concept_title = await asyncio.gather(
+                style_task, title_task, return_exceptions=True
+            )
+
+            # Handle style branch failure
+            if isinstance(style_result, Exception):
+                logger.error("Style branch failed: %s", style_result)
+                tracer.set_error(str(style_result))
+                result = self._create_error_result(
+                    "Style generation failed", str(style_result)
+                )
+                result["debug_info"] = tracer.to_dict()
+                return result
+
+            # Handle title generation failure (use fallback)
+            if isinstance(concept_title, Exception):
+                logger.warning("Title generation failed: %s", concept_title)
+                concept_title = self._derive_title(request.user_prompt, "")
+
+            suno_prompt = style_result["suno_prompt"]
+
+            # Generate unique ID
+            generation_id = hashlib.md5(
+                f"{concept_title}{suno_prompt}{time.time()}".encode()
+            ).hexdigest()[:12]
+
+            logger.info(
+                "Instrumental two-step complete in %dms",
+                tracer._elapsed_ms(),
+            )
+
+            return {
+                "concept_title": concept_title,
+                "lyrics": "",  # No lyrics for instrumental
+                "suno_prompt": suno_prompt,
+                "exclude": style_result["exclude"],
+                "weirdness": style_result["weirdness"],
+                "style_influence": style_result["style_influence"],
+                "generation_id": generation_id,
+                "debug_info": tracer.to_dict(),
+            }
+
+        # =========================================================================
+        # STANDARD PATH: Parallel style + lyrics
+        # =========================================================================
         lyric_controls_obj = getattr(request, "lyric_controls", None)
         # For two-step: only extract explicit user overrides (not defaults)
         # so LLM-inferred profile isn't overwritten by hardcoded defaults
@@ -2608,6 +2723,72 @@ Please fix the issues and regenerate the complete output with all 6 sections.
         words = re.findall(r"[A-Za-z0-9']+", source)
         title = " ".join(words[:4]).title() if words else "Untitled"
         return self._trim_text(title, 50)
+
+    async def _generate_instrumental_title(
+        self, user_prompt: str, tracer: "DebugTracer"
+    ) -> str:
+        """
+        Generate a creative title for an instrumental track using the fast LLM.
+
+        The title should evoke the mood/atmosphere of the music without being
+        generic like "Epic Orchestral Soundtrack".
+
+        Note: Only uses user_prompt (not suno_prompt) so it can run in parallel
+        with style generation.
+        """
+        title_prompt = f"""Generate a creative, evocative title for an instrumental music track.
+
+The music is described as: {user_prompt}
+
+Requirements:
+- Title should be 1-5 words
+- Evoke mood, imagery, or atmosphere
+- Sound like a real instrumental track title (not a description)
+- Be creative and distinctive
+- NO quotation marks in the output
+
+Good examples: "Midnight in Kyoto", "The Last Horizon", "Velvet Thunder", "Drift", "Through Glass Canyons"
+Bad examples: "Epic Orchestral Music", "Ambient Electronic Track", "Jazz Song"
+
+Output ONLY the title, nothing else."""
+
+        title_model = self.settings.title_generation_model
+        system_content = "You generate creative, evocative titles for instrumental music tracks. Output ONLY the title, nothing else."
+
+        with tracer.span("title.generate", "llm_call", model=title_model) as span:
+            # Add input to debug trace
+            span.set_artifact("system_prompt", system_content)
+            span.set_artifact("user_message", title_prompt)
+            span.set_meta("model", title_model)
+
+            try:
+                llm = self._get_or_create_llm(title_model)
+                messages = [
+                    {"role": "system", "content": system_content},
+                    {"role": "user", "content": title_prompt},
+                ]
+                response = await llm.ainvoke(messages)
+                raw = (
+                    response.content if hasattr(response, "content") else str(response)
+                )
+
+                # Add raw response to debug trace
+                span.set_artifact("raw_response", raw)
+
+                title = raw.strip().strip("\"'")
+                # Clean up and limit length
+                title = self._trim_text(title, 50)
+                span.set_meta("generated_title", title)
+                logger.info("Generated instrumental title: %s", title)
+                return title if title else "Untitled"
+            except Exception as e:
+                logger.warning("Failed to generate instrumental title: %s", e)
+                span.set_meta("error", str(e))
+                span.set_artifact("exception", str(e))
+                # Fallback to simple derivation
+                fallback_title = self._derive_title(user_prompt, "")
+                span.set_meta("fallback_title", fallback_title)
+                return fallback_title
 
     def _create_generation_id(self, song_prompt: str, lyrics_about: str) -> str:
         content = f"{song_prompt}_{lyrics_about}_{time.time()}"

@@ -436,3 +436,188 @@ def test_debug_info_includes_repair_config():
     assert result["debug_info"]["repair_enabled"] is True
     assert result["debug_info"]["max_repairs"] == 3
     assert result["debug_info"]["repaired"] is False
+
+
+# ---------------------------------------------------------------------------
+# Instrumental mode tests (two-step variants)
+# ---------------------------------------------------------------------------
+
+
+def _valid_style_output(
+    suno_prompt: str = "Funky pop, crisp drums, bright bass",
+    exclude: str = "cheesy, country",
+    weirdness: int = 50,
+    style_influence: int = 60,
+) -> str:
+    """Valid output for the style branch (two-step variants)."""
+    return (
+        f"SUNO PROMPT\n{suno_prompt}\n\n"
+        f"EXCLUDE\n{exclude}\n\n"
+        f"WEIRDNESS\n{weirdness}\n\n"
+        f"STYLE INFLUENCE\n{style_influence}\n"
+    )
+
+
+def test_instrumental_with_blank_lyrics_about_returns_empty_lyrics():
+    """When lyrics_about is blank, instrumental mode returns empty lyrics."""
+    # Style output + title output (no lyrics branch should run)
+    style_output = _valid_style_output()
+    title_output = "The Last Horizon"
+    llm = FakeLLM([style_output, title_output])
+    settings = Settings(
+        spotify_client_id="test",
+        openai_api_key="test",
+    )
+    builder = AgentPromptGraph(settings, llm=llm)
+    req = AdvancedGenerateRequest(
+        user_prompt="Epic orchestral soundtrack",
+        lyrics_about="",  # Empty = instrumental
+        prompt_variant="v5_hybrid",  # Two-step variant
+    )
+
+    result = asyncio.run(builder.generate(req))
+
+    # Should return empty lyrics
+    assert result["lyrics"] == ""
+    # Should have a creative title from LLM
+    assert result["concept_title"] == "The Last Horizon"
+    # Should have valid style output
+    assert result["suno_prompt"] == "Funky pop, crisp drums, bright bass"
+    assert result["exclude"] == "cheesy, country"
+    assert result["weirdness"] == 50
+    assert result["style_influence"] == 60
+    # 2 LLM calls: style + title (no lyrics)
+    assert llm.calls == 2
+
+
+def test_instrumental_with_keyword_returns_empty_lyrics():
+    """When lyrics_about contains 'instrumental', returns empty lyrics."""
+    style_output = _valid_style_output()
+    title_output = "Drift"
+    llm = FakeLLM([style_output, title_output])
+    settings = Settings(
+        spotify_client_id="test",
+        openai_api_key="test",
+    )
+    builder = AgentPromptGraph(settings, llm=llm)
+    req = AdvancedGenerateRequest(
+        user_prompt="Ambient electronic",
+        lyrics_about="instrumental track",  # Keyword triggers instrumental mode
+        prompt_variant="v5_hybrid",
+    )
+
+    result = asyncio.run(builder.generate(req))
+
+    assert result["lyrics"] == ""
+    assert llm.calls == 2  # Style + title
+
+
+def test_instrumental_with_no_vocals_keyword_returns_empty_lyrics():
+    """When lyrics_about contains 'no vocals', returns empty lyrics."""
+    style_output = _valid_style_output()
+    title_output = "Velvet Thunder"
+    llm = FakeLLM([style_output, title_output])
+    settings = Settings(
+        spotify_client_id="test",
+        openai_api_key="test",
+    )
+    builder = AgentPromptGraph(settings, llm=llm)
+    req = AdvancedGenerateRequest(
+        user_prompt="Jazz fusion",
+        lyrics_about="no vocals, just instruments",
+        prompt_variant="v5_hybrid",
+    )
+
+    result = asyncio.run(builder.generate(req))
+
+    assert result["lyrics"] == ""
+    assert llm.calls == 2  # Style + title
+
+
+def test_instrumental_with_tag_returns_empty_lyrics():
+    """When tags include 'instrumental', returns empty lyrics."""
+    style_output = _valid_style_output()
+    title_output = "Through Glass Canyons"
+    llm = FakeLLM([style_output, title_output])
+    settings = Settings(
+        spotify_client_id="test",
+        openai_api_key="test",
+    )
+    builder = AgentPromptGraph(settings, llm=llm)
+    req = AdvancedGenerateRequest(
+        user_prompt="Post-rock soundscape",
+        lyrics_about="the sunset",  # Non-empty, but tag overrides
+        tags=["instrumental", "post-rock"],
+        prompt_variant="v5_hybrid",
+    )
+
+    result = asyncio.run(builder.generate(req))
+
+    assert result["lyrics"] == ""
+    assert llm.calls == 2  # Style + title
+
+
+def test_instrumental_debug_trace_includes_skipped_span():
+    """Instrumental mode includes a lyrics.skipped span in debug trace."""
+    style_output = _valid_style_output()
+    title_output = "Midnight in Kyoto"
+    llm = FakeLLM([style_output, title_output])
+    settings = Settings(
+        spotify_client_id="test",
+        openai_api_key="test",
+    )
+    builder = AgentPromptGraph(settings, llm=llm)
+    req = AdvancedGenerateRequest(
+        user_prompt="Cinematic score",
+        lyrics_about="",
+        prompt_variant="v5_hybrid",
+    )
+
+    result = asyncio.run(builder.generate(req))
+
+    # Check debug trace has lyrics.skipped span
+    debug_info = result.get("debug_info", {})
+    spans = debug_info.get("spans", [])
+    skipped_spans = [s for s in spans if s.get("name") == "lyrics.skipped"]
+    assert len(skipped_spans) == 1
+    assert skipped_spans[0].get("kind") == "branch"
+    assert skipped_spans[0].get("meta", {}).get("reason") == "instrumental_request"
+
+
+def test_is_instrumental_request_helper():
+    """Test the _is_instrumental_request helper directly."""
+    # Test blank lyrics_about
+    req1 = AdvancedGenerateRequest(user_prompt="test", lyrics_about="")
+    assert AgentPromptGraph._is_instrumental_request(req1) is True
+
+    # Test whitespace-only
+    req2 = AdvancedGenerateRequest(user_prompt="test", lyrics_about="   ")
+    assert AgentPromptGraph._is_instrumental_request(req2) is True
+
+    # Test "instrumental" keyword
+    req3 = AdvancedGenerateRequest(user_prompt="test", lyrics_about="an instrumental piece")
+    assert AgentPromptGraph._is_instrumental_request(req3) is True
+
+    # Test "no vocals" keyword
+    req4 = AdvancedGenerateRequest(user_prompt="test", lyrics_about="no vocals needed")
+    assert AgentPromptGraph._is_instrumental_request(req4) is True
+
+    # Test "no lyrics" keyword
+    req5 = AdvancedGenerateRequest(user_prompt="test", lyrics_about="no lyrics please")
+    assert AgentPromptGraph._is_instrumental_request(req5) is True
+
+    # Test instrumental tag
+    req6 = AdvancedGenerateRequest(
+        user_prompt="test", lyrics_about="the sunset", tags=["instrumental"]
+    )
+    assert AgentPromptGraph._is_instrumental_request(req6) is True
+
+    # Test non-instrumental request
+    req7 = AdvancedGenerateRequest(user_prompt="test", lyrics_about="love and heartbreak")
+    assert AgentPromptGraph._is_instrumental_request(req7) is False
+
+    # Test non-instrumental with tags
+    req8 = AdvancedGenerateRequest(
+        user_prompt="test", lyrics_about="summer vibes", tags=["pop", "summer"]
+    )
+    assert AgentPromptGraph._is_instrumental_request(req8) is False

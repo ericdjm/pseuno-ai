@@ -21,6 +21,7 @@ import {
   MenuList,
   MenuItem,
   Portal,
+  Switch,
 } from '@chakra-ui/react';
 import { ChevronDownIcon } from '@chakra-ui/icons';
 import { useState, useEffect } from 'react';
@@ -51,6 +52,18 @@ import {
 
 type StyleMode = 'songStylePrompt' | 'savedSunoPrompt';
 type LyricsMode = 'lyricsTopic' | 'lyricsEditable';
+
+// Two-step variants that support instrumental mode (can skip lyrics branch)
+const TWO_STEP_VARIANTS: PromptVariant[] = [
+  'v3_two_step',
+  'v4_lyric_profile',
+  'v5_hybrid',
+  'v6_genre_disambiguation',
+  'v7_genre_term_disambiguation',
+  'v8_channel_split',
+  'v9_comprehensive_exclude',
+  'v10_suno_friendly',
+];
 
 interface AdvancedGenerationControlsProps {
   onGenerate: (result: any) => void;
@@ -97,6 +110,7 @@ export default function AdvancedGenerationControls({
   const [lyricsEditable, setLyricsEditable] = useState('');
   const [tagsInput, setTagsInput] = useState('');
   const [lyricsMode, setLyricsMode] = useState<LyricsMode>('lyricsTopic');
+  const [isInstrumental, setIsInstrumental] = useState(false);
 
   // Input concept generation state
   const [isGeneratingConcept, setIsGeneratingConcept] = useState(false);
@@ -152,6 +166,24 @@ export default function AdvancedGenerationControls({
     fetchModels();
   }, []);
 
+  // Filter variants based on instrumental mode (hide v1/v2 when instrumental is on)
+  const availableVariants = isInstrumental
+    ? promptVariants.filter((v) => TWO_STEP_VARIANTS.includes(v.id as PromptVariant))
+    : promptVariants;
+
+  // Handle instrumental toggle - switch to two-step variant if needed
+  const handleInstrumentalToggle = (checked: boolean) => {
+    setIsInstrumental(checked);
+    if (checked) {
+      // Reset to lyricsTopic mode so we don't accidentally hit the lyricsEditable code path
+      setLyricsMode('lyricsTopic');
+      // If enabling instrumental with a single-step variant selected, switch to v5_hybrid
+      if (selectedVariant && !TWO_STEP_VARIANTS.includes(selectedVariant as PromptVariant)) {
+        setSelectedVariant('v5_hybrid');
+      }
+    }
+  };
+
   const parseList = (value: string) =>
     value
       .split(',')
@@ -180,10 +212,11 @@ export default function AdvancedGenerationControls({
       return;
     }
 
-    if (lyricsMode === 'lyricsTopic' && !lyricsAbout.trim()) {
+    // Skip lyrics validation if instrumental mode is enabled
+    if (lyricsMode === 'lyricsTopic' && !lyricsAbout.trim() && !isInstrumental) {
       toast({
         title: 'Missing input',
-        description: 'Please fill the lyrics topic',
+        description: 'Please fill the lyrics topic or enable Instrumental mode',
         status: 'error',
         duration: 3000,
       });
@@ -197,30 +230,52 @@ export default function AdvancedGenerationControls({
         const sunoPrompt = selectedSavedPrompt!.suno_prompt.slice(0, MAX_STYLE_PROMPT_LEN);
 
         if (lyricsMode === 'lyricsTopic') {
-          // Generate lyrics using the saved prompt as style context
-          const lyricsResult = await generateLyricsOnly({
-            suno_prompt: sunoPrompt,
-            lyrics_about: lyricsAbout.trim(),
-          });
+          if (isInstrumental) {
+            // Instrumental mode: skip lyrics generation, return empty lyrics
+            const result = {
+              generation_id: `reuse-${Date.now()}`,
+              concept_title: selectedSavedPrompt!.title || 'Instrumental',
+              suno_prompt: sunoPrompt,
+              lyrics: '',
+              exclude: selectedSavedPrompt!.exclude,
+              weirdness: selectedSavedPrompt!.weirdness,
+              style_influence: selectedSavedPrompt!.style_influence,
+            };
 
-          // Build a result object that matches AdvancedGenerateResponse shape
-          const result = {
-            generation_id: `reuse-${Date.now()}`,
-            concept_title: lyricsResult.song_title || selectedSavedPrompt!.title || 'Reused Prompt',
-            suno_prompt: sunoPrompt,
-            lyrics: lyricsResult.lyrics,
-            exclude: selectedSavedPrompt!.exclude,
-            weirdness: selectedSavedPrompt!.weirdness,
-            style_influence: selectedSavedPrompt!.style_influence,
-          };
+            onGenerate(result);
 
-          onGenerate(result);
+            toast({
+              title: 'Instrumental prompt ready!',
+              description: 'No lyrics generated for instrumental mode.',
+              status: 'success',
+              duration: 3000,
+            });
+          } else {
+            // Generate lyrics using the saved prompt as style context
+            const lyricsResult = await generateLyricsOnly({
+              suno_prompt: sunoPrompt,
+              lyrics_about: lyricsAbout.trim(),
+            });
 
-          toast({
-            title: 'Lyrics generated!',
-            status: 'success',
-            duration: 3000,
-          });
+            // Build a result object that matches AdvancedGenerateResponse shape
+            const result = {
+              generation_id: `reuse-${Date.now()}`,
+              concept_title: lyricsResult.song_title || selectedSavedPrompt!.title || 'Reused Prompt',
+              suno_prompt: sunoPrompt,
+              lyrics: lyricsResult.lyrics,
+              exclude: selectedSavedPrompt!.exclude,
+              weirdness: selectedSavedPrompt!.weirdness,
+              style_influence: selectedSavedPrompt!.style_influence,
+            };
+
+            onGenerate(result);
+
+            toast({
+              title: 'Lyrics generated!',
+              status: 'success',
+              duration: 3000,
+            });
+          }
         } else {
           // Lyrics editable mode - just copy the package
           const packageText = [
@@ -278,18 +333,12 @@ export default function AdvancedGenerationControls({
 
         // Check if using a two-step variant
         const isTwoStep =
-          selectedVariant &&
-          [
-            'v3_two_step',
-            'v4_lyric_profile',
-            'v5_hybrid',
-            'v6_genre_disambiguation',
-            'v7_genre_term_disambiguation',
-          ].includes(selectedVariant);
+          selectedVariant && TWO_STEP_VARIANTS.includes(selectedVariant as PromptVariant);
         
         const request: AdvancedGenerateRequest = {
           user_prompt: songPrompt.trim(),
-          lyrics_about: lyricsAbout.trim(),
+          // Send empty lyrics_about when instrumental mode is enabled
+          lyrics_about: isInstrumental ? '' : lyricsAbout.trim(),
           selected_artists: artists.length > 0 ? artists : undefined,
           tags: tags.length > 0 ? tags : undefined,
           prompt_variant: selectedVariant || undefined,
@@ -340,11 +389,11 @@ export default function AdvancedGenerationControls({
   const getButtonLabel = () => {
     if (styleMode === 'savedSunoPrompt') {
       if (lyricsMode === 'lyricsTopic') {
-        return 'Generate Lyrics';
+        return isInstrumental ? 'Use Prompt (Instrumental)' : 'Generate Lyrics';
       }
       return 'Copy Package';
     }
-    return 'Generate Song';
+    return isInstrumental ? 'Generate Instrumental' : 'Generate Song';
   };
 
   return (
@@ -612,31 +661,52 @@ export default function AdvancedGenerationControls({
           </FormControl>
         </Collapse>
 
-        {/* Lyrics Mode Toggle */}
-        <FormControl>
-          <FormLabel>Lyrics Input</FormLabel>
-          <ButtonGroup size="sm" isAttached variant="outline" width="100%">
-            <Button
-              flex={1}
-              colorScheme={lyricsMode === 'lyricsTopic' ? 'green' : 'gray'}
-              variant={lyricsMode === 'lyricsTopic' ? 'solid' : 'outline'}
-              onClick={() => setLyricsMode('lyricsTopic')}
-            >
-              Lyrics Topic
-            </Button>
-            <Button
-              flex={1}
-              colorScheme={lyricsMode === 'lyricsEditable' ? 'green' : 'gray'}
-              variant={lyricsMode === 'lyricsEditable' ? 'solid' : 'outline'}
-              onClick={() => setLyricsMode('lyricsEditable')}
-            >
-              Custom Lyrics
-            </Button>
-          </ButtonGroup>
+        {/* Instrumental Toggle */}
+        <FormControl display="flex" alignItems="center">
+          <Switch
+            id="instrumental-toggle"
+            isChecked={isInstrumental}
+            onChange={(e) => handleInstrumentalToggle(e.target.checked)}
+            colorScheme="purple"
+            mr={3}
+          />
+          <FormLabel htmlFor="instrumental-toggle" mb="0" cursor="pointer">
+            Instrumental (no lyrics)
+          </FormLabel>
+          {isInstrumental && (
+            <Badge colorScheme="purple" ml={2}>
+              Lyrics skipped
+            </Badge>
+          )}
         </FormControl>
 
-        {/* Lyrics Topic */}
-        <Collapse in={lyricsMode === 'lyricsTopic'} animateOpacity>
+        {/* Lyrics Mode Toggle - hidden when instrumental */}
+        <Collapse in={!isInstrumental} animateOpacity>
+          <FormControl>
+            <FormLabel>Lyrics Input</FormLabel>
+            <ButtonGroup size="sm" isAttached variant="outline" width="100%">
+              <Button
+                flex={1}
+                colorScheme={lyricsMode === 'lyricsTopic' ? 'green' : 'gray'}
+                variant={lyricsMode === 'lyricsTopic' ? 'solid' : 'outline'}
+                onClick={() => setLyricsMode('lyricsTopic')}
+              >
+                Lyrics Topic
+              </Button>
+              <Button
+                flex={1}
+                colorScheme={lyricsMode === 'lyricsEditable' ? 'green' : 'gray'}
+                variant={lyricsMode === 'lyricsEditable' ? 'solid' : 'outline'}
+                onClick={() => setLyricsMode('lyricsEditable')}
+              >
+                Custom Lyrics
+              </Button>
+            </ButtonGroup>
+          </FormControl>
+        </Collapse>
+
+        {/* Lyrics Topic - hidden when instrumental */}
+        <Collapse in={lyricsMode === 'lyricsTopic' && !isInstrumental} animateOpacity>
           <FormControl isRequired>
             <FormLabel>Lyrics Topic</FormLabel>
             <Input
@@ -661,8 +731,8 @@ export default function AdvancedGenerationControls({
           </FormControl>
         </Collapse>
 
-        {/* Custom Lyrics */}
-        <Collapse in={lyricsMode === 'lyricsEditable'} animateOpacity>
+        {/* Custom Lyrics - hidden when instrumental */}
+        <Collapse in={lyricsMode === 'lyricsEditable' && !isInstrumental} animateOpacity>
           <FormControl>
             <FormLabel>Custom Lyrics</FormLabel>
             <Textarea
@@ -701,8 +771,8 @@ export default function AdvancedGenerationControls({
           </FormControl>
         </Collapse>
 
-        {/* Lyric Style Controls - collapsible */}
-        <Collapse in={styleMode === 'songStylePrompt'} animateOpacity>
+        {/* Lyric Style Controls - collapsible, hidden when instrumental */}
+        <Collapse in={styleMode === 'songStylePrompt' && !isInstrumental} animateOpacity>
           <Box>
             <Button
               size="sm"
@@ -887,7 +957,7 @@ export default function AdvancedGenerationControls({
         </Collapse>
 
         {/* Prompt Variant Selector - only show for Song Style Prompt mode */}
-        <Collapse in={styleMode === 'songStylePrompt' && promptVariants.length > 1} animateOpacity>
+        <Collapse in={styleMode === 'songStylePrompt' && availableVariants.length > 1} animateOpacity>
           <FormControl>
             <FormLabel>
               <HStack spacing={2}>
@@ -940,7 +1010,7 @@ export default function AdvancedGenerationControls({
               </MenuButton>
               <Portal>
                 <MenuList bg="gray.800" borderColor="gray.600" zIndex={1500}>
-                  {promptVariants.map((variant: PromptVariantInfo) => {
+                  {availableVariants.map((variant: PromptVariantInfo) => {
                     const formatBreakdown = () => {
                       const b = variant.prompt_lengths_breakdown;
                       if (!b) return `${(variant.prompt_length / 1000).toFixed(1)}k`;
@@ -1007,13 +1077,7 @@ export default function AdvancedGenerationControls({
           <Collapse
             in={
               !selectedVariant ||
-              ![
-                'v3_two_step',
-                'v4_lyric_profile',
-                'v5_hybrid',
-                'v6_genre_disambiguation',
-                'v7_genre_term_disambiguation',
-              ].includes(selectedVariant as string)
+              !TWO_STEP_VARIANTS.includes(selectedVariant as PromptVariant)
             }
             animateOpacity
           >
@@ -1051,13 +1115,7 @@ export default function AdvancedGenerationControls({
           <Collapse
             in={
               Boolean(selectedVariant) &&
-              [
-                'v3_two_step',
-                'v4_lyric_profile',
-                'v5_hybrid',
-                'v6_genre_disambiguation',
-                'v7_genre_term_disambiguation',
-              ].includes(selectedVariant as string)
+              TWO_STEP_VARIANTS.includes(selectedVariant as PromptVariant)
             }
             animateOpacity
           >

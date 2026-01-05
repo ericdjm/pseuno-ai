@@ -129,6 +129,36 @@ async def generate_advanced(
     return AdvancedGenerateResponse(**result)
 
 
+def _is_instrumental_lyrics_request(lyrics_about: str) -> bool:
+    """
+    Check if a lyrics-only request is for instrumental (should skip lyrics generation).
+
+    Returns True when:
+    - lyrics_about is empty or whitespace-only, OR
+    - lyrics_about contains "instrumental" / "no lyrics" / "no vocals" phrases
+    """
+    text = (lyrics_about or "").strip().lower()
+
+    # Empty → instrumental
+    if not text:
+        return True
+
+    # Keyword detection
+    instrumental_phrases = [
+        "instrumental",
+        "no lyrics",
+        "no vocal",
+        "no vocals",
+        "without lyrics",
+        "without vocals",
+    ]
+    for phrase in instrumental_phrases:
+        if phrase in text:
+            return True
+
+    return False
+
+
 @router.post("/lyrics-only", response_model=LyricsOnlyResponse)
 async def generate_lyrics_only(
     body: LyricsOnlyRequest,
@@ -137,7 +167,14 @@ async def generate_lyrics_only(
     """
     Generate new lyrics using a saved Suno prompt as style context.
     This is a simpler flow for reusing saved prompts with new lyric topics.
+
+    For instrumental requests (blank/keyword lyrics_about), returns empty lyrics
+    without making any LLM calls.
     """
+    # Short-circuit for instrumental requests
+    if _is_instrumental_lyrics_request(body.lyrics_about):
+        return LyricsOnlyResponse(song_title="Instrumental", lyrics="")
+
     # Build context for lyrics-only generation
     context_text = f"""BEGIN_CONTEXT
 suno_prompt: {body.suno_prompt}

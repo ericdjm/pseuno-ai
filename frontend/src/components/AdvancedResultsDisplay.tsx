@@ -253,19 +253,28 @@ export default function AdvancedResultsDisplay({
       {/* Lyrics */}
       <Box>
         <HStack justify="space-between" mb={2}>
-          <Text fontWeight="bold">Lyrics</Text>
+          <HStack spacing={2}>
+            <Text fontWeight="bold">Lyrics</Text>
+            {lyricsLength === 0 && (
+              <Badge colorScheme="purple" fontSize="xs">
+                Instrumental
+              </Badge>
+            )}
+          </HStack>
           <HStack>
             <Text fontSize="sm" color="gray.500">
               {lyricsLength} chars
             </Text>
-            <Button
-              size="sm"
-              leftIcon={<CopyIcon />}
-              onClick={() => copyToClipboard(result.lyrics, 'Lyrics')}
-              colorScheme="green"
-            >
-              Copy
-            </Button>
+            {lyricsLength > 0 && (
+              <Button
+                size="sm"
+                leftIcon={<CopyIcon />}
+                onClick={() => copyToClipboard(result.lyrics, 'Lyrics')}
+                colorScheme="green"
+              >
+                Copy
+              </Button>
+            )}
           </HStack>
         </HStack>
         <Box
@@ -276,7 +285,11 @@ export default function AdvancedResultsDisplay({
           fontFamily="monospace"
           fontSize="sm"
         >
-          {result.lyrics}
+          {lyricsLength > 0 ? result.lyrics : (
+            <Text color="gray.500" fontStyle="italic">
+              No lyrics generated — instrumental mode
+            </Text>
+          )}
         </Box>
       </Box>
 
