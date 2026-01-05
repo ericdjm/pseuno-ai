@@ -34,7 +34,9 @@ import {
   AdvancedGenerateResponse, 
   updateSavedPrompt, 
   refineLyrics, 
-  LyricsRefinementRequest 
+  LyricsRefinementRequest,
+  refineInputConcept,
+  RefinementRequest,
 } from '../api';
 import DebugTraceViewer from './debug/DebugTraceViewer';
 
@@ -57,11 +59,18 @@ export default function AdvancedResultsDisplay({
   const [lyricsChangeRequest, setLyricsChangeRequest] = useState('');
   const [isRefiningLyrics, setIsRefiningLyrics] = useState(false);
 
+  // Prompt refinement state
+  const { isOpen: isPromptRefineOpen, onOpen: onPromptRefineOpen, onClose: onPromptRefineClose } = useDisclosure();
+  const [currentPrompt, setCurrentPrompt] = useState(result.suno_prompt);
+  const [promptChangeRequest, setPromptChangeRequest] = useState('');
+  const [isRefiningPrompt, setIsRefiningPrompt] = useState(false);
+
   // Sync isFavorite state when result changes (new generation)
   useEffect(() => {
     setIsFavorite(result.is_favorite);
     setCurrentLyrics(result.lyrics);
-  }, [result.prompt_id, result.is_favorite, result.lyrics]);
+    setCurrentPrompt(result.suno_prompt);
+  }, [result.prompt_id, result.is_favorite, result.lyrics, result.suno_prompt]);
 
   const handleRefineLyrics = async () => {
     if (!lyricsChangeRequest.trim()) {
@@ -102,6 +111,48 @@ export default function AdvancedResultsDisplay({
       });
     } finally {
       setIsRefiningLyrics(false);
+    }
+  };
+
+  const handleRefinePrompt = async () => {
+    if (!promptChangeRequest.trim()) {
+      toast({
+        title: 'Please describe the changes you want',
+        status: 'warning',
+        duration: 2000,
+      });
+      return;
+    }
+
+    setIsRefiningPrompt(true);
+    try {
+      const payload: RefinementRequest = {
+        current_prompt: currentPrompt,
+        change_request: promptChangeRequest,
+      };
+
+      const response = await refineInputConcept(payload);
+      
+      setCurrentPrompt(response.refined_prompt);
+      setPromptChangeRequest('');
+      onPromptRefineClose();
+
+      toast({
+        title: 'Prompt refined successfully',
+        description: response.changes_made || 'Applied your requested changes',
+        status: 'success',
+        duration: 3000,
+      });
+    } catch (err) {
+      console.error('Error refining prompt:', err);
+      toast({
+        title: 'Failed to refine prompt',
+        description: err instanceof Error ? err.message : 'Unknown error',
+        status: 'error',
+        duration: 4000,
+      });
+    } finally {
+      setIsRefiningPrompt(false);
     }
   };
 
@@ -148,12 +199,12 @@ export default function AdvancedResultsDisplay({
     }
   };
 
-  const promptLength = result.suno_prompt.length;
+  const promptLength = currentPrompt.length;
   const lyricsLength = result.lyrics.length;
 
   // Build the Suno create URL with the style prompt pre-filled
-  const sunoCreateUrl = result.suno_prompt
-    ? `https://suno.com/create?style=${encodeURIComponent(result.suno_prompt)}`
+  const sunoCreateUrl = currentPrompt
+    ? `https://suno.com/create?style=${encodeURIComponent(currentPrompt)}`
     : null;
 
   return (
@@ -210,8 +261,17 @@ export default function AdvancedResultsDisplay({
             </Text>
             <Button
               size="sm"
+              leftIcon={<EditIcon />}
+              onClick={onPromptRefineOpen}
+              colorScheme="purple"
+              variant="outline"
+            >
+              Refine
+            </Button>
+            <Button
+              size="sm"
               leftIcon={<CopyIcon />}
-              onClick={() => copyToClipboard(result.suno_prompt, 'Prompt')}
+              onClick={() => copyToClipboard(currentPrompt, 'Prompt')}
               colorScheme="green"
             >
               Copy
@@ -226,7 +286,7 @@ export default function AdvancedResultsDisplay({
           fontFamily="monospace"
           fontSize="sm"
         >
-          {result.suno_prompt}
+          {currentPrompt}
         </Box>
         {/* Open in Suno link */}
         {sunoCreateUrl && (
@@ -455,6 +515,64 @@ export default function AdvancedResultsDisplay({
               loadingText="Refining..."
             >
               Refine Lyrics
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* Prompt Refinement Modal */}
+      <Modal isOpen={isPromptRefineOpen} onClose={onPromptRefineClose} size="xl">
+        <ModalOverlay />
+        <ModalContent bg="gray.900">
+          <ModalHeader>Refine Suno Prompt</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <VStack spacing={4} align="stretch">
+              <Box>
+                <Text fontWeight="bold" mb={2}>Current Prompt</Text>
+                <Box
+                  p={3}
+                  bg="gray.800"
+                  borderRadius="md"
+                  whiteSpace="pre-wrap"
+                  fontFamily="monospace"
+                  fontSize="sm"
+                  maxH="200px"
+                  overflowY="auto"
+                >
+                  {currentPrompt}
+                </Box>
+              </Box>
+              <Box>
+                <Text fontWeight="bold" mb={2}>What would you like to change?</Text>
+                <Text fontSize="sm" color="gray.400" mb={2}>
+                  Examples: "make it more energetic", "add synth elements", "remove the drums"
+                </Text>
+                <Textarea
+                  value={promptChangeRequest}
+                  onChange={(e) => setPromptChangeRequest(e.target.value)}
+                  placeholder="Describe the changes you want..."
+                  bg="gray.800"
+                  rows={4}
+                  maxLength={500}
+                />
+                <Text fontSize="xs" color="gray.500" mt={1}>
+                  {promptChangeRequest.length}/500
+                </Text>
+              </Box>
+            </VStack>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="ghost" mr={3} onClick={onPromptRefineClose}>
+              Cancel
+            </Button>
+            <Button
+              colorScheme="purple"
+              onClick={handleRefinePrompt}
+              isLoading={isRefiningPrompt}
+              loadingText="Refining..."
+            >
+              Refine Prompt
             </Button>
           </ModalFooter>
         </ModalContent>
