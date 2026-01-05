@@ -1,14 +1,14 @@
 """
 Input concept generator service.
 
-Generates a 3-sentence Suno concept based on genre influences.
+Generates a short (1-2 sentence) Suno concept based on genre influences.
 This is the "input side" of generation - the resulting concept is later
 passed to the full output generator (AgentPromptGraph) as the prompt.
 
 Design principles:
 - Pure: does not call Spotify or databases directly
 - Modular: receives genres from providers, doesn't know where they came from
-- Simple: v1 uses templates; can be upgraded to LLM-based later
+- Simple: v1 uses templates with variance; can be upgraded to LLM-based later
 """
 
 import random
@@ -141,26 +141,38 @@ GENRE_DESCRIPTORS: dict[str, dict[str, str]] = {
 
 # Fallback descriptors for unknown genres
 DEFAULT_TEXTURES = [
-    "textured production and rich instrumentation",
-    "layered sounds and thoughtful arrangements",
-    "dynamic mixing and atmospheric depth",
+    "rich instrumentation",
+    "layered sounds",
+    "atmospheric depth",
+    "textured production",
 ]
 DEFAULT_VIBES = ["evocative", "immersive", "compelling", "distinctive"]
 DEFAULT_ENERGIES = [
-    "builds with intention throughout",
-    "balances tension and release",
-    "evolves through dynamic shifts",
+    "builds throughout",
+    "shifts dynamically",
+    "carries momentum",
 ]
 
 # Default moods
-DEFAULT_MOODS = ["introspective", "energetic", "dreamy", "intense", "melancholic", "uplifting"]
+DEFAULT_MOODS = [
+    "introspective",
+    "energetic",
+    "dreamy",
+    "intense",
+    "melancholic",
+    "uplifting",
+]
+
+# Synonym pools for variance
+CONNECTORS = ["with", "featuring", "built on", "driven by"]
+BLEND_WORDS = ["blend", "mix", "fusion", "crossover"]
 
 
 class InputConceptGenerator:
     """
-    Generates 3-sentence Suno concepts from genre influences.
+    Generates short Suno concepts from genre influences.
 
-    v1 uses template-based generation; can be upgraded to LLM-based later.
+    v1 uses template-based generation with variance; can be upgraded to LLM-based later.
     """
 
     def __init__(
@@ -177,9 +189,10 @@ class InputConceptGenerator:
         user_id: Optional[str] = None,
     ) -> InputConceptResult:
         """
-        Generate a 3-sentence concept from the given genre list.
+        Generate a short concept from the given genre list.
 
         Randomly selects 1-3 genres from the list (fallback seeds if empty).
+        Uses template variants for natural variance across generations.
         """
         ctx = InfluenceContext(user_id=user_id)
 
@@ -195,7 +208,7 @@ class InputConceptGenerator:
         num_to_pick = min(random.randint(1, 3), len(genre_list))
         chosen_genres = random.sample(genre_list, num_to_pick) if genre_list else []
 
-        # Generate 3-sentence concept
+        # Generate short concept with template variance
         concept, inferred_mood = self._generate_concept(
             chosen_genres=chosen_genres,
             mood_hint=mood,
@@ -215,54 +228,52 @@ class InputConceptGenerator:
         mood_hint: Optional[str],
     ) -> tuple[str, Optional[str]]:
         """
-        Generate a 3-sentence concept string from chosen genres.
+        Generate a 2-3 sentence concept string from chosen genres.
 
         Returns (concept, inferred_mood)
         """
         mood = mood_hint or random.choice(DEFAULT_MOODS)
+        conn = random.choice(CONNECTORS)
 
         if not chosen_genres:
             # Complete fallback - no genres
             texture = random.choice(DEFAULT_TEXTURES)
             vibe = random.choice(DEFAULT_VIBES)
-            energy = random.choice(DEFAULT_ENERGIES)
-            concept = (
-                f"A {mood} track with {texture}. "
-                f"The overall feel is {vibe} and emotionally resonant. "
-                f"The arrangement {energy}."
-            )
-            return concept, mood
+            templates = [
+                f"A track {conn} {texture}. {vibe.capitalize()} and expressive.",
+                f"Something {conn} {texture}. Let it breathe.",
+                f"A song {conn} {texture}. Keep it {vibe}.",
+            ]
+            return random.choice(templates), mood
 
         # Build concept from genre descriptors
         if len(chosen_genres) == 1:
             genre = chosen_genres[0]
             desc = self._get_genre_descriptor(genre)
-            concept = (
-                f"A {mood} {genre} track featuring {desc['texture']}. "
-                f"The vibe is {desc['vibe']}, with attention to sonic detail. "
-                f"The energy {desc['energy']}."
-            )
+            templates = [
+                f"A {genre} track {conn} {desc['texture']}.",
+                f"{genre.capitalize()}. {desc['texture'].capitalize()}.",
+                f"{genre.capitalize()} vibes, {conn} {desc['texture']}.",
+            ]
         elif len(chosen_genres) == 2:
             g1, g2 = chosen_genres
             d1 = self._get_genre_descriptor(g1)
-            d2 = self._get_genre_descriptor(g2)
-            concept = (
-                f"A {mood} blend of {g1} and {g2}, combining {d1['texture']} with {d2['vibe']} sensibilities. "
-                f"The track balances {d1['vibe']} energy against {d2['texture']}. "
-                f"The overall feel {d2['energy']}."
-            )
+            blend = random.choice(BLEND_WORDS)
+            templates = [
+                f"A {blend} of {g1} and {g2}. {d1['texture'].capitalize()}.",
+                f"{g1.capitalize()} meets {g2}, {conn} {d1['texture']}.",
+                f"{g1.capitalize()}/{g2} {blend}. {d1['vibe'].capitalize()}.",
+            ]
         else:  # 3 genres
             g1, g2, g3 = chosen_genres[:3]
             d1 = self._get_genre_descriptor(g1)
-            d2 = self._get_genre_descriptor(g2)
-            d3 = self._get_genre_descriptor(g3)
-            concept = (
-                f"An ambitious fusion of {g1}, {g2}, and {g3}, weaving together {d1['texture']} with {d2['vibe']} undertones. "
-                f"The mood is {mood}, drawing from {d3['texture']} for textural depth. "
-                f"The arrangement {d1['energy']}."
-            )
+            templates = [
+                f"{g1.capitalize()}, {g2}, and {g3}. {d1['texture'].capitalize()}.",
+                f"A take on {g1}, {g2}, {g3}. {d1['texture'].capitalize()}.",
+                f"Crossing {g1} with {g2} and {g3}. {d1['vibe'].capitalize()}.",
+            ]
 
-        return concept, mood
+        return random.choice(templates), mood
 
     def _get_genre_descriptor(self, genre: str) -> dict[str, str]:
         """Get descriptor for a genre, with fallback for unknown genres."""
@@ -298,4 +309,3 @@ async def create_generator_with_providers(
     generator = InputConceptGenerator()
 
     return generator, composite
-
