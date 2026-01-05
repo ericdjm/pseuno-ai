@@ -38,6 +38,19 @@ export interface SpotifyProfileResponse {
   time_range: string;
 }
 
+export interface GenreItem {
+  id: number;
+  name: string;
+}
+
+export interface GenreCatalogResponse {
+  genres: GenreItem[];
+}
+
+export interface UserGenresResponse {
+  genres: string[];
+}
+
 export interface AuthStatus {
   authenticated: boolean;
   user_name?: string;
@@ -404,6 +417,46 @@ export async function getProfile(
     }
   );
   return handleResponse<SpotifyProfileResponse>(response);
+}
+
+/**
+ * Get the genre catalog for the top-genres picker
+ */
+export async function getGenreCatalog(): Promise<GenreCatalogResponse> {
+  const response = await fetch(`${API_BASE}/spotify/genres/catalog`, {
+    credentials: 'include',
+  });
+  return handleResponse<GenreCatalogResponse>(response);
+}
+
+/**
+ * Add a genre to the user's top genres
+ */
+export async function addUserGenre(
+  genreId: number
+): Promise<UserGenresResponse> {
+  const response = await fetch(`${API_BASE}/spotify/genres`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ genre_id: genreId }),
+  });
+  return handleResponse<UserGenresResponse>(response);
+}
+
+/**
+ * Remove a genre from the user's top genres
+ */
+export async function deleteUserGenre(
+  genreId: number
+): Promise<UserGenresResponse> {
+  const response = await fetch(`${API_BASE}/spotify/genres/${genreId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  return handleResponse<UserGenresResponse>(response);
 }
 
 // === Generation Functions ===
