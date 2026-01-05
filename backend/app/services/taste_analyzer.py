@@ -76,6 +76,54 @@ GENRE_MOOD_MAP = {
 }
 
 
+def compute_avg_popularity(top_artists: List[SpotifyArtist]) -> float:
+    """Compute average popularity for the top artists list."""
+    if not top_artists:
+        return 0
+    return sum(artist.popularity for artist in top_artists) / len(top_artists)
+
+
+def derive_mood_tags(genres: List[str], avg_popularity: float) -> List[str]:
+    """Derive mood tags from genres and popularity."""
+    mood_counter = Counter()
+
+    for genre in genres[:7]:  # Top 7 genres
+        genre_lower = genre.lower()
+        # Try exact match first
+        if genre_lower in GENRE_MOOD_MAP:
+            for mood in GENRE_MOOD_MAP[genre_lower]:
+                mood_counter[mood] += 1
+        else:
+            # Try partial match
+            for key, moods in GENRE_MOOD_MAP.items():
+                if key in genre_lower or genre_lower in key:
+                    for mood in moods:
+                        mood_counter[mood] += 1
+                    break
+
+    # Add popularity-based moods
+    if avg_popularity > 70:
+        mood_counter["mainstream"] += 2
+    elif avg_popularity < 40:
+        mood_counter["underground"] += 2
+        mood_counter["indie"] += 1
+
+    mood_tags = [mood for mood, _ in mood_counter.most_common(5)]
+    if not mood_tags:
+        mood_tags = ["eclectic", "diverse"]
+
+    return mood_tags
+
+
+def generate_summary(
+    genres: List[str],
+    moods: List[str],
+    avg_popularity: float,
+) -> str:
+    """Generate a summary sentence about the user's taste."""
+    return _generate_summary(genres, moods, avg_popularity)
+
+
 def build_taste_profile(
     top_artists: List[SpotifyArtist],
     top_tracks: List[SpotifyTrack]
@@ -98,44 +146,15 @@ def build_taste_profile(
     
     # Get ranked genres
     top_genres = [genre for genre, _ in genre_counter.most_common(10)]
-    
-    # Derive mood tags from genres
-    mood_counter = Counter()
-    for genre in top_genres[:7]:  # Top 7 genres
-        genre_lower = genre.lower()
-        # Try exact match first
-        if genre_lower in GENRE_MOOD_MAP:
-            for mood in GENRE_MOOD_MAP[genre_lower]:
-                mood_counter[mood] += 1
-        else:
-            # Try partial match
-            for key, moods in GENRE_MOOD_MAP.items():
-                if key in genre_lower or genre_lower in key:
-                    for mood in moods:
-                        mood_counter[mood] += 1
-                    break
-    
+
     # Calculate average popularity
-    avg_popularity = 0
-    if top_artists:
-        avg_popularity = sum(a.popularity for a in top_artists) / len(top_artists)
-    
-    # Add popularity-based moods
-    if avg_popularity > 70:
-        mood_counter["mainstream"] += 2
-    elif avg_popularity < 40:
-        mood_counter["underground"] += 2
-        mood_counter["indie"] += 1
-    
-    # Get top moods
-    mood_tags = [mood for mood, _ in mood_counter.most_common(5)]
-    
-    # If no moods found, add defaults
-    if not mood_tags:
-        mood_tags = ["eclectic", "diverse"]
-    
+    avg_popularity = compute_avg_popularity(top_artists)
+
+    # Derive mood tags from genres + popularity
+    mood_tags = derive_mood_tags(top_genres, avg_popularity)
+
     # Generate summary sentence
-    summary_sentence = _generate_summary(top_genres, mood_tags, avg_popularity)
+    summary_sentence = generate_summary(top_genres, mood_tags, avg_popularity)
     
     # Banned references (artist names to avoid in prompts)
     banned_references = [artist.name for artist in top_artists[:15]]

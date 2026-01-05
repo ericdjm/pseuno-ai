@@ -281,6 +281,20 @@ function App() {
               loading={profileLoading}
               timeRange={settings.timeRange}
               onTimeRangeChange={(tr) => updateSettings({ timeRange: tr })}
+              onGenresUpdated={(genres) =>
+                setProfile((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        taste_profile: {
+                          ...prev.taste_profile,
+                          top_genres: genres,
+                        },
+                      }
+                    : prev
+                )
+              }
+              onProfileUpdated={(updatedProfile) => setProfile(updatedProfile)}
             />
           )}
 

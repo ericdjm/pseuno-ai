@@ -78,6 +78,9 @@ class User(Base):
     suno_prompts: Mapped[list["SunoPrompt"]] = relationship(
         back_populates="owner", cascade="all, delete-orphan"
     )
+    user_genres: Mapped[list["UserGenre"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class ExternalAccount(Base):
@@ -121,6 +124,44 @@ class ExternalAccount(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="external_accounts")
+
+
+class Genre(Base):
+    __tablename__ = "genres"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    normalized_name: Mapped[str] = mapped_column(
+        String(100), nullable=False, unique=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    user_links: Mapped[list["UserGenre"]] = relationship(
+        back_populates="genre", cascade="all, delete-orphan"
+    )
+
+
+class UserGenre(Base):
+    __tablename__ = "user_genres"
+    __table_args__ = (
+        UniqueConstraint("user_id", "genre_id", name="uq_user_genres_user_genre"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    genre_id: Mapped[int] = mapped_column(
+        ForeignKey("genres.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    user: Mapped[User] = relationship(back_populates="user_genres")
+    genre: Mapped[Genre] = relationship(back_populates="user_links")
 
 
 class SunoPrompt(Base):
@@ -174,4 +215,4 @@ class SunoPrompt(Base):
     owner: Mapped[User] = relationship(back_populates="suno_prompts")
 
 
-__all__ = ["Base", "User", "ExternalAccount", "SunoPrompt"]
+__all__ = ["Base", "User", "ExternalAccount", "Genre", "UserGenre", "SunoPrompt"]
