@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import httpx
 
-from app.routes import auth, spotify, generate_advanced, prompts
+from app.routes import auth, spotify, generate_advanced, generate_input_concept, prompts
 from app.services.agent_prompt_graph import AgentPromptGraph
 from app.services.rate_limiter import create_rate_limiter
 from app.services.session_store import session_store
@@ -111,6 +111,9 @@ app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 app.include_router(spotify.router, prefix="/spotify", tags=["Spotify"])
 app.include_router(
     generate_advanced.router, prefix="/generate", tags=["Advanced Generation"]
+)
+app.include_router(
+    generate_input_concept.router, tags=["Input Concept Generation"]
 )
 app.include_router(prompts.router, prefix="/prompts", tags=["Saved Prompts"])
 

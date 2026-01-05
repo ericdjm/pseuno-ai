@@ -211,6 +211,22 @@ export interface LyricsOnlyResponse {
   lyrics: string;
 }
 
+// === Input Concept Types ===
+
+export interface InputConceptRequest {
+  genres?: string[];
+  artists?: string[];
+  mood?: string;
+}
+
+export interface InputConceptResponse {
+  concept: string;
+  chosen_genres: string[];
+  genres: string[];
+  artists: string[];
+  mood: string | null;
+}
+
 export type TimeRange = 'short_term' | 'medium_term' | 'long_term';
 
 // === Saved Prompts Types ===
@@ -402,6 +418,29 @@ export async function generateLyricsOnly(
     body: JSON.stringify(payload),
   });
   return handleResponse<LyricsOnlyResponse>(response);
+}
+
+/**
+ * Generate a short 2-3 sentence Suno concept from artist influences.
+ * 
+ * This is the "input side" of generation - the returned concept can be
+ * passed to generateAdvanced() as the user_prompt field.
+ * 
+ * v1: No login required. Artists come from request body only.
+ * If artists array is empty, uses internal seed artists.
+ */
+export async function generateInputConcept(
+  payload: InputConceptRequest = {}
+): Promise<InputConceptResponse> {
+  const response = await fetch(`${API_BASE}/generate/input-concept`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  return handleResponse<InputConceptResponse>(response);
 }
 
 // === Saved Prompts Functions ===

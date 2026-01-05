@@ -1,0 +1,104 @@
+"""
+Input concept generation endpoint.
+
+POST /generate/input-concept
+
+Generates a 3-sentence Suno concept from genre influences.
+This is the "input side" of generation - the resulting concept can be
+passed to /generate/advanced as the prompt field.
+
+v1: No authentication required. Genres come from request body only.
+Later: Logged-in users can have genres populated from Spotify/profiles.
+"""
+
+import logging
+
+from fastapi import APIRouter, HTTPException, status
+
+from app.schemas.input_concept import InputConceptRequest, InputConceptResponse
+from app.services.input_concept_generator import (
+    InputConceptGenerator,
+    create_generator_with_providers,
+)
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/generate", tags=["generation"])
+
+
+@router.post(
+    "/input-concept",
+    response_model=InputConceptResponse,
+    summary="Generate a short Suno concept from genre influences",
+    description="""
+Generate a 3-sentence concept describing a musical style/vibe.
+
+The concept is based on:
+- Genre influences (from request body, or fallback seeds if empty)
+- 1-3 genres are randomly selected from the list
+- Optional mood hint
+
+The returned concept can be passed directly to `/generate/advanced`
+as the `user_prompt` field for full Suno prompt generation.
+
+**v1 behavior:**
+- No login required
+- Genres come from request body only
+- If genres array is empty, uses internal seed genres
+- Artists array is passed through for future use (not used in v1)
+
+**Future behavior:**
+- Logged-in users can have genres populated from Spotify
+- Additional providers can merge multiple genre sources
+""",
+)
+async def generate_input_concept(
+    request: InputConceptRequest,
+) -> InputConceptResponse:
+    """Generate a 3-sentence Suno concept from genre influences."""
+
+    try:
+        # Create generator (v1: only uses ManualInputGenreProvider)
+        generator, providers = await create_generator_with_providers(
+            request_genres=request.genres,
+            request_artists=request.artists,
+            user_id=None,  # v1: no auth
+        )
+
+        # Get merged genre list from all providers
+        from app.services.artist_influence import InfluenceContext
+
+        ctx = InfluenceContext(user_id=None)
+        merged_genres = await providers.get_influence_genres(ctx)
+
+        # Generate concept
+        result = await generator.generate(
+            genres=merged_genres,
+            artists=request.artists,
+            mood=request.mood,
+        )
+
+        logger.info(
+            f"Generated input concept: chosen_genres={result.chosen_genres}, "
+            f"genres_count={len(result.genres)}"
+        )
+
+        return InputConceptResponse(
+            concept=result.concept,
+            chosen_genres=result.chosen_genres,
+            genres=result.genres,
+            artists=result.artists,
+            mood=result.mood,
+        )
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.exception("Error generating input concept")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate input concept",
+        )

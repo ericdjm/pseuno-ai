@@ -28,6 +28,7 @@ import type { ChangeEvent } from 'react';
 import {
   generateAdvanced,
   generateLyricsOnly,
+  generateInputConcept,
   getPromptVariants,
   getModels,
   AdvancedGenerateRequest,
@@ -85,13 +86,20 @@ export default function AdvancedGenerationControls({
   const MAX_TAGS_COUNT = 25;
   const MAX_ARTIST_NAME_LEN = 60;
   const MAX_TAG_LEN = 40;
+  const MAX_GENRES_INPUT_LEN = 300;
+  const MAX_GENRE_LEN = 40;
+  const MAX_GENRES_COUNT = 20;
 
   const [artistInput, setArtistInput] = useState('');
+  const [genreInput, setGenreInput] = useState('');
   const [songPrompt, setSongPrompt] = useState('');
   const [lyricsAbout, setLyricsAbout] = useState('');
   const [lyricsEditable, setLyricsEditable] = useState('');
   const [tagsInput, setTagsInput] = useState('');
   const [lyricsMode, setLyricsMode] = useState<LyricsMode>('lyricsTopic');
+
+  // Input concept generation state
+  const [isGeneratingConcept, setIsGeneratingConcept] = useState(false);
 
   // Prompt variant and model selection state
   const [promptVariants, setPromptVariants] = useState<PromptVariantInfo[]>([]);
@@ -342,6 +350,36 @@ export default function AdvancedGenerationControls({
   return (
     <Box>
       <VStack spacing={6} align="stretch">
+        {/* Genre Influence - only show for Song Style Prompt mode */}
+        <Collapse in={styleMode === 'songStylePrompt'} animateOpacity>
+          <FormControl>
+            <FormLabel>Genre Influence (Optional)</FormLabel>
+            <Input
+              placeholder="Comma-separated genres (e.g., indie rock, electronic, trip-hop)"
+              value={genreInput}
+              maxLength={MAX_GENRES_INPUT_LEN}
+              onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                setGenreInput(e.target.value.slice(0, MAX_GENRES_INPUT_LEN))
+              }
+            />
+            {genreInput.trim() ? (
+              <Wrap mt={2}>
+                {parseList(genreInput)
+                  .map((g) => g.slice(0, MAX_GENRE_LEN))
+                  .slice(0, MAX_GENRES_COUNT)
+                  .map((genre) => (
+                    <WrapItem key={genre}>
+                      <Badge colorScheme="purple">{genre}</Badge>
+                    </WrapItem>
+                  ))}
+              </Wrap>
+            ) : null}
+            <Text fontSize="xs" color="gray.500" mt={2}>
+              Leave empty to use random genres. 1-3 will be selected.
+            </Text>
+          </FormControl>
+        </Collapse>
+
         {/* Artist Influence - only show for Song Style Prompt mode */}
         <Collapse in={styleMode === 'songStylePrompt'} animateOpacity>
           <FormControl>
@@ -418,7 +456,70 @@ export default function AdvancedGenerationControls({
         {/* Song Style Prompt (editable) */}
         <Collapse in={styleMode === 'songStylePrompt'} animateOpacity>
           <FormControl isRequired>
-            <FormLabel>Song Style Prompt</FormLabel>
+            <HStack justify="space-between" align="center" mb={1}>
+              <FormLabel mb={0}>Song Style Prompt</FormLabel>
+              <Button
+                size="xs"
+                colorScheme="purple"
+                variant="outline"
+                isLoading={isGeneratingConcept}
+                loadingText="Generating..."
+                onClick={async () => {
+                  setIsGeneratingConcept(true);
+                  try {
+                    // Parse genres from input if available
+                    const genreList = genreInput
+                      .split(',')
+                      .map(g => g.trim())
+                      .filter(g => g.length > 0);
+                    
+                    // Parse artists for future use (passed through)
+                    const artistList = artistInput
+                      .split(',')
+                      .map(a => a.trim())
+                      .filter(a => a.length > 0);
+                    
+                    const result = await generateInputConcept({
+                      genres: genreList,
+                      artists: artistList,
+                    });
+                    
+                    setSongPrompt(result.concept);
+                    
+                    // Show which genres were chosen
+                    if (result.chosen_genres.length > 0) {
+                      toast({
+                        title: `Picked: ${result.chosen_genres.join(', ')}`,
+                        description: 'Concept generated! Edit as needed.',
+                        status: 'success',
+                        duration: 3000,
+                        isClosable: true,
+                      });
+                    } else {
+                      toast({
+                        title: 'Concept generated',
+                        description: 'Using random style seed. Edit as needed.',
+                        status: 'success',
+                        duration: 3000,
+                        isClosable: true,
+                      });
+                    }
+                  } catch (error) {
+                    toast({
+                      title: 'Failed to generate concept',
+                      description: error instanceof Error ? error.message : 'Unknown error',
+                      status: 'error',
+                      duration: 5000,
+                      isClosable: true,
+                    });
+                  } finally {
+                    setIsGeneratingConcept(false);
+                  }
+                }}
+              >
+                ✨ Generate for me
+              </Button>
+            </HStack>
             <Textarea
               placeholder="Describe the style or sound you want"
               value={songPrompt}
