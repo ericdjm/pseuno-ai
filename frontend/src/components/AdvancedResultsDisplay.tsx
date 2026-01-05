@@ -29,8 +29,9 @@ import {
   AccordionButton,
   AccordionPanel,
   AccordionIcon,
+  Link,
 } from '@chakra-ui/react';
-import { CopyIcon, StarIcon } from '@chakra-ui/icons';
+import { CopyIcon, StarIcon, ExternalLinkIcon } from '@chakra-ui/icons';
 import { AdvancedGenerateResponse, createSavedPrompt } from '../api';
 import DebugTraceViewer from './debug/DebugTraceViewer';
 
@@ -93,6 +94,11 @@ export default function AdvancedResultsDisplay({
 
   const promptLength = result.suno_prompt.length;
   const lyricsLength = result.lyrics.length;
+
+  // Build the Suno create URL with the style prompt pre-filled
+  const sunoCreateUrl = result.suno_prompt
+    ? `https://suno.com/create?style=${encodeURIComponent(result.suno_prompt)}`
+    : null;
 
   return (
     <VStack spacing={6} align="stretch">
@@ -213,6 +219,33 @@ export default function AdvancedResultsDisplay({
         >
           {result.suno_prompt}
         </Box>
+        {/* Open in Suno link */}
+        {sunoCreateUrl && (
+          <HStack mt={3} spacing={2}>
+            <Link
+              href={sunoCreateUrl}
+              isExternal
+              color="cyan.400"
+              fontWeight="medium"
+              fontSize="sm"
+              _hover={{ color: 'cyan.300', textDecoration: 'underline' }}
+            >
+              <HStack spacing={1}>
+                <ExternalLinkIcon />
+                <Text>Open in Suno</Text>
+              </HStack>
+            </Link>
+            <Button
+              size="xs"
+              leftIcon={<CopyIcon />}
+              onClick={() => copyToClipboard(sunoCreateUrl, 'Suno link')}
+              colorScheme="cyan"
+              variant="ghost"
+            >
+              Copy link
+            </Button>
+          </HStack>
+        )}
       </Box>
 
       <Divider />
