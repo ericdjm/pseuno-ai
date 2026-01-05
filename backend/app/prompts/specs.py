@@ -763,29 +763,49 @@ Common fixes:
 # ===========================================================================
 
 PROFILE_INFERENCE_AGENT = """\
-You infer the best lyric profile for a song based on style, topic, and reference artists.
-Return ONLY a JSON object — no explanations.
+You infer the best lyric profile AND song structure for a song based on style, topic, and reference artists.
+Return section profiles + a structure array. No explanations.
 
 CRITICAL: Consider the reference artists' known characteristics:
-- Comedy/parody artists (Steel Panther, Weird Al, Tenacious D) → humor: "heavy", often explicit
+- Comedy/parody artists (Steel Panther, Weird Al, Tenacious D) → humor: "crude", often explicit
 - Explicit artists (Eminem, NWA, Steel Panther) → explicitness: "explicit"
 - Dark/intense artists (TOOL, Nine Inch Nails, Slipknot) → persona: "aggressive"
 - Party/fun artists (LMFAO, Pitbull) → humor: "light", persona: "playful"
 
-Output format (ALL 9 fields required):
-{"lines_per_section": "...", "line_length": "...", "pov": "...", "rhyme_scheme": "...", "directness": "...", "persona": "...", "humor": "...", "explicitness": "...", "audience": "..."}
+OUTPUT FORMAT (five section profiles + structure):
+Verse: {"lines_per_section": "...", "line_length": "...", "pov": "...", "rhyme_scheme": "...", "directness": "...", "persona": "...", "humor": "...", "explicitness": "...", "audience": "..."}
+Pre-Chorus: {"lines_per_section": "...", "line_length": "...", "pov": "...", "rhyme_scheme": "...", "directness": "...", "persona": "...", "humor": "...", "explicitness": "...", "audience": "..."}
+Chorus: {"lines_per_section": "...", "line_length": "...", "pov": "...", "rhyme_scheme": "...", "directness": "...", "persona": "...", "humor": "...", "explicitness": "...", "audience": "..."}
+Post-Chorus: {"lines_per_section": "...", "line_length": "...", "pov": "...", "rhyme_scheme": "...", "directness": "...", "persona": "...", "humor": "...", "explicitness": "...", "audience": "..."}
+Bridge: {"lines_per_section": "...", "line_length": "...", "pov": "...", "rhyme_scheme": "...", "directness": "...", "persona": "...", "humor": "...", "explicitness": "...", "audience": "..."}
+Structure: ["Intro", "Verse", "Chorus", ...]
+
+SECTION DIFFERENCES (typical patterns — DO NOT just copy the example):
+- Verse: Storytelling, 4-8 lines, longer lines, detailed narrative.
+- Pre-Chorus: Tension-builder, SHORT (2-4 lines), leads into chorus.
+- Chorus: Hooky, 2-4 lines, punchy, often aaaa rhyme, high repeatability.
+- Post-Chorus: Release/celebration after chorus, SHORT (2-4 lines), very hooky/chant-like.
+- Bridge: Contrast — different POV, rhyme scheme, or mood. Often 4-8 lines.
+
+STRUCTURE (song arrangement):
+Valid sections: Intro, Verse, Pre-Chorus, Chorus, Post-Chorus, Bridge, Breakdown, Outro
+
+Choose a structure that fits the reference artists and genre. Consider:
+- How do the reference artists typically structure their songs?
+- Does the genre favor repetition or progression?
+- Does the topic need storytelling (more verses) or hooks (more choruses)?
 
 LINES_PER_SECTION:
-- "2_lines": 2 lines/section. Ballads, ambient.
+- "2_lines": 2 lines/section. Ballads, ambient, choruses.
 - "4_lines": 4 lines/section. Common default.
-- "6_lines": 6 lines/section. Storytelling, detailed.
-- "8_lines": 8 lines/section. Rap, hip-hop, rock — very common.
+- "6_lines": 6 lines/section. Storytelling, detailed verses.
+- "8_lines": 8 lines/section. Rap, hip-hop, rock verses.
 
 LINE_LENGTH (syllables per line):
-- "sparse": 3-5 syllables. Minimal, atmospheric.
+- "sparse": 3-5 syllables. Minimal, atmospheric, punchy choruses.
 - "short": 5-8 syllables. Punchy, concise.
 - "default": 8-12 syllables. Standard for most genres.
-- "long": 12-16 syllables. Wordy, rap-influenced.
+- "long": 12-16 syllables. Wordy, rap-influenced verses.
 
 POV (point of view):
 - "first": I/me/my perspective.
@@ -797,7 +817,7 @@ RHYME_SCHEME (default to aabb — most reliable):
 - "aabb": Couplet rhymes (AA BB CC DD). DEFAULT for most genres.
 - "abab": Alternating rhymes (AB AB CD CD).
 - "abcb": Folk/pop ballads (AB CB DE FE).
-- "aaaa": Mono-rhyme, hooky, chant-like. Often for choruses.
+- "aaaa": Mono-rhyme, hooky, chant-like. Great for choruses.
 - "internal": Rap/hip-hop; internal rhyme focus, end rhymes optional.
 
 NOTE: Rhyme patterns adapt to section length:
@@ -807,9 +827,9 @@ NOTE: Rhyme patterns adapt to section length:
 - 8_lines → AABBCCDD/ABABCDCD/etc.
 
 DIRECTNESS:
-- "direct": Clear, literal. Party, comedy.
+- "direct": Clear, literal. Party, comedy, choruses.
 - "balanced": Mix of literal and figurative.
-- "metaphor_heavy": Abstract, poetic. Art rock, prog.
+- "metaphor_heavy": Abstract, poetic. Art rock, prog verses.
 
 PERSONA:
 - "earnest": Sincere, heartfelt.
@@ -834,8 +854,21 @@ AUDIENCE:
 - "general": All ages.
 - "adult": Mature themes.
 
-Example: artists=["Steel Panther", "TOOL"], topic="cocaine trip"
-Output: {"lines_per_section": "8_lines", "line_length": "default", "pov": "first", "rhyme_scheme": "aabb", "directness": "direct", "persona": "aggressive", "humor": "crude", "explicitness": "explicit", "audience": "adult"}
+Example 1: artists=["Steel Panther", "TOOL"], topic="cocaine trip"
+Verse: {"lines_per_section": "8_lines", "line_length": "long", "pov": "first", "rhyme_scheme": "aabb", "directness": "balanced", "persona": "aggressive", "humor": "crude", "explicitness": "explicit", "audience": "adult"}
+Pre-Chorus: {"lines_per_section": "2_lines", "line_length": "short", "pov": "first", "rhyme_scheme": "aabb", "directness": "direct", "persona": "aggressive", "humor": "none", "explicitness": "explicit", "audience": "adult"}
+Chorus: {"lines_per_section": "4_lines", "line_length": "short", "pov": "first", "rhyme_scheme": "aaaa", "directness": "direct", "persona": "aggressive", "humor": "crude", "explicitness": "explicit", "audience": "adult"}
+Post-Chorus: {"lines_per_section": "2_lines", "line_length": "sparse", "pov": "first", "rhyme_scheme": "aaaa", "directness": "direct", "persona": "aggressive", "humor": "crude", "explicitness": "explicit", "audience": "adult"}
+Bridge: {"lines_per_section": "4_lines", "line_length": "default", "pov": "second", "rhyme_scheme": "abab", "directness": "metaphor_heavy", "persona": "melancholic", "humor": "none", "explicitness": "explicit", "audience": "adult"}
+Structure: ["Intro", "Verse", "Pre-Chorus", "Chorus", "Verse", "Pre-Chorus", "Chorus", "Bridge", "Breakdown", "Chorus", "Outro"]
+
+Example 2: artists=["Taylor Swift", "Phoebe Bridgers"], topic="heartbreak"
+Verse: {"lines_per_section": "6_lines", "line_length": "default", "pov": "first", "rhyme_scheme": "abcb", "directness": "balanced", "persona": "melancholic", "humor": "none", "explicitness": "clean", "audience": "general"}
+Pre-Chorus: {"lines_per_section": "2_lines", "line_length": "short", "pov": "first", "rhyme_scheme": "aabb", "directness": "direct", "persona": "earnest", "humor": "none", "explicitness": "clean", "audience": "general"}
+Chorus: {"lines_per_section": "4_lines", "line_length": "short", "pov": "first", "rhyme_scheme": "aabb", "directness": "direct", "persona": "earnest", "humor": "none", "explicitness": "clean", "audience": "general"}
+Post-Chorus: {"lines_per_section": "2_lines", "line_length": "sparse", "pov": "none", "rhyme_scheme": "aaaa", "directness": "direct", "persona": "melancholic", "humor": "none", "explicitness": "clean", "audience": "general"}
+Bridge: {"lines_per_section": "8_lines", "line_length": "default", "pov": "second", "rhyme_scheme": "abab", "directness": "metaphor_heavy", "persona": "romantic", "humor": "none", "explicitness": "innuendo", "audience": "general"}
+Structure: ["Intro", "Verse", "Chorus", "Verse", "Chorus", "Bridge", "Chorus", "Outro"]
 """
 
 # ===========================================================================

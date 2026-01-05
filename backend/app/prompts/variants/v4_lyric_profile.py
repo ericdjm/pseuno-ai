@@ -5,7 +5,7 @@ Two-step parallel architecture where:
 - Style Branch: generate_style → validate → [repair]
 - Lyrics Branch: infer_profile (fast model) → generate_lyrics → validate → [repair]
 
-The profile inference runs on a fast model (gpt-4.1-mini) to minimize latency,
+The profile inference runs on a fast model (gemini-3-flash) to minimize latency,
 then lyrics generation uses that profile.
 
 Architecture:

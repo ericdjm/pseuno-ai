@@ -80,8 +80,8 @@ class Settings(BaseSettings):
         description="LLM model for lyrics generation (two-step)",
     )
     profile_inference_model: str = Field(
-        default="gpt-4.1-mini",
-        description="Fast model for lyric profile inference (e.g., gpt-4.1-mini, gpt-4.1-nano)",
+        default="gemini-3-flash-preview",
+        description="Fast model for lyric profile inference",
     )
     genre_disambiguation_model: str = Field(
         default="gemini-3-flash-preview",

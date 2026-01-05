@@ -109,10 +109,11 @@ class _LLMResponse:
 class SplitDecision:
     """
     V8 channel split decision result.
-    
+
     Indicates whether style guidance should be split into VOCAL_REFERENCE vs MUSIC_TARGET,
     and if so, which artist plays which role.
     """
+
     split_active: bool
     music_target_artist: Optional[str] = None
     vocal_reference_artist: Optional[str] = None
@@ -123,14 +124,14 @@ class SplitDecision:
 def _normalize_artist_name_v8(name: str) -> str:
     """
     Normalize an artist name for comparison (V8 channel split).
-    
+
     This is intentionally simple and deterministic:
     - trim whitespace
     - lowercase
     - replace & with 'and'
     - collapse whitespace runs to single space
     - strip surrounding punctuation
-    
+
     Does NOT attempt fuzzy matching.
     """
     if not name:
@@ -919,7 +920,7 @@ class AgentPromptGraph:
     ) -> SplitDecision:
         """
         V8 Step 2.3b: Schema-based split decision using role fields from genre disambiguation.
-        
+
         Returns a SplitDecision with split_active=True only if:
         - exactly one vocal_reference and one music_target are found
         - both have role_confidence >= V8_ROLE_CONFIDENCE_THRESHOLD
@@ -927,37 +928,39 @@ class AgentPromptGraph:
         """
         if not genre_data or not genre_data.get("artists"):
             return SplitDecision(split_active=False, source="none")
-        
+
         artists = genre_data.get("artists", [])
-        
+
         vocal_refs = []
         music_targets = []
-        
+
         for artist in artists:
             role = artist.get("role", "unspecified")
             confidence = artist.get("role_confidence", 0.0)
             name = artist.get("name", "")
-            
+
             # Skip artists with empty names (defensive: matches regex path validation)
             if not name:
                 continue
-            
+
             if role == "vocal_reference" and confidence >= V8_ROLE_CONFIDENCE_THRESHOLD:
                 vocal_refs.append((name, confidence))
             elif role == "music_target" and confidence >= V8_ROLE_CONFIDENCE_THRESHOLD:
                 music_targets.append((name, confidence))
-        
+
         # Must have exactly one of each
         if len(vocal_refs) != 1 or len(music_targets) != 1:
             return SplitDecision(split_active=False, source="none")
-        
+
         vocal_name, vocal_conf = vocal_refs[0]
         music_name, music_conf = music_targets[0]
-        
+
         # Names must differ after normalization
-        if _normalize_artist_name_v8(vocal_name) == _normalize_artist_name_v8(music_name):
+        if _normalize_artist_name_v8(vocal_name) == _normalize_artist_name_v8(
+            music_name
+        ):
             return SplitDecision(split_active=False, source="none")
-        
+
         return SplitDecision(
             split_active=True,
             music_target_artist=music_name,
@@ -966,48 +969,68 @@ class AgentPromptGraph:
             role_confidence=min(vocal_conf, music_conf),
         )
 
-    def _decide_style_split_v8_from_regex(
-        self, style_request: str
-    ) -> SplitDecision:
+    def _decide_style_split_v8_from_regex(self, style_request: str) -> SplitDecision:
         """
         V8 Step 2.3c: Regex fallback for split detection.
-        
+
         Only used if schema-based detection didn't produce a confident split.
         Uses high-confidence patterns only. If ambiguous, returns no split.
         """
         if not V8_REGEX_ENABLED or not style_request:
             return SplitDecision(split_active=False, source="none")
-        
+
         # High-confidence patterns (ordered)
         # Pattern format: (regex, vocal_group_idx, music_group_idx)
         patterns = [
             # "lead singer of X singing/vocals for/over/with Y"
-            (r"lead\s+singer\s+of\s+(.+?)\s+(?:singing|vocals?)\s+(?:for|over|with)\s+(.+?)(?:\s+(?:music|instrumentation|style|sound))?$", 1, 2),
+            (
+                r"lead\s+singer\s+of\s+(.+?)\s+(?:singing|vocals?)\s+(?:for|over|with)\s+(.+?)(?:\s+(?:music|instrumentation|style|sound))?$",
+                1,
+                2,
+            ),
             # "singer of X for Y"
             (r"singer\s+of\s+(.+?)\s+(?:for|singing\s+for)\s+(.+?)$", 1, 2),
             # "X vocals with/over Y instrumentation/music"
-            (r"(.+?)\s+vocals?\s+(?:with|over|for)\s+(.+?)\s+(?:instrumentation|music|sound|arrangement)", 1, 2),
+            (
+                r"(.+?)\s+vocals?\s+(?:with|over|for)\s+(.+?)\s+(?:instrumentation|music|sound|arrangement)",
+                1,
+                2,
+            ),
             # "vocals like/by X over/with Y"
-            (r"vocals?\s+(?:like|by)\s+(.+?)\s+(?:over|with)\s+(.+?)(?:\s+(?:instrumentation|music))?$", 1, 2),
+            (
+                r"vocals?\s+(?:like|by)\s+(.+?)\s+(?:over|with)\s+(.+?)(?:\s+(?:instrumentation|music))?$",
+                1,
+                2,
+            ),
             # "X-style vocals ... music/arranged like Y"
-            (r"(.+?)(?:-style)?\s+vocals?\s+.*?(?:music|composition|arranged)\s+(?:like|as)\s+(.+?)$", 1, 2),
+            (
+                r"(.+?)(?:-style)?\s+vocals?\s+.*?(?:music|composition|arranged)\s+(?:like|as)\s+(.+?)$",
+                1,
+                2,
+            ),
             # "instrumentation of/like Y ... vocals by/like X"
-            (r"instrumentation\s+(?:of|like)\s+(.+?)\s+.*?vocals?\s+(?:by|like)\s+(.+?)$", 2, 1),
+            (
+                r"instrumentation\s+(?:of|like)\s+(.+?)\s+.*?vocals?\s+(?:by|like)\s+(.+?)$",
+                2,
+                1,
+            ),
         ]
-        
+
         for pattern, vocal_idx, music_idx in patterns:
             match = re.search(pattern, style_request, re.IGNORECASE)
             if match:
                 try:
                     vocal_artist = match.group(vocal_idx).strip()
                     music_artist = match.group(music_idx).strip()
-                    
+
                     # Both must be non-empty and different
                     if not vocal_artist or not music_artist:
                         continue
-                    if _normalize_artist_name_v8(vocal_artist) == _normalize_artist_name_v8(music_artist):
+                    if _normalize_artist_name_v8(
+                        vocal_artist
+                    ) == _normalize_artist_name_v8(music_artist):
                         continue
-                    
+
                     return SplitDecision(
                         split_active=True,
                         music_target_artist=music_artist,
@@ -1017,7 +1040,7 @@ class AgentPromptGraph:
                     )
                 except (IndexError, AttributeError):
                     continue
-        
+
         return SplitDecision(split_active=False, source="none")
 
     def _decide_style_split_v8(
@@ -1028,21 +1051,21 @@ class AgentPromptGraph:
     ) -> SplitDecision:
         """
         V8 Step 2.3d: Unified split decision with precedence.
-        
+
         Precedence:
         1. Schema-based role detection (from genre disambiguation V3)
         2. Regex fallback (high-confidence patterns only)
         3. No split
-        
+
         Emits a DebugTrace span with the decision.
         """
         # Try schema-based first
         decision = self._decide_style_split_v8_from_roles(genre_data)
-        
+
         # If no split from roles, try regex
         if not decision.split_active:
             decision = self._decide_style_split_v8_from_regex(style_request)
-        
+
         # Emit debug span
         with tracer.span("style.split", "parse") as span:
             span.set_meta("split_active", decision.split_active)
@@ -1052,7 +1075,7 @@ class AgentPromptGraph:
                 span.set_meta("music_target_artist", decision.music_target_artist)
                 span.set_meta("vocal_reference_artist", decision.vocal_reference_artist)
             span.set_artifact("style_request_original", style_request)
-        
+
         return decision
 
     def _format_style_context_v8(
@@ -1063,7 +1086,7 @@ class AgentPromptGraph:
     ) -> str:
         """
         V8 Step 2.4: Format style context with explicit MUSIC_TARGET vs VOCAL_REFERENCE blocks.
-        
+
         When split is active, enforces a strict anti-leakage contract:
         - MUSIC_TARGET is authoritative for genre/instrumentation/arrangement/production
         - VOCAL_REFERENCE is authoritative for vocal timbre/range/delivery ONLY
@@ -1074,45 +1097,61 @@ class AgentPromptGraph:
             f"  reference_artists: {context_pack.get('selected_artists', [])}",
             f"  tags: {context_pack.get('tags', [])}",
         ]
-        
+
         if not split.split_active:
             # Fallback: use standard format with genre disambiguation
             if genre_data:
                 genre_section = self._format_genre_context_section(genre_data)
                 return "\n".join(lines) + genre_section
             return "\n".join(lines)
-        
+
         # Split is active: build explicit MUSIC_TARGET and VOCAL_REFERENCE blocks
-        
+
         # Find artist data in genre_data
         music_artist_data = None
         vocal_artist_data = None
         if genre_data and genre_data.get("artists"):
             for artist in genre_data["artists"]:
                 artist_name = artist.get("name", "")
-                if _normalize_artist_name_v8(artist_name) == _normalize_artist_name_v8(split.music_target_artist or ""):
+                if _normalize_artist_name_v8(artist_name) == _normalize_artist_name_v8(
+                    split.music_target_artist or ""
+                ):
                     music_artist_data = artist
-                elif _normalize_artist_name_v8(artist_name) == _normalize_artist_name_v8(split.vocal_reference_artist or ""):
+                elif _normalize_artist_name_v8(
+                    artist_name
+                ) == _normalize_artist_name_v8(split.vocal_reference_artist or ""):
                     vocal_artist_data = artist
-        
+
         # MUSIC_TARGET block
         lines.append("")
-        lines.append("═══════════════════════════════════════════════════════════════════════════════")
-        lines.append("MUSIC_TARGET (AUTHORITATIVE for genre / instrumentation / arrangement / production)")
-        lines.append("═══════════════════════════════════════════════════════════════════════════════")
+        lines.append(
+            "═══════════════════════════════════════════════════════════════════════════════"
+        )
+        lines.append(
+            "MUSIC_TARGET (AUTHORITATIVE for genre / instrumentation / arrangement / production)"
+        )
+        lines.append(
+            "═══════════════════════════════════════════════════════════════════════════════"
+        )
         lines.append(f"ARTIST: {split.music_target_artist}")
-        lines.append("USE FOR: genre, instruments, arrangement, dynamics, production texture")
+        lines.append(
+            "USE FOR: genre, instruments, arrangement, dynamics, production texture"
+        )
         lines.append("DO NOT USE FOR: vocal timbre/range/delivery")
-        
+
         if music_artist_data:
             lines.append("")
-            lines.append("GENRE / VOCAB / INSTRUMENT GUIDANCE (do not copy verbatim; translate into Suno-friendly prose):")
-            
+            lines.append(
+                "GENRE / VOCAB / INSTRUMENT GUIDANCE (do not copy verbatim; translate into Suno-friendly prose):"
+            )
+
             # Era
             era = music_artist_data.get("era", {})
             if era.get("label"):
-                lines.append(f"  ERA: {era.get('label')} (basis: {era.get('basis', 'unspecified')})")
-            
+                lines.append(
+                    f"  ERA: {era.get('label')} (basis: {era.get('basis', 'unspecified')})"
+                )
+
             # Genres
             genres = music_artist_data.get("genres", [])
             if genres:
@@ -1120,7 +1159,7 @@ class AgentPromptGraph:
             not_genres = music_artist_data.get("not_genres", [])
             if not_genres:
                 lines.append(f"  GENRE_AVOID: {', '.join(not_genres)}")
-            
+
             # Terms
             terms_to_use = music_artist_data.get("terms_to_use", [])
             if terms_to_use:
@@ -1128,47 +1167,63 @@ class AgentPromptGraph:
             terms_to_avoid = music_artist_data.get("terms_to_avoid", [])
             if terms_to_avoid:
                 lines.append(f"  VOCAB_TO_AVOID: {', '.join(terms_to_avoid)}")
-            
+
             # Instruments
             instruments_to_use = music_artist_data.get("instruments_to_use", [])
             if instruments_to_use:
                 lines.append(f"  INSTRUMENTS_TO_USE: {', '.join(instruments_to_use)}")
             instruments_to_avoid = music_artist_data.get("instruments_to_avoid", [])
             if instruments_to_avoid:
-                lines.append(f"  INSTRUMENTS_TO_AVOID: {', '.join(instruments_to_avoid)}")
-        
+                lines.append(
+                    f"  INSTRUMENTS_TO_AVOID: {', '.join(instruments_to_avoid)}"
+                )
+
         lines.append("")
-        lines.append("HARD RULE: All non-vocal musical content MUST be derived from MUSIC_TARGET only.")
-        
+        lines.append(
+            "HARD RULE: All non-vocal musical content MUST be derived from MUSIC_TARGET only."
+        )
+
         # VOCAL_REFERENCE block
         lines.append("")
-        lines.append("═══════════════════════════════════════════════════════════════════════════════")
+        lines.append(
+            "═══════════════════════════════════════════════════════════════════════════════"
+        )
         lines.append("VOCAL_REFERENCE (VOICE-ONLY: timbre / register / delivery)")
-        lines.append("═══════════════════════════════════════════════════════════════════════════════")
+        lines.append(
+            "═══════════════════════════════════════════════════════════════════════════════"
+        )
         lines.append(f"ARTIST: {split.vocal_reference_artist}")
         lines.append("USE FOR: vocal timbre/tone, vocal register, delivery style")
-        lines.append("DO NOT USE FOR: genre, instrumentation, arrangement, production aesthetic")
-        
+        lines.append(
+            "DO NOT USE FOR: genre, instrumentation, arrangement, production aesthetic"
+        )
+
         if vocal_artist_data:
             lines.append("")
-            lines.append("VOCAL GUIDANCE (voice-only; do not introduce band/genre facts):")
-            
+            lines.append(
+                "VOCAL GUIDANCE (voice-only; do not introduce band/genre facts):"
+            )
+
             # Only include vocal-specific fields
             vocal_style_to_use = vocal_artist_data.get("vocal_style_to_use", [])
             if vocal_style_to_use:
                 lines.append(f"  VOCAL_STYLE_TO_USE: {', '.join(vocal_style_to_use)}")
             vocal_style_to_avoid = vocal_artist_data.get("vocal_style_to_avoid", [])
             if vocal_style_to_avoid:
-                lines.append(f"  VOCAL_STYLE_TO_AVOID: {', '.join(vocal_style_to_avoid)}")
-        
+                lines.append(
+                    f"  VOCAL_STYLE_TO_AVOID: {', '.join(vocal_style_to_avoid)}"
+                )
+
         lines.append("")
-        lines.append("HARD RULE: Do NOT borrow genre/instruments/production from VOCAL_REFERENCE.")
-        
+        lines.append(
+            "HARD RULE: Do NOT borrow genre/instruments/production from VOCAL_REFERENCE."
+        )
+
         # Global notes from genre_data
         if genre_data and genre_data.get("global_notes"):
             lines.append("")
             lines.append(f"NOTES: {' '.join(genre_data['global_notes'])}")
-        
+
         return "\n".join(lines)
 
     async def _run_style_branch(
@@ -1192,12 +1247,16 @@ class AgentPromptGraph:
         split_decision = SplitDecision(split_active=False, source="none")
         if ctx.variant_id in V8_SPLIT_ENABLED_VARIANTS:
             style_request = context_pack.get("user_style_request", "")
-            split_decision = self._decide_style_split_v8(style_request, genre_data, tracer)
+            split_decision = self._decide_style_split_v8(
+                style_request, genre_data, tracer
+            )
 
         # Format context for style generation
         if ctx.variant_id in V8_SPLIT_ENABLED_VARIANTS:
             # V8: Use dedicated formatter that handles split and genre data together
-            style_context = self._format_style_context_v8(context_pack, split_decision, genre_data)
+            style_context = self._format_style_context_v8(
+                context_pack, split_decision, genre_data
+            )
         else:
             # V6/V7: Use standard formatter with genre section injected
             style_context = self._format_style_context(context_pack)
@@ -1325,20 +1384,32 @@ class AgentPromptGraph:
                     "raw_response", profile_artifacts.get("raw_response", "")
                 )
 
-                logger.info("Lyrics branch: inferred profile: %s", inferred_profile)
+                logger.info("Lyrics branch: inferred profiles: %s", inferred_profile)
 
-                # Merge explicit user overrides into inferred profile
-                lyric_profile = inferred_profile.copy()
-                for key, value in user_lyric_controls.items():
-                    lyric_profile[key] = value
-                    logger.info("Lyrics branch: user override %s=%s", key, value)
+                # Merge explicit user overrides into all section profiles
+                lyric_profile = {}
+                for section in ["verse", "prechorus", "chorus", "postchorus", "bridge"]:
+                    section_profile = inferred_profile.get(section, {}).copy()
+                    for key, value in user_lyric_controls.items():
+                        section_profile[key] = value
+                    lyric_profile[section] = section_profile
+
+                # Preserve structure from inferred profile
+                if "structure" in inferred_profile:
+                    lyric_profile["structure"] = inferred_profile["structure"]
+
+                if user_lyric_controls:
+                    logger.info(
+                        "Lyrics branch: user overrides applied to all sections: %s",
+                        user_lyric_controls,
+                    )
 
                 # Set both in span metadata for debug trace
                 span.set_meta("inferred_profile", inferred_profile)
                 span.set_meta("user_overrides", user_lyric_controls)
                 span.set_meta("final_profile", lyric_profile)
 
-            # Build lyrics context with profile + style info
+            # Build lyrics context with per-section profiles
             lyrics_context = self._format_lyrics_context_v4_parallel(
                 context_pack=context_pack,
                 lyric_controls=lyric_profile,
@@ -1462,39 +1533,134 @@ class AgentPromptGraph:
         raw = response.content if hasattr(response, "content") else str(response)
         debug["raw_response"] = raw
 
-        # Parse JSON response
-        try:
-            profile = json.loads(raw.strip())
-            # Validate expected keys with defaults
-            result = {
-                "lines_per_section": profile.get("lines_per_section", "4_lines"),
-                "line_length": profile.get("line_length", "default"),
-                "pov": profile.get("pov", "none"),
-                "rhyme_scheme": profile.get("rhyme_scheme", "aabb"),
-                "directness": profile.get("directness", "balanced"),
-                "persona": profile.get("persona", "earnest"),
-                "humor": profile.get("humor", "none"),
-                "explicitness": profile.get("explicitness", "clean"),
-                "audience": profile.get("audience", "general"),
-            }
-            return result, debug
-        except json.JSONDecodeError:
-            logger.warning(
-                "Profile inference: failed to parse JSON, using defaults. Raw: %s",
-                raw[:100],
-            )
-            debug["parse_error"] = True
-            return {
-                "lines_per_section": "4_lines",
-                "line_length": "default",
-                "pov": "none",
-                "rhyme_scheme": "aabb",
-                "directness": "balanced",
-                "persona": "earnest",
-                "humor": "none",
-                "explicitness": "clean",
-                "audience": "general",
-            }, debug
+        # Parse per-section JSON response (Verse/Chorus/Bridge)
+        result = self._parse_per_section_profiles(raw)
+        return result, debug
+
+    def _get_default_section_profile(self) -> Dict[str, str]:
+        """Return default profile for a section."""
+        return {
+            "lines_per_section": "4_lines",
+            "line_length": "default",
+            "pov": "none",
+            "rhyme_scheme": "aabb",
+            "directness": "balanced",
+            "persona": "earnest",
+            "humor": "none",
+            "explicitness": "clean",
+            "audience": "general",
+        }
+
+    def _parse_per_section_profiles(self, raw: str) -> Dict[str, Any]:
+        """
+        Parse per-section profiles and structure from inference output.
+
+        Expected format:
+        Verse: {...json...}
+        Pre-Chorus: {...json...}
+        Chorus: {...json...}
+        Post-Chorus: {...json...}
+        Bridge: {...json...}
+        Structure: ["Intro", "Verse", "Chorus", ...]
+
+        Returns dict with section profiles + 'structure' key.
+        Falls back to defaults if parsing fails.
+        """
+        defaults = self._get_default_section_profile()
+        result: Dict[str, Any] = {
+            "verse": defaults.copy(),
+            "prechorus": defaults.copy(),
+            "chorus": defaults.copy(),
+            "postchorus": defaults.copy(),
+            "bridge": defaults.copy(),
+            "structure": [
+                "Intro",
+                "Verse",
+                "Chorus",
+                "Verse",
+                "Chorus",
+                "Bridge",
+                "Chorus",
+                "Outro",
+            ],
+        }
+
+        # Try to parse each section
+        import re
+
+        # Map internal keys to regex patterns (handle hyphenated formats)
+        section_patterns = {
+            "verse": r"verse",
+            "prechorus": r"pre-?chorus",  # matches Pre-Chorus or PreChorus
+            "chorus": r"(?<!pre-)(?<!post-)chorus",  # matches Chorus but not Pre-Chorus/Post-Chorus
+            "postchorus": r"post-?chorus",  # matches Post-Chorus or PostChorus
+            "bridge": r"bridge",
+        }
+        parsed_any_section = False
+        for section, section_regex in section_patterns.items():
+            # Match "Section: {...}" pattern (case-insensitive)
+            # Use start-of-line to avoid partial matches
+            pattern = rf"(?:^|\n)\s*{section_regex}\s*:\s*(\{{[^}}]+\}})"
+            match = re.search(pattern, raw, re.IGNORECASE | re.MULTILINE)
+            if match:
+                try:
+                    profile = json.loads(match.group(1))
+                    # Merge with defaults to ensure all keys present
+                    section_profile = defaults.copy()
+                    for key in defaults:
+                        if key in profile:
+                            section_profile[key] = profile[key]
+                    result[section] = section_profile
+                    parsed_any_section = True
+                except json.JSONDecodeError:
+                    logger.warning(
+                        "Profile inference: failed to parse %s JSON", section
+                    )
+
+        # If no sections found, try parsing as single JSON (backward compat)
+        if not parsed_any_section:
+            try:
+                # Try to parse as single JSON
+                text = raw.strip()
+                if text.startswith("{"):
+                    profile = json.loads(text)
+                    section_profile = defaults.copy()
+                    for key in defaults:
+                        if key in profile:
+                            section_profile[key] = profile[key]
+                    # Apply to all sections
+                    result["verse"] = section_profile.copy()
+                    result["prechorus"] = section_profile.copy()
+                    result["chorus"] = section_profile.copy()
+                    result["postchorus"] = section_profile.copy()
+                    result["bridge"] = section_profile.copy()
+                    logger.info(
+                        "Profile inference: parsed as single JSON (legacy format)"
+                    )
+            except json.JSONDecodeError:
+                logger.warning(
+                    "Profile inference: failed to parse any JSON, using defaults. Raw: %s",
+                    raw[:100],
+                )
+
+        # Parse structure array
+        structure_pattern = r"Structure\s*:\s*(\[[^\]]+\])"
+        structure_match = re.search(structure_pattern, raw, re.IGNORECASE)
+        if structure_match:
+            try:
+                structure = json.loads(structure_match.group(1))
+                if isinstance(structure, list) and all(
+                    isinstance(s, str) for s in structure
+                ):
+                    result["structure"] = structure
+                    logger.info(
+                        "Profile inference: parsed structure with %d sections",
+                        len(structure),
+                    )
+            except json.JSONDecodeError:
+                logger.warning("Profile inference: failed to parse structure array")
+
+        return result
 
     def _format_lyrics_context_simple_v3(self, context_pack: Dict[str, Any]) -> str:
         """Format lyrics context for V3 (no profile, no suno_prompt)."""
@@ -1523,10 +1689,9 @@ class AgentPromptGraph:
         return line_length
 
     def _format_lyrics_context_v4_parallel(
-        self, context_pack: Dict[str, Any], lyric_controls: Dict[str, str]
+        self, context_pack: Dict[str, Any], lyric_controls: Dict[str, Any]
     ) -> str:
-        """Format lyrics context for V4 parallel mode (includes style info + profile)."""
-        line_length = lyric_controls.get("line_length", "default")
+        """Format lyrics context for V4 parallel mode (includes style info + per-section profiles)."""
         lines = [
             "Generate SONG TITLE and LYRICS for:",
             f"  style_request: {context_pack.get('user_style_request', '')}",
@@ -1534,17 +1699,79 @@ class AgentPromptGraph:
             f"  lyrics_about: {context_pack.get('lyrics_about', '')}",
             f"  tags: {context_pack.get('tags', [])}",
             "",
-            "LYRIC PROFILE (apply these settings):",
-            f"  lines_per_section: {lyric_controls.get('lines_per_section', '4_lines')}",
-            f"  line_length: {self._format_line_length_range(line_length)}",
-            f"  pov: {lyric_controls.get('pov', 'none')}",
-            f"  rhyme_scheme: {lyric_controls.get('rhyme_scheme', 'aabb')}",
-            f"  directness: {lyric_controls.get('directness', 'balanced')}",
-            f"  persona: {lyric_controls.get('persona', 'earnest')}",
-            f"  audience: {lyric_controls.get('audience', 'general')}",
-            f"  humor: {lyric_controls.get('humor', 'none')}",
-            f"  explicitness: {lyric_controls.get('explicitness', 'clean')}",
         ]
+
+        # Check if this is per-section format (has 'verse', 'chorus', 'bridge' keys)
+        if "verse" in lyric_controls and isinstance(lyric_controls["verse"], dict):
+            lines.append("LYRIC PROFILES (apply per section type):")
+            for section in ["verse", "prechorus", "chorus", "postchorus", "bridge"]:
+                section_profile = lyric_controls.get(section, {})
+                line_length = section_profile.get("line_length", "default")
+                label = {"prechorus": "PRE-CHORUS", "postchorus": "POST-CHORUS"}.get(
+                    section, section.upper()
+                )
+                lines.append(f"  [{label}]")
+                lines.append(
+                    f"    lines_per_section: {section_profile.get('lines_per_section', '4_lines')}"
+                )
+                lines.append(
+                    f"    line_length: {self._format_line_length_range(line_length)}"
+                )
+                lines.append(f"    pov: {section_profile.get('pov', 'none')}")
+                lines.append(
+                    f"    rhyme_scheme: {section_profile.get('rhyme_scheme', 'aabb')}"
+                )
+                lines.append(
+                    f"    directness: {section_profile.get('directness', 'balanced')}"
+                )
+                lines.append(
+                    f"    persona: {section_profile.get('persona', 'earnest')}"
+                )
+                lines.append(f"    humor: {section_profile.get('humor', 'none')}")
+                lines.append(
+                    f"    explicitness: {section_profile.get('explicitness', 'clean')}"
+                )
+                lines.append(
+                    f"    audience: {section_profile.get('audience', 'general')}"
+                )
+            lines.append("")
+            lines.append("Apply [VERSE] profile to [Verse] sections.")
+            lines.append("Apply [PRE-CHORUS] profile to [Pre-Chorus] sections.")
+            lines.append("Apply [CHORUS] profile to [Chorus] sections.")
+            lines.append("Apply [POST-CHORUS] profile to [Post-Chorus] sections.")
+            lines.append("Apply [BRIDGE] profile to [Bridge] sections.")
+
+            # Add structure if present
+            structure = lyric_controls.get("structure")
+            if structure and isinstance(structure, list):
+                lines.append("")
+                lines.append(
+                    f"SONG STRUCTURE (follow this arrangement): {json.dumps(structure)}"
+                )
+        else:
+            # Legacy single-profile format (backward compat)
+            line_length = lyric_controls.get("line_length", "default")
+            lines.append("LYRIC PROFILE (apply these settings):")
+            lines.append(
+                f"  lines_per_section: {lyric_controls.get('lines_per_section', '4_lines')}"
+            )
+            lines.append(
+                f"  line_length: {self._format_line_length_range(line_length)}"
+            )
+            lines.append(f"  pov: {lyric_controls.get('pov', 'none')}")
+            lines.append(
+                f"  rhyme_scheme: {lyric_controls.get('rhyme_scheme', 'aabb')}"
+            )
+            lines.append(
+                f"  directness: {lyric_controls.get('directness', 'balanced')}"
+            )
+            lines.append(f"  persona: {lyric_controls.get('persona', 'earnest')}")
+            lines.append(f"  audience: {lyric_controls.get('audience', 'general')}")
+            lines.append(f"  humor: {lyric_controls.get('humor', 'none')}")
+            lines.append(
+                f"  explicitness: {lyric_controls.get('explicitness', 'clean')}"
+            )
+
         return "\n".join(lines)
 
     def _validate_style_output(self, output: _ParsedStyleOutput) -> List[str]:
@@ -1697,7 +1924,10 @@ class AgentPromptGraph:
             overrides["explicitness"] = lyric_controls.explicitness
         if lyric_controls.persona and lyric_controls.persona != "auto":
             overrides["persona"] = lyric_controls.persona
-        if lyric_controls.lines_per_section and lyric_controls.lines_per_section != "auto":
+        if (
+            lyric_controls.lines_per_section
+            and lyric_controls.lines_per_section != "auto"
+        ):
             overrides["lines_per_section"] = lyric_controls.lines_per_section
         if lyric_controls.line_length and lyric_controls.line_length != "auto":
             overrides["line_length"] = lyric_controls.line_length
@@ -1749,23 +1979,84 @@ class AgentPromptGraph:
         lyric_controls: Dict[str, Any],
     ) -> str:
         """Format context for V4 lyrics agent (with lyric profile)."""
-        line_length = lyric_controls.get("line_length", "default")
         lines = [
             "Generate SONG TITLE and LYRICS for:",
             f"  suno_prompt: {suno_prompt}",
             f"  lyrics_about: {lyrics_about}",
             "",
-            "LYRIC PROFILE (apply these settings):",
-            f"  lines_per_section: {lyric_controls.get('lines_per_section', '4_lines')}",
-            f"  line_length: {self._format_line_length_range(line_length)}",
-            f"  pov: {lyric_controls.get('pov', 'none')}",
-            f"  rhyme_scheme: {lyric_controls.get('rhyme_scheme', 'aabb')}",
-            f"  directness: {lyric_controls.get('directness', 'balanced')}",
-            f"  persona: {lyric_controls.get('persona', 'earnest')}",
-            f"  audience: {lyric_controls.get('audience', 'general')}",
-            f"  humor: {lyric_controls.get('humor', 'none')}",
-            f"  explicitness: {lyric_controls.get('explicitness', 'clean')}",
         ]
+
+        # Check if this is per-section format (has 'verse', 'chorus', 'bridge' keys)
+        if "verse" in lyric_controls and isinstance(lyric_controls["verse"], dict):
+            lines.append("LYRIC PROFILES (apply per section type):")
+            for section in ["verse", "prechorus", "chorus", "postchorus", "bridge"]:
+                section_profile = lyric_controls.get(section, {})
+                line_length = section_profile.get("line_length", "default")
+                label = {"prechorus": "PRE-CHORUS", "postchorus": "POST-CHORUS"}.get(
+                    section, section.upper()
+                )
+                lines.append(f"  [{label}]")
+                lines.append(
+                    f"    lines_per_section: {section_profile.get('lines_per_section', '4_lines')}"
+                )
+                lines.append(
+                    f"    line_length: {self._format_line_length_range(line_length)}"
+                )
+                lines.append(f"    pov: {section_profile.get('pov', 'none')}")
+                lines.append(
+                    f"    rhyme_scheme: {section_profile.get('rhyme_scheme', 'aabb')}"
+                )
+                lines.append(
+                    f"    directness: {section_profile.get('directness', 'balanced')}"
+                )
+                lines.append(
+                    f"    persona: {section_profile.get('persona', 'earnest')}"
+                )
+                lines.append(f"    humor: {section_profile.get('humor', 'none')}")
+                lines.append(
+                    f"    explicitness: {section_profile.get('explicitness', 'clean')}"
+                )
+                lines.append(
+                    f"    audience: {section_profile.get('audience', 'general')}"
+                )
+            lines.append("")
+            lines.append("Apply [VERSE] profile to [Verse] sections.")
+            lines.append("Apply [PRE-CHORUS] profile to [Pre-Chorus] sections.")
+            lines.append("Apply [CHORUS] profile to [Chorus] sections.")
+            lines.append("Apply [POST-CHORUS] profile to [Post-Chorus] sections.")
+            lines.append("Apply [BRIDGE] profile to [Bridge] sections.")
+
+            # Add structure if present
+            structure = lyric_controls.get("structure")
+            if structure and isinstance(structure, list):
+                lines.append("")
+                lines.append(
+                    f"SONG STRUCTURE (follow this arrangement): {json.dumps(structure)}"
+                )
+        else:
+            # Legacy single-profile format
+            line_length = lyric_controls.get("line_length", "default")
+            lines.append("LYRIC PROFILE (apply these settings):")
+            lines.append(
+                f"  lines_per_section: {lyric_controls.get('lines_per_section', '4_lines')}"
+            )
+            lines.append(
+                f"  line_length: {self._format_line_length_range(line_length)}"
+            )
+            lines.append(f"  pov: {lyric_controls.get('pov', 'none')}")
+            lines.append(
+                f"  rhyme_scheme: {lyric_controls.get('rhyme_scheme', 'aabb')}"
+            )
+            lines.append(
+                f"  directness: {lyric_controls.get('directness', 'balanced')}"
+            )
+            lines.append(f"  persona: {lyric_controls.get('persona', 'earnest')}")
+            lines.append(f"  audience: {lyric_controls.get('audience', 'general')}")
+            lines.append(f"  humor: {lyric_controls.get('humor', 'none')}")
+            lines.append(
+                f"  explicitness: {lyric_controls.get('explicitness', 'clean')}"
+            )
+
         return "\n".join(lines)
 
     def _parse_style_output(self, raw: str) -> _ParsedStyleOutput:
