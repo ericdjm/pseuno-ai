@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Box,
   VStack,
@@ -13,17 +13,6 @@ import {
   StatLabel,
   StatNumber,
   Icon,
-  Input,
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalBody,
-  ModalFooter,
-  ModalCloseButton,
-  useDisclosure,
-  FormControl,
-  FormLabel,
   Accordion,
   AccordionItem,
   AccordionButton,
@@ -32,23 +21,26 @@ import {
   Link,
 } from '@chakra-ui/react';
 import { CopyIcon, StarIcon, ExternalLinkIcon } from '@chakra-ui/icons';
-import { AdvancedGenerateResponse, createSavedPrompt } from '../api';
+import { AdvancedGenerateResponse, updateSavedPrompt } from '../api';
 import DebugTraceViewer from './debug/DebugTraceViewer';
 
 interface AdvancedResultsDisplayProps {
   result: AdvancedGenerateResponse;
-  onPromptSaved?: () => void;
+  onFavoriteToggled?: () => void;
 }
 
 export default function AdvancedResultsDisplay({
   result,
-  onPromptSaved,
+  onFavoriteToggled,
 }: AdvancedResultsDisplayProps) {
   const toast = useToast();
-  const { isOpen, onOpen, onClose } = useDisclosure();
-  const [saving, setSaving] = useState(false);
-  const MAX_SAVED_TITLE_LEN = 255;
-  const [title, setTitle] = useState(result.concept_title.slice(0, MAX_SAVED_TITLE_LEN));
+  const [isFavorite, setIsFavorite] = useState(result.is_favorite);
+  const [togglingFavorite, setTogglingFavorite] = useState(false);
+
+  // Sync isFavorite state when result changes (new generation)
+  useEffect(() => {
+    setIsFavorite(result.is_favorite);
+  }, [result.prompt_id, result.is_favorite]);
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -60,35 +52,36 @@ export default function AdvancedResultsDisplay({
     });
   };
 
-  const handleSavePrompt = async () => {
-    setSaving(true);
-    try {
-      await createSavedPrompt({
-        suno_prompt: result.suno_prompt,
-        exclude: result.exclude,
-        weirdness: result.weirdness,
-        style_influence: result.style_influence,
-        title: (title || result.concept_title).slice(0, MAX_SAVED_TITLE_LEN),
-      });
+  const handleToggleFavorite = async () => {
+    if (!result.prompt_id) {
       toast({
-        title: 'Prompt saved!',
-        description: 'Added to your saved prompts library.',
-        status: 'success',
+        title: 'Cannot favorite',
+        description: 'Prompt was not saved. Try generating again.',
+        status: 'warning',
         duration: 3000,
-        isClosable: true,
       });
-      onClose();
-      onPromptSaved?.();
+      return;
+    }
+
+    setTogglingFavorite(true);
+    try {
+      const newFavoriteState = !isFavorite;
+      await updateSavedPrompt(result.prompt_id, { is_favorite: newFavoriteState });
+      setIsFavorite(newFavoriteState);
+      toast({
+        title: newFavoriteState ? 'Added to favorites!' : 'Removed from favorites',
+        status: 'success',
+        duration: 2000,
+      });
+      onFavoriteToggled?.();
     } catch (e) {
       toast({
-        title: 'Failed to save',
-        description: 'Could not save prompt. Please try again.',
+        title: 'Failed to update',
         status: 'error',
-        duration: 4000,
-        isClosable: true,
+        duration: 3000,
       });
     } finally {
-      setSaving(false);
+      setTogglingFavorite(false);
     }
   };
 
@@ -126,13 +119,14 @@ export default function AdvancedResultsDisplay({
           </VStack>
           <HStack spacing={2}>
             <Button
-              leftIcon={<Icon as={StarIcon} />}
+              leftIcon={<Icon as={StarIcon} color={isFavorite ? 'yellow.400' : undefined} />}
               colorScheme="yellow"
-              variant="outline"
+              variant={isFavorite ? 'solid' : 'outline'}
               size="sm"
-              onClick={onOpen}
+              onClick={handleToggleFavorite}
+              isLoading={togglingFavorite}
             >
-              Save
+              {isFavorite ? 'Favorited' : 'Favorite'}
             </Button>
             <Badge colorScheme="purple" fontSize="md" px={3} py={1}>
               Agent Output
@@ -140,54 +134,6 @@ export default function AdvancedResultsDisplay({
           </HStack>
         </HStack>
       </Box>
-
-      {/* Save Prompt Modal */}
-      <Modal isOpen={isOpen} onClose={onClose} isCentered>
-        <ModalOverlay />
-        <ModalContent bg="gray.800">
-          <ModalHeader>Save SUNO Prompt</ModalHeader>
-          <ModalCloseButton />
-          <ModalBody>
-            <FormControl>
-              <FormLabel>Title</FormLabel>
-              <Input
-                value={title}
-                maxLength={MAX_SAVED_TITLE_LEN}
-                onChange={(e) => setTitle(e.target.value.slice(0, MAX_SAVED_TITLE_LEN))}
-                placeholder="Enter a title for this prompt"
-                bg="gray.700"
-              />
-              <HStack justify="space-between" mt={1}>
-                <Text fontSize="xs" color="gray.500">
-                  Max {MAX_SAVED_TITLE_LEN} characters
-                </Text>
-                <Text
-                  fontSize="xs"
-                  color={title.length >= MAX_SAVED_TITLE_LEN ? 'orange.300' : 'gray.500'}
-                >
-                  {title.length}/{MAX_SAVED_TITLE_LEN}
-                </Text>
-              </HStack>
-            </FormControl>
-            <Text fontSize="sm" color="gray.400" mt={4}>
-              This will save the prompt along with its parameters (weirdness: {result.weirdness}%, 
-              style influence: {result.style_influence}%).
-            </Text>
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="ghost" mr={3} onClick={onClose}>
-              Cancel
-            </Button>
-            <Button
-              colorScheme="yellow"
-              onClick={handleSavePrompt}
-              isLoading={saving}
-            >
-              Save Prompt
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
 
       <Divider />
 

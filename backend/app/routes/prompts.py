@@ -94,6 +94,7 @@ def create_prompt(
         style_influence=body.style_influence,
         title=body.title,
         notes=body.notes,
+        is_favorite=body.is_favorite,
     )
     db.add(prompt)
     db.commit()
@@ -108,14 +109,28 @@ def list_prompts(
     device_user: User | None = Depends(get_device_user),
     limit: int = 50,
     offset: int = 0,
+    favorites_only: bool = False,
 ):
-    """List the current user's saved prompts (Spotify or guest)."""
+    """
+    List the current user's prompts (Spotify or guest).
+
+    Args:
+        favorites_only: If True, only return prompts where is_favorite=True.
+                       If False (default), return all prompts (full history).
+    """
     spotify_user_id = get_current_user_id_optional(request)
     user_id = _get_user_id_or_raise(spotify_user_id, device_user)
 
+    # Base filter: user's prompts
+    base_filter = SunoPrompt.owner_user_id == user_id
+
+    # Apply favorites filter if requested
+    if favorites_only:
+        base_filter = base_filter & (SunoPrompt.is_favorite == True)  # noqa: E712
+
     query = (
         select(SunoPrompt)
-        .where(SunoPrompt.owner_user_id == user_id)
+        .where(base_filter)
         .order_by(SunoPrompt.created_at.desc())
         .limit(limit)
         .offset(offset)
@@ -125,7 +140,7 @@ def list_prompts(
     total_query = (
         select(func.count())
         .select_from(SunoPrompt)
-        .where(SunoPrompt.owner_user_id == user_id)
+        .where(base_filter)
     )
     total = db.scalar(total_query) or 0
 
@@ -164,7 +179,7 @@ def update_prompt(
     db: Session = Depends(get_db),
     device_user: User | None = Depends(get_device_user),
 ):
-    """Update a saved prompt's title, notes, or visibility (owner only)."""
+    """Update a saved prompt's title, notes, is_favorite, or visibility (owner only)."""
     spotify_user_id = get_current_user_id_optional(request)
     user_id = _get_user_id_or_raise(spotify_user_id, device_user)
 

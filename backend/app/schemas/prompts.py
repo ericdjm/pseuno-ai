@@ -25,6 +25,7 @@ class SunoPromptCreate(BaseModel):
     style_influence: int = Field(default=50, ge=0, le=100)
     title: Optional[str] = Field(default=None, max_length=SAVED_PROMPT_TITLE_MAX_CHARS)
     notes: Optional[str] = Field(default=None, max_length=SAVED_PROMPT_NOTES_MAX_CHARS)
+    is_favorite: bool = Field(default=True)  # Manual saves default to favorite
 
 
 class SunoPromptUpdate(BaseModel):
@@ -32,6 +33,7 @@ class SunoPromptUpdate(BaseModel):
 
     title: Optional[str] = Field(default=None, max_length=SAVED_PROMPT_TITLE_MAX_CHARS)
     notes: Optional[str] = Field(default=None, max_length=SAVED_PROMPT_NOTES_MAX_CHARS)
+    is_favorite: Optional[bool] = Field(default=None)
     visibility: Optional[str] = Field(
         default=None, pattern="^(private|unlisted|public)$"
     )
@@ -59,6 +61,9 @@ class SunoPromptResponse(BaseModel):
     style_influence: int
     title: Optional[str]
     notes: Optional[str]
+    is_favorite: bool
+    auto_tags: list[str]
+    generation_id: Optional[str]
     visibility: str
     share_id: str
     created_at: datetime

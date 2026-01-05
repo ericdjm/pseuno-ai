@@ -22,8 +22,10 @@ import {
   Editable,
   EditableInput,
   EditablePreview,
+  Wrap,
+  WrapItem,
 } from '@chakra-ui/react';
-import { ChevronDownIcon, ChevronUpIcon, DeleteIcon, CopyIcon } from '@chakra-ui/icons';
+import { ChevronDownIcon, ChevronUpIcon, DeleteIcon, CopyIcon, StarIcon } from '@chakra-ui/icons';
 import { useRef } from 'react';
 import {
   SavedSunoPrompt,
@@ -37,6 +39,8 @@ interface SavedPromptsLibraryProps {
   refreshTrigger?: number;
   onReuse?: (prompt: SavedSunoPrompt) => void;
   onPromptsLoaded?: (prompts: SavedSunoPrompt[]) => void;
+  favoritesOnly?: boolean;
+  showHeader?: boolean;
 }
 
 interface PromptCardProps {
@@ -44,10 +48,11 @@ interface PromptCardProps {
   prompt: SavedSunoPrompt;
   onDelete: (id: number) => void;
   onUpdate: (id: number, title: string) => void;
+  onToggleFavorite: (id: number, isFavorite: boolean) => void;
   onReuse?: (prompt: SavedSunoPrompt) => void;
 }
 
-function PromptCard({ prompt, onDelete, onUpdate, onReuse }: PromptCardProps) {
+function PromptCard({ prompt, onDelete, onUpdate, onToggleFavorite, onReuse }: PromptCardProps) {
   const { isOpen, onToggle } = useDisclosure();
   const toast = useToast();
 
@@ -94,7 +99,7 @@ function PromptCard({ prompt, onDelete, onUpdate, onReuse }: PromptCardProps) {
       borderRadius="md"
       p={4}
       borderWidth="1px"
-      borderColor="gray.700"
+      borderColor={prompt.is_favorite ? 'yellow.600' : 'gray.700'}
     >
       <HStack justify="space-between" align="start">
         <VStack align="start" spacing={1} flex={1}>
@@ -118,6 +123,18 @@ function PromptCard({ prompt, onDelete, onUpdate, onReuse }: PromptCardProps) {
               {formatDate(prompt.created_at)}
             </Text>
           </HStack>
+          {/* Auto-tags */}
+          {prompt.auto_tags && prompt.auto_tags.length > 0 && (
+            <Wrap spacing={1} mt={1}>
+              {prompt.auto_tags.slice(0, 5).map((tag, idx) => (
+                <WrapItem key={idx}>
+                  <Badge colorScheme="teal" fontSize="2xs" variant="subtle">
+                    {tag}
+                  </Badge>
+                </WrapItem>
+              ))}
+            </Wrap>
+          )}
         </VStack>
         <HStack spacing={1}>
           {onReuse && (
@@ -125,6 +142,15 @@ function PromptCard({ prompt, onDelete, onUpdate, onReuse }: PromptCardProps) {
               Reuse
             </Button>
           )}
+          <IconButton
+            aria-label={prompt.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
+            icon={<StarIcon />}
+            size="sm"
+            variant="ghost"
+            color={prompt.is_favorite ? 'yellow.400' : 'gray.500'}
+            onClick={() => onToggleFavorite(prompt.id, !prompt.is_favorite)}
+            _hover={{ color: prompt.is_favorite ? 'yellow.300' : 'yellow.400' }}
+          />
           <IconButton
             aria-label="Copy prompt"
             icon={<CopyIcon />}
@@ -187,24 +213,51 @@ export default function SavedPromptsLibrary({
   refreshTrigger,
   onReuse,
   onPromptsLoaded,
+  favoritesOnly = false,
+  showHeader = true,
 }: SavedPromptsLibraryProps) {
   const toast = useToast();
   const [prompts, setPrompts] = useState<SavedSunoPrompt[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
   const cancelRef = useRef<HTMLButtonElement>(null);
 
-  const loadPrompts = async () => {
-    setLoading(true);
+  const LIMIT = 50;
+
+  const loadPrompts = async (loadMore = false) => {
+    if (loadMore) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+      setOffset(0);
+    }
     try {
-      const data = await listSavedPrompts();
-      setPrompts(data.prompts);
-      onPromptsLoaded?.(data.prompts);
+      const newOffset = loadMore ? offset : 0;
+      const data = await listSavedPrompts({
+        limit: LIMIT,
+        offset: newOffset,
+        favoritesOnly,
+      });
+      if (loadMore) {
+        const combined = [...prompts, ...data.prompts];
+        setPrompts(combined);
+        setOffset(newOffset + LIMIT);
+        onPromptsLoaded?.(combined);
+      } else {
+        setPrompts(data.prompts);
+        setOffset(LIMIT);
+        onPromptsLoaded?.(data.prompts);
+      }
+      setTotal(data.total);
     } catch (e) {
       // 401 means no auth (new user) - treat as empty, not error
       if (e instanceof ApiError && e.status === 401) {
         setPrompts([]);
+        setTotal(0);
         onPromptsLoaded?.([]);
       } else {
         toast({
@@ -215,12 +268,13 @@ export default function SavedPromptsLibrary({
       }
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
 
   useEffect(() => {
     loadPrompts();
-  }, [refreshTrigger]);
+  }, [refreshTrigger, favoritesOnly]);
 
   const handleDelete = async () => {
     if (deleteId === null) return;
@@ -229,6 +283,7 @@ export default function SavedPromptsLibrary({
       await deleteSavedPrompt(deleteId);
       const newPrompts = prompts.filter((p: SavedSunoPrompt) => p.id !== deleteId);
       setPrompts(newPrompts);
+      setTotal((t) => Math.max(0, t - 1));
       onPromptsLoaded?.(newPrompts);
       toast({
         title: 'Prompt deleted',
@@ -264,6 +319,41 @@ export default function SavedPromptsLibrary({
     }
   };
 
+  const handleToggleFavorite = async (id: number, isFavorite: boolean) => {
+    try {
+      const updated = await updateSavedPrompt(id, { is_favorite: isFavorite });
+      
+      if (favoritesOnly && !isFavorite) {
+        // Remove from list if we're in favorites-only mode and unfavoriting
+        const newPrompts = prompts.filter((p) => p.id !== id);
+        setPrompts(newPrompts);
+        setTotal((t) => Math.max(0, t - 1));
+        onPromptsLoaded?.(newPrompts);
+      } else {
+        // Update in place
+        const newPrompts = prompts.map((p: SavedSunoPrompt) =>
+          p.id === id ? { ...p, is_favorite: updated.is_favorite } : p
+        );
+        setPrompts(newPrompts);
+        onPromptsLoaded?.(newPrompts);
+      }
+
+      toast({
+        title: isFavorite ? 'Added to favorites' : 'Removed from favorites',
+        status: 'success',
+        duration: 2000,
+      });
+    } catch (e) {
+      toast({
+        title: 'Failed to update',
+        status: 'error',
+        duration: 4000,
+      });
+    }
+  };
+
+  const hasMore = prompts.length < total;
+
   if (loading) {
     return (
       <Center py={8}>
@@ -275,9 +365,13 @@ export default function SavedPromptsLibrary({
   if (prompts.length === 0) {
     return (
       <Box textAlign="center" py={8}>
-        <Text color="gray.500">No saved prompts yet.</Text>
+        <Text color="gray.500">
+          {favoritesOnly ? 'No favorites yet.' : 'No prompts yet.'}
+        </Text>
         <Text color="gray.600" fontSize="sm" mt={1}>
-          Generate a prompt and click "Save" to add it to your library.
+          {favoritesOnly
+            ? 'Star a prompt to add it to your favorites.'
+            : 'Generate a prompt to see it here.'}
         </Text>
       </Box>
     );
@@ -285,10 +379,16 @@ export default function SavedPromptsLibrary({
 
   return (
     <Box>
-      <HStack justify="space-between" mb={4}>
-        <Heading size="md">My Saved Prompts</Heading>
-        <Badge colorScheme="green">{prompts.length} saved</Badge>
-      </HStack>
+      {showHeader && (
+        <HStack justify="space-between" mb={4}>
+          <Heading size="md">
+            {favoritesOnly ? 'My Favorites' : 'Prompt History'}
+          </Heading>
+          <Badge colorScheme={favoritesOnly ? 'yellow' : 'green'}>
+            {total} {favoritesOnly ? 'favorite' : 'prompt'}{total !== 1 ? 's' : ''}
+          </Badge>
+        </HStack>
+      )}
 
       <VStack spacing={3} align="stretch">
         {prompts.map((prompt: SavedSunoPrompt) => (
@@ -297,10 +397,25 @@ export default function SavedPromptsLibrary({
             prompt={prompt}
             onDelete={setDeleteId}
             onUpdate={handleUpdate}
+            onToggleFavorite={handleToggleFavorite}
             onReuse={onReuse}
           />
         ))}
       </VStack>
+
+      {/* Load More button */}
+      {hasMore && (
+        <Center mt={4}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => loadPrompts(true)}
+            isLoading={loadingMore}
+          >
+            Load more ({total - prompts.length} remaining)
+          </Button>
+        </Center>
+      )}
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog

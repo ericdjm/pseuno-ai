@@ -2,25 +2,38 @@
 Minimal generation routes for the Suno formatter agent.
 """
 
-from typing import Dict, List
+import logging
+from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
+from app.config import get_settings
+from app.db.models import SunoPrompt, User
+from app.deps import (
+    get_db,
+    get_current_user_id_optional,
+    get_or_create_device_user,
+    get_song_agent,
+)
+from app.prompts import (
+    LYRICS_SYSTEM_PROMPT,
+    AVAILABLE_MODELS,
+    list_variants,
+)
 from app.schemas.advanced import (
     AdvancedGenerateRequest,
     AdvancedGenerateResponse,
     LyricsOnlyRequest,
     LyricsOnlyResponse,
 )
-from app.deps import get_song_agent
 from app.services.agent_prompt_graph import AgentPromptGraph
-from app.prompts import (
-    LYRICS_SYSTEM_PROMPT,
-    AVAILABLE_MODELS,
-    list_variants,
-)
-from app.config import get_settings
+
+logger = logging.getLogger(__name__)
+
+# Cookie settings for device token (1 year expiry)
+DEVICE_TOKEN_MAX_AGE = 365 * 24 * 60 * 60  # 1 year in seconds
 
 router = APIRouter()
 
@@ -108,15 +121,42 @@ async def list_models():
     )
 
 
+def _derive_prompt_title(suno_prompt: str, auto_tags: List[str]) -> str:
+    """
+    Derive a default title for a saved prompt from the suno_prompt and auto_tags.
+
+    Creates a short, descriptive title like "Synthwave • 80s • Dreamy" from tags,
+    or falls back to the first 50 chars of the suno_prompt.
+    """
+    if auto_tags:
+        # Use top 3 tags joined with bullet
+        return " • ".join(tag.title() for tag in auto_tags[:3])
+
+    # Fallback: first line or first 50 chars of suno_prompt
+    first_line = suno_prompt.split("\n")[0].strip()
+    if len(first_line) > 50:
+        return first_line[:47] + "..."
+    return first_line or "Untitled"
+
+
 @router.post("/advanced", response_model=AdvancedGenerateResponse)
 async def generate_advanced(
     body: AdvancedGenerateRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
     agent: AgentPromptGraph = Depends(get_song_agent),
 ):
     """
-    Minimal Suno formatter generation (no auth required).
+    Suno formatter generation with automatic prompt history saving.
+
+    - Works for both Spotify-authenticated users and guests (via device token).
+    - If guest and no device_token cookie, creates a new guest user and sets cookie.
+    - All successful generations are automatically saved to prompt history.
     """
     from fastapi import HTTPException
+
+    settings = get_settings()
 
     # Reuse the startup-initialized agent to avoid per-request graph compilation.
     result = await agent.generate(body)
@@ -126,7 +166,68 @@ async def generate_advanced(
         error_msg = result.get("error", "Generation failed")
         raise HTTPException(status_code=500, detail=error_msg)
 
-    return AdvancedGenerateResponse(**result)
+    # === Auto-save prompt to history ===
+    prompt_id: Optional[int] = None
+    try:
+        # Resolve user: Spotify session OR device token (create guest if needed)
+        spotify_user_id = get_current_user_id_optional(request)
+
+        if spotify_user_id:
+            user_id = spotify_user_id
+        else:
+            # Fall back to device token (create guest user if needed)
+            user, created = get_or_create_device_user(request, db)
+            user_id = user.id
+
+            if created:
+                # Set device_token cookie for new guest users
+                response.set_cookie(
+                    key="device_token",
+                    value=user.device_token,
+                    httponly=True,
+                    secure=settings.session_cookie_secure,
+                    samesite=settings.session_cookie_samesite,
+                    max_age=DEVICE_TOKEN_MAX_AGE,
+                )
+
+        # Create the prompt history record
+        auto_tags = result.get("auto_tags", [])
+        prompt = SunoPrompt(
+            owner_user_id=user_id,
+            suno_prompt=result["suno_prompt"],
+            exclude=result.get("exclude", ""),
+            weirdness=result.get("weirdness", 50),
+            style_influence=result.get("style_influence", 50),
+            title=_derive_prompt_title(result["suno_prompt"], auto_tags),
+            is_favorite=False,
+            auto_tags=auto_tags,
+            generation_id=result.get("generation_id"),
+        )
+        db.add(prompt)
+        db.commit()
+        db.refresh(prompt)
+        prompt_id = prompt.id
+        logger.info("Auto-saved prompt id=%d for user=%s", prompt_id, user_id)
+
+    except Exception as e:
+        # Don't fail the request if auto-save fails - just log it
+        logger.warning("Failed to auto-save prompt: %s", e)
+        db.rollback()
+
+    # Build response with prompt_id
+    return AdvancedGenerateResponse(
+        concept_title=result["concept_title"],
+        lyrics=result.get("lyrics", ""),
+        suno_prompt=result["suno_prompt"],
+        exclude=result.get("exclude", ""),
+        weirdness=result.get("weirdness", 50),
+        style_influence=result.get("style_influence", 50),
+        generation_id=result["generation_id"],
+        prompt_id=prompt_id,
+        is_favorite=False,
+        auto_tags=result.get("auto_tags", []),
+        debug_info=result.get("debug_info"),
+    )
 
 
 def _is_instrumental_lyrics_request(lyrics_about: str) -> bool:

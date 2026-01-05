@@ -1,12 +1,40 @@
+import json
 import secrets
 import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import TypeDecorator
 
 from app.db.base import Base
+
+
+class JSONEncodedList(TypeDecorator):
+    """Store a list as a JSON-encoded string (portable across SQLite/Postgres)."""
+
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return "[]"
+        return json.dumps(value)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return []
+        return json.loads(value)
 
 
 def _uuid_str() -> str:
@@ -114,6 +142,15 @@ class SunoPrompt(Base):
     # UX fields
     title: Mapped[Optional[str]] = mapped_column(String(255))
     notes: Mapped[Optional[str]] = mapped_column(Text)
+
+    # Favorites / history tracking
+    is_favorite: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, index=True
+    )
+    auto_tags: Mapped[list[str]] = mapped_column(
+        JSONEncodedList, nullable=False, default=lambda: []
+    )
+    generation_id: Mapped[Optional[str]] = mapped_column(String(24), nullable=True)
 
     # Shareability fields (backend-ready, frontend initially user-scoped)
     visibility: Mapped[str] = mapped_column(

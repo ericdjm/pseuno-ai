@@ -12,7 +12,6 @@ import {
   Text,
   Button,
   Flex,
-  Spacer,
   Avatar,
   useToast,
   Spinner,
@@ -37,7 +36,7 @@ import AdvancedGenerationControls from './components/AdvancedGenerationControls'
 import AdvancedResultsDisplay from './components/AdvancedResultsDisplay';
 import SavedPromptsLibrary from './components/SavedPromptsLibrary';
 
-type StyleMode = 'songStylePrompt' | 'savedSunoPrompt';
+type StyleMode = 'songStylePrompt' | 'pastSunoPrompts' | 'favorites';
 
 function App() {
   const toast = useToast();
@@ -64,6 +63,14 @@ function App() {
 
   // Ref to scroll to generation controls
   const generationControlsRef = useRef<HTMLDivElement>(null);
+
+  // Refresh prompts when mode changes (to load favorites vs all)
+  useEffect(() => {
+    if (styleMode === 'pastSunoPrompts' || styleMode === 'favorites') {
+      setSavedPromptsRefresh((n) => n + 1);
+      setSelectedSavedPrompt(null);
+    }
+  }, [styleMode]);
 
   // Check for OAuth callback
   useEffect(() => {
@@ -159,21 +166,8 @@ function App() {
 
   const handleAdvancedGenerate = (result: api.AdvancedGenerateResponse) => {
     setAdvancedResult(result);
-  };
-
-  const handleReuse = (prompt: api.SavedSunoPrompt) => {
-    setStyleMode('savedSunoPrompt');
-    setSelectedSavedPrompt(prompt);
-
-    // Scroll to generation controls
-    generationControlsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-
-    toast({
-      title: 'Prompt selected',
-      description: `"${prompt.title || 'Untitled'}" is ready to reuse. Enter a lyrics topic and generate!`,
-      status: 'info',
-      duration: 4000,
-    });
+    // Refresh prompts list since generation now auto-saves
+    setSavedPromptsRefresh((n) => n + 1);
   };
 
   const handlePromptsLoaded = (prompts: api.SavedSunoPrompt[]) => {
@@ -194,7 +188,7 @@ function App() {
                 Pseuno AI
               </Heading>
             </HStack>
-            <Spacer />
+            <Box flex="1" />
             {authLoading ? (
               <Spinner size="sm" />
             ) : (
@@ -302,6 +296,7 @@ function App() {
               onSelectSavedPrompt={setSelectedSavedPrompt}
               styleMode={styleMode}
               onStyleModeChange={setStyleMode}
+              onPromptUpdated={() => setSavedPromptsRefresh((n) => n + 1)}
             />
           </Box>
 
@@ -309,15 +304,16 @@ function App() {
           {advancedResult && (
             <AdvancedResultsDisplay
               result={advancedResult}
-              onPromptSaved={() => setSavedPromptsRefresh((n: number) => n + 1)}
+              onFavoriteToggled={() => setSavedPromptsRefresh((n: number) => n + 1)}
             />
           )}
 
-          {/* Hidden SavedPromptsLibrary - just for loading data */}
+          {/* Hidden SavedPromptsLibrary - for loading prompts based on mode */}
           <Box display="none">
             <SavedPromptsLibrary
               refreshTrigger={savedPromptsRefresh}
               onPromptsLoaded={handlePromptsLoaded}
+              favoritesOnly={styleMode === 'favorites'}
             />
           </Box>
 

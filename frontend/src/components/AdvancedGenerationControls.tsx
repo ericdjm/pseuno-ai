@@ -22,8 +22,9 @@ import {
   MenuItem,
   Portal,
   Switch,
+  IconButton,
 } from '@chakra-ui/react';
-import { ChevronDownIcon } from '@chakra-ui/icons';
+import { ChevronDownIcon, StarIcon } from '@chakra-ui/icons';
 import { useState, useEffect } from 'react';
 import type { ChangeEvent } from 'react';
 import {
@@ -32,6 +33,7 @@ import {
   generateInputConcept,
   getPromptVariants,
   getModels,
+  updateSavedPrompt,
   AdvancedGenerateRequest,
   SpotifyProfileResponse,
   SavedSunoPrompt,
@@ -50,7 +52,7 @@ import {
   LyricRhymeScheme,
 } from '../api';
 
-type StyleMode = 'songStylePrompt' | 'savedSunoPrompt';
+type StyleMode = 'songStylePrompt' | 'pastSunoPrompts' | 'favorites';
 
 // Two-step variants that support instrumental mode (can skip lyrics branch)
 const TWO_STEP_VARIANTS: PromptVariant[] = [
@@ -74,6 +76,7 @@ interface AdvancedGenerationControlsProps {
   onSelectSavedPrompt: (prompt: SavedSunoPrompt | null) => void;
   styleMode: StyleMode;
   onStyleModeChange: (mode: StyleMode) => void;
+  onPromptUpdated?: () => void;
 }
 
 export default function AdvancedGenerationControls({
@@ -86,8 +89,79 @@ export default function AdvancedGenerationControls({
   onSelectSavedPrompt,
   styleMode,
   onStyleModeChange,
+  onPromptUpdated,
 }: AdvancedGenerationControlsProps) {
   const toast = useToast();
+
+  // State for favorite toggle
+  const [togglingFavoriteId, setTogglingFavoriteId] = useState<number | null>(null);
+
+  // State for inline title editing
+  const [editingTitleId, setEditingTitleId] = useState<number | null>(null);
+  const [editingTitleValue, setEditingTitleValue] = useState('');
+
+  const handleTitleDoubleClick = (e: React.MouseEvent, prompt: SavedSunoPrompt) => {
+    e.stopPropagation();
+    setEditingTitleId(prompt.id);
+    setEditingTitleValue(prompt.title || '');
+  };
+
+  const handleTitleSave = async (promptId: number) => {
+    const trimmedTitle = editingTitleValue.trim();
+    if (!trimmedTitle) {
+      // Don't save empty titles
+      setEditingTitleId(null);
+      return;
+    }
+    try {
+      await updateSavedPrompt(promptId, { title: trimmedTitle });
+      toast({
+        title: 'Title updated',
+        status: 'success',
+        duration: 2000,
+      });
+      onPromptUpdated?.();
+    } catch (err) {
+      toast({
+        title: 'Failed to update title',
+        status: 'error',
+        duration: 3000,
+      });
+    }
+    setEditingTitleId(null);
+  };
+
+  const handleTitleKeyDown = (e: React.KeyboardEvent, promptId: number) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleTitleSave(promptId);
+    } else if (e.key === 'Escape') {
+      setEditingTitleId(null);
+    }
+  };
+
+  const handleToggleFavorite = async (e: React.MouseEvent, prompt: SavedSunoPrompt) => {
+    e.stopPropagation(); // Don't select the prompt when clicking the star
+    setTogglingFavoriteId(prompt.id);
+    try {
+      const newFavoriteState = !prompt.is_favorite;
+      await updateSavedPrompt(prompt.id, { is_favorite: newFavoriteState });
+      toast({
+        title: newFavoriteState ? 'Added to favorites' : 'Removed from favorites',
+        status: 'success',
+        duration: 2000,
+      });
+      onPromptUpdated?.();
+    } catch (err) {
+      toast({
+        title: 'Failed to update',
+        status: 'error',
+        duration: 3000,
+      });
+    } finally {
+      setTogglingFavoriteId(null);
+    }
+  };
 
   const MAX_STYLE_PROMPT_LEN = 500;
   const MAX_LYRICS_ABOUT_LEN = 500;
@@ -196,10 +270,11 @@ export default function AdvancedGenerationControls({
       return;
     }
 
-    if (styleMode === 'savedSunoPrompt' && !selectedSavedPrompt) {
+    const isReusingSavedPrompt = styleMode === 'pastSunoPrompts' || styleMode === 'favorites';
+    if (isReusingSavedPrompt && !selectedSavedPrompt) {
       toast({
         title: 'No prompt selected',
-        description: 'Please select a saved prompt from your library',
+        description: 'Please select a prompt from the list',
         status: 'error',
         duration: 3000,
       });
@@ -219,7 +294,7 @@ export default function AdvancedGenerationControls({
 
     setIsLoading(true);
     try {
-      if (styleMode === 'savedSunoPrompt') {
+      if (isReusingSavedPrompt) {
         // Use lyrics-only generation + copy saved prompt
         const sunoPrompt = selectedSavedPrompt!.suno_prompt.slice(0, MAX_STYLE_PROMPT_LEN);
 
@@ -233,6 +308,9 @@ export default function AdvancedGenerationControls({
             exclude: selectedSavedPrompt!.exclude,
             weirdness: selectedSavedPrompt!.weirdness,
             style_influence: selectedSavedPrompt!.style_influence,
+            prompt_id: selectedSavedPrompt!.id,
+            is_favorite: selectedSavedPrompt!.is_favorite,
+            auto_tags: selectedSavedPrompt!.auto_tags,
           };
 
           onGenerate(result);
@@ -259,6 +337,9 @@ export default function AdvancedGenerationControls({
             exclude: selectedSavedPrompt!.exclude,
             weirdness: selectedSavedPrompt!.weirdness,
             style_influence: selectedSavedPrompt!.style_influence,
+            prompt_id: selectedSavedPrompt!.id,
+            is_favorite: selectedSavedPrompt!.is_favorite,
+            auto_tags: selectedSavedPrompt!.auto_tags,
           };
 
           onGenerate(result);
@@ -347,7 +428,7 @@ export default function AdvancedGenerationControls({
 
 
   const getButtonLabel = () => {
-    if (styleMode === 'savedSunoPrompt') {
+    if (styleMode === 'pastSunoPrompts' || styleMode === 'favorites') {
       return isInstrumental ? 'Use Prompt (Instrumental)' : 'Generate Lyrics';
     }
     return isInstrumental ? 'Generate Instrumental' : 'Generate Song';
@@ -446,15 +527,23 @@ export default function AdvancedGenerationControls({
                 onSelectSavedPrompt(null);
               }}
             >
-              Song Style Prompt
+              New Style
             </Button>
             <Button
               flex={1}
-              colorScheme={styleMode === 'savedSunoPrompt' ? 'green' : 'gray'}
-              variant={styleMode === 'savedSunoPrompt' ? 'solid' : 'outline'}
-              onClick={() => onStyleModeChange('savedSunoPrompt')}
+              colorScheme={styleMode === 'pastSunoPrompts' ? 'blue' : 'gray'}
+              variant={styleMode === 'pastSunoPrompts' ? 'solid' : 'outline'}
+              onClick={() => onStyleModeChange('pastSunoPrompts')}
             >
-              Saved Suno Prompt
+              Past Prompts
+            </Button>
+            <Button
+              flex={1}
+              colorScheme={styleMode === 'favorites' ? 'yellow' : 'gray'}
+              variant={styleMode === 'favorites' ? 'solid' : 'outline'}
+              onClick={() => onStyleModeChange('favorites')}
+            >
+              Favorites
             </Button>
           </ButtonGroup>
         </FormControl>
@@ -546,10 +635,12 @@ export default function AdvancedGenerationControls({
           </FormControl>
         </Collapse>
 
-        {/* Saved Prompt Selector */}
-        <Collapse in={styleMode === 'savedSunoPrompt'} animateOpacity>
+        {/* Prompt Selector for Past/Favorites modes */}
+        <Collapse in={styleMode === 'pastSunoPrompts' || styleMode === 'favorites'} animateOpacity>
           <FormControl isRequired>
-            <FormLabel>Select a Saved Prompt</FormLabel>
+            <FormLabel>
+              {styleMode === 'favorites' ? 'Select a Favorite' : 'Select a Past Prompt'}
+            </FormLabel>
             {savedPrompts.length === 0 ? (
               <Box
                 p={4}
@@ -559,9 +650,13 @@ export default function AdvancedGenerationControls({
                 borderColor="gray.600"
                 textAlign="center"
               >
-                <Text color="gray.500">No saved prompts yet.</Text>
+                <Text color="gray.500">
+                  {styleMode === 'favorites' ? 'No favorites yet.' : 'No past prompts yet.'}
+                </Text>
                 <Text color="gray.600" fontSize="sm" mt={1}>
-                  Generate and save a prompt first.
+                  {styleMode === 'favorites'
+                    ? 'Star a prompt to add it to your favorites.'
+                    : 'Generate a prompt to see it here.'}
                 </Text>
               </Box>
             ) : (
@@ -574,21 +669,51 @@ export default function AdvancedGenerationControls({
                     borderRadius="md"
                     borderWidth="2px"
                     borderColor={
-                      selectedSavedPrompt?.id === prompt.id ? 'green.400' : 'gray.600'
+                      selectedSavedPrompt?.id === prompt.id
+                        ? styleMode === 'favorites' ? 'yellow.400' : 'blue.400'
+                        : prompt.is_favorite ? 'yellow.700' : 'gray.600'
                     }
                     cursor="pointer"
                     onClick={() => onSelectSavedPrompt(prompt)}
                     _hover={{
                       borderColor:
-                        selectedSavedPrompt?.id === prompt.id ? 'green.300' : 'gray.500',
+                        selectedSavedPrompt?.id === prompt.id
+                          ? styleMode === 'favorites' ? 'yellow.300' : 'blue.300'
+                          : 'gray.500',
                     }}
                     transition="border-color 0.2s"
                   >
                     <HStack justify="space-between" align="start">
                       <VStack align="start" spacing={1}>
-                        <Text fontWeight="semibold" fontSize="sm">
-                          {prompt.title || 'Untitled'}
-                        </Text>
+                        <HStack spacing={2}>
+                          {editingTitleId === prompt.id ? (
+                            <Input
+                              size="sm"
+                              value={editingTitleValue}
+                              onChange={(e) => setEditingTitleValue(e.target.value.slice(0, 255))}
+                              onBlur={() => handleTitleSave(prompt.id)}
+                              onKeyDown={(e) => handleTitleKeyDown(e, prompt.id)}
+                              autoFocus
+                              onClick={(e) => e.stopPropagation()}
+                              bg="gray.700"
+                              width="200px"
+                            />
+                          ) : (
+                            <Text
+                              fontWeight="semibold"
+                              fontSize="sm"
+                              onDoubleClick={(e) => handleTitleDoubleClick(e, prompt)}
+                              cursor="text"
+                              title="Double-click to rename"
+                              _hover={{ textDecoration: 'underline', textDecorationStyle: 'dotted' }}
+                            >
+                              {prompt.title || 'Untitled'}
+                            </Text>
+                          )}
+                          {prompt.is_favorite && styleMode !== 'favorites' && (
+                            <Badge colorScheme="yellow" fontSize="2xs">★</Badge>
+                          )}
+                        </HStack>
                         <HStack spacing={2} flexWrap="wrap">
                           <Badge colorScheme="blue" fontSize="xs">
                             Weirdness: {prompt.weirdness}%
@@ -597,10 +722,36 @@ export default function AdvancedGenerationControls({
                             Style: {prompt.style_influence}%
                           </Badge>
                         </HStack>
+                        {/* Auto-tags */}
+                        {prompt.auto_tags && prompt.auto_tags.length > 0 && (
+                          <Wrap spacing={1}>
+                            {prompt.auto_tags.slice(0, 4).map((tag, idx) => (
+                              <WrapItem key={idx}>
+                                <Badge colorScheme="teal" fontSize="2xs" variant="subtle">
+                                  {tag}
+                                </Badge>
+                              </WrapItem>
+                            ))}
+                          </Wrap>
+                        )}
                       </VStack>
-                      {selectedSavedPrompt?.id === prompt.id && (
-                        <Badge colorScheme="green">Selected</Badge>
-                      )}
+                      <VStack spacing={1} align="end">
+                        {selectedSavedPrompt?.id === prompt.id && (
+                          <Badge colorScheme={styleMode === 'favorites' ? 'yellow' : 'blue'}>
+                            Selected
+                          </Badge>
+                        )}
+                        <IconButton
+                          aria-label={prompt.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
+                          icon={<StarIcon />}
+                          size="xs"
+                          variant="ghost"
+                          color={prompt.is_favorite ? 'yellow.400' : 'gray.500'}
+                          onClick={(e) => handleToggleFavorite(e, prompt)}
+                          isLoading={togglingFavoriteId === prompt.id}
+                          _hover={{ color: prompt.is_favorite ? 'yellow.300' : 'yellow.400' }}
+                        />
+                      </VStack>
                     </HStack>
                     <Text
                       fontSize="xs"
@@ -1096,7 +1247,7 @@ export default function AdvancedGenerationControls({
         mt={6}
         onClick={handleGenerate}
         isLoading={isLoading}
-        loadingText={styleMode === 'savedSunoPrompt' ? 'Processing...' : 'Generating...'}
+        loadingText={(styleMode === 'pastSunoPrompts' || styleMode === 'favorites') ? 'Processing...' : 'Generating...'}
       >
         {getButtonLabel()}
       </Button>

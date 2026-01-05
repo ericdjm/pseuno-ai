@@ -290,6 +290,15 @@ class AdvancedGenerateResponse(BaseModel):
         description="Style influence percent (0-100)", ge=0, le=100
     )
     generation_id: str = Field(description="Reference ID for this generation")
+    prompt_id: Optional[int] = Field(
+        default=None, description="ID of the auto-saved prompt record"
+    )
+    is_favorite: bool = Field(
+        default=False, description="Whether this prompt is marked as favorite"
+    )
+    auto_tags: List[str] = Field(
+        default_factory=list, description="Auto-generated tags from genre disambiguation"
+    )
     debug_info: Optional[dict] = None
 
 

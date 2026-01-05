@@ -198,6 +198,9 @@ export interface AdvancedGenerateResponse {
   exclude: string;
   weirdness: number;
   style_influence: number;
+  prompt_id: number | null;
+  is_favorite: boolean;
+  auto_tags: string[];
   debug_info?: DebugTrace;
 }
 
@@ -239,6 +242,9 @@ export interface SavedSunoPrompt {
   style_influence: number;
   title: string | null;
   notes: string | null;
+  is_favorite: boolean;
+  auto_tags: string[];
+  generation_id: string | null;
   visibility: 'private' | 'unlisted' | 'public';
   share_id: string;
   created_at: string;
@@ -257,11 +263,13 @@ export interface CreateSunoPromptRequest {
   style_influence: number;
   title?: string;
   notes?: string;
+  is_favorite?: boolean;
 }
 
 export interface UpdateSunoPromptRequest {
   title?: string;
   notes?: string;
+  is_favorite?: boolean;
   visibility?: 'private' | 'unlisted' | 'public';
 }
 
@@ -462,15 +470,26 @@ export async function createSavedPrompt(
   return handleResponse<SavedSunoPrompt>(response);
 }
 
+export interface ListPromptsOptions {
+  limit?: number;
+  offset?: number;
+  favoritesOnly?: boolean;
+}
+
 /**
- * List the current user's saved prompts
+ * List the current user's prompts (history or favorites only)
  */
 export async function listSavedPrompts(
-  limit: number = 50,
-  offset: number = 0
+  options: ListPromptsOptions = {}
 ): Promise<SavedPromptsListResponse> {
+  const { limit = 50, offset = 0, favoritesOnly = false } = options;
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+    favorites_only: String(favoritesOnly),
+  });
   const response = await fetch(
-    `${API_BASE}/prompts?limit=${limit}&offset=${offset}`,
+    `${API_BASE}/prompts?${params}`,
     {
       credentials: 'include',
     }

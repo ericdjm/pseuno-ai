@@ -732,6 +732,7 @@ class AgentPromptGraph:
                 "weirdness": style_result["weirdness"],
                 "style_influence": style_result["style_influence"],
                 "generation_id": generation_id,
+                "auto_tags": style_result.get("auto_tags", []),
                 "debug_info": tracer.to_dict(),
             }
 
@@ -789,6 +790,7 @@ class AgentPromptGraph:
             "weirdness": style_result["weirdness"],
             "style_influence": style_result["style_influence"],
             "generation_id": generation_id,
+            "auto_tags": style_result.get("auto_tags", []),
             "debug_info": tracer.to_dict(),
         }
 
@@ -1025,6 +1027,64 @@ class AgentPromptGraph:
             suggestions.extend(vocal_style_to_avoid[:1])  # Take top 1 per artist
 
         return suggestions[:5]  # Cap at 5 total
+
+    def _derive_auto_tags(self, genre_data: Optional[Dict[str, Any]]) -> List[str]:
+        """
+        Derive auto_tags from genre disambiguation data.
+
+        Returns a list of 6-8 tags derived from:
+        - Top genres across all artists (most common first)
+        - Era labels (e.g., "90s", "2010s")
+        - Key instruments (V7+)
+
+        These tags are stored with the prompt for discovery/filtering.
+        """
+        if not genre_data or not genre_data.get("artists"):
+            return []
+
+        # Count genres across all artists
+        genre_counts: Dict[str, int] = {}
+        eras: List[str] = []
+        instruments: List[str] = []
+
+        for artist in genre_data.get("artists", []):
+            # Count genres
+            for genre in artist.get("genres", []):
+                genre_lower = genre.lower().strip()
+                if genre_lower:
+                    genre_counts[genre_lower] = genre_counts.get(genre_lower, 0) + 1
+
+            # Collect era labels
+            era = artist.get("era", {})
+            era_label = era.get("label", "")
+            if era_label and era_label not in eras:
+                eras.append(era_label)
+
+            # Collect instruments (V7+)
+            for inst in artist.get("instruments_to_use", [])[:2]:
+                inst_lower = inst.lower().strip()
+                if inst_lower and inst_lower not in instruments:
+                    instruments.append(inst_lower)
+
+        # Build tags: top 4 genres + 2 eras + 2 instruments
+        sorted_genres = sorted(genre_counts.items(), key=lambda x: -x[1])
+        tags: List[str] = []
+
+        # Add top genres
+        for genre, _ in sorted_genres[:4]:
+            tags.append(genre)
+
+        # Add era labels
+        for era in eras[:2]:
+            if era not in tags:
+                tags.append(era)
+
+        # Add instruments
+        for inst in instruments[:2]:
+            if inst not in tags:
+                tags.append(inst)
+
+        return tags[:8]  # Cap at 8 tags
 
     # =========================================================================
     # V8 Channel Split Logic
@@ -1452,11 +1512,16 @@ class AgentPromptGraph:
             "Style branch: complete (suno_prompt=%d chars)",
             len(style_output.suno_prompt),
         )
+
+        # Derive auto_tags from genre disambiguation data
+        auto_tags = self._derive_auto_tags(genre_data)
+
         return {
             "suno_prompt": style_output.suno_prompt,
             "exclude": style_output.exclude,
             "weirdness": style_output.weirdness,
             "style_influence": style_output.style_influence,
+            "auto_tags": auto_tags,
         }
 
     async def _run_lyrics_branch(
@@ -1948,6 +2013,7 @@ class AgentPromptGraph:
             "generation_id": hashlib.md5(f"error{time.time()}".encode()).hexdigest()[
                 :12
             ],
+            "auto_tags": [],
         }
 
     def _node_error(self, state: _AgentState) -> _AgentState:
@@ -2412,6 +2478,7 @@ Please fix the issues and regenerate the complete output with all 6 sections.
         generation_id = self._create_generation_id(song_prompt, lyrics_about)
 
         # Result without debug_info - tracer will be attached in generate()
+        # Single-step variants (V1/V2) don't run genre disambiguation, so no auto_tags
         result = {
             "concept_title": concept_title,
             "lyrics": lyrics,
@@ -2420,6 +2487,7 @@ Please fix the issues and regenerate the complete output with all 6 sections.
             "weirdness": weirdness,
             "style_influence": style_influence,
             "generation_id": generation_id,
+            "auto_tags": [],
         }
         return {**state, "result": result}
 
