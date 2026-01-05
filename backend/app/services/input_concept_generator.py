@@ -360,25 +360,33 @@ Change request:
 Refined prompt:"""
 
     if is_gemini:
-        # Use Google Generative AI
+        # Use Google Generative AI (new google-genai SDK)
         if not settings.gemini_api_key:
             raise RuntimeError("GEMINI_API_KEY is required for Gemini models")
 
-        import google.generativeai as genai
+        from google import genai
+        from google.genai import types
 
-        genai.configure(api_key=settings.gemini_api_key)
-        genai_model = genai.GenerativeModel(
-            model_name=model,
-            generation_config={
-                "temperature": 0.7,
-                "max_output_tokens": 500,
-            },
-        )
+        def _sync_generate():
+            client = genai.Client(api_key=settings.gemini_api_key)
+            config = types.GenerateContentConfig(
+                temperature=0.7,
+                max_output_tokens=500,
+                system_instruction=system_prompt,
+            )
+            response = client.models.generate_content(
+                model=model,
+                contents=[
+                    types.Content(
+                        role="user", parts=[types.Part.from_text(text=user_message)]
+                    )
+                ],
+                config=config,
+            )
+            return response.text if response.text else ""
 
-        # Gemini doesn't have separate system/user, combine them
-        combined_prompt = f"{system_prompt}\n\n{user_message}"
-        response = await asyncio.to_thread(genai_model.generate_content, combined_prompt)
-        refined = response.text.strip()
+        refined = await asyncio.to_thread(_sync_generate)
+        refined = refined.strip()
 
     else:
         # Use OpenAI-compatible API
@@ -434,7 +442,7 @@ async def refine_lyrics_with_llm(
         The refined lyrics as a string
     """
     import httpx
-    
+
     model = settings.llm_model
     is_gemini = "gemini" in model.lower()
 
@@ -462,25 +470,33 @@ Change request:
 Refined lyrics:"""
 
     if is_gemini:
-        # Use Google Generative AI
+        # Use Google Generative AI (new google-genai SDK)
         if not settings.gemini_api_key:
             raise RuntimeError("GEMINI_API_KEY is required for Gemini models")
 
-        import google.generativeai as genai
+        from google import genai
+        from google.genai import types
 
-        genai.configure(api_key=settings.gemini_api_key)
-        genai_model = genai.GenerativeModel(
-            model_name=model,
-            generation_config={
-                "temperature": 0.7,
-                "max_output_tokens": 2000,
-            },
-        )
+        def _sync_generate():
+            client = genai.Client(api_key=settings.gemini_api_key)
+            config = types.GenerateContentConfig(
+                temperature=0.7,
+                max_output_tokens=2000,
+                system_instruction=system_prompt,
+            )
+            response = client.models.generate_content(
+                model=model,
+                contents=[
+                    types.Content(
+                        role="user", parts=[types.Part.from_text(text=user_message)]
+                    )
+                ],
+                config=config,
+            )
+            return response.text if response.text else ""
 
-        # Gemini doesn't have separate system/user, combine them
-        combined_prompt = f"{system_prompt}\n\n{user_message}"
-        response = await asyncio.to_thread(genai_model.generate_content, combined_prompt)
-        refined = response.text.strip()
+        refined = await asyncio.to_thread(_sync_generate)
+        refined = refined.strip()
 
     else:
         # Use OpenAI-compatible API
