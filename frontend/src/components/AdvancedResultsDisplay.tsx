@@ -19,9 +19,23 @@ import {
   AccordionPanel,
   AccordionIcon,
   Link,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalCloseButton,
+  ModalBody,
+  ModalFooter,
+  Textarea,
+  useDisclosure,
 } from '@chakra-ui/react';
-import { CopyIcon, StarIcon, ExternalLinkIcon } from '@chakra-ui/icons';
-import { AdvancedGenerateResponse, updateSavedPrompt } from '../api';
+import { CopyIcon, StarIcon, ExternalLinkIcon, EditIcon } from '@chakra-ui/icons';
+import { 
+  AdvancedGenerateResponse, 
+  updateSavedPrompt, 
+  refineLyrics, 
+  LyricsRefinementRequest 
+} from '../api';
 import DebugTraceViewer from './debug/DebugTraceViewer';
 
 interface AdvancedResultsDisplayProps {
@@ -37,10 +51,59 @@ export default function AdvancedResultsDisplay({
   const [isFavorite, setIsFavorite] = useState(result.is_favorite);
   const [togglingFavorite, setTogglingFavorite] = useState(false);
 
+  // Lyrics refinement state
+  const { isOpen: isLyricsRefineOpen, onOpen: onLyricsRefineOpen, onClose: onLyricsRefineClose } = useDisclosure();
+  const [currentLyrics, setCurrentLyrics] = useState(result.lyrics);
+  const [lyricsChangeRequest, setLyricsChangeRequest] = useState('');
+  const [isRefiningLyrics, setIsRefiningLyrics] = useState(false);
+
   // Sync isFavorite state when result changes (new generation)
   useEffect(() => {
     setIsFavorite(result.is_favorite);
-  }, [result.prompt_id, result.is_favorite]);
+    setCurrentLyrics(result.lyrics);
+  }, [result.prompt_id, result.is_favorite, result.lyrics]);
+
+  const handleRefineLyrics = async () => {
+    if (!lyricsChangeRequest.trim()) {
+      toast({
+        title: 'Please describe the changes you want',
+        status: 'warning',
+        duration: 2000,
+      });
+      return;
+    }
+
+    setIsRefiningLyrics(true);
+    try {
+      const payload: LyricsRefinementRequest = {
+        current_lyrics: currentLyrics,
+        change_request: lyricsChangeRequest,
+      };
+
+      const response = await refineLyrics(payload);
+      
+      setCurrentLyrics(response.refined_lyrics);
+      setLyricsChangeRequest('');
+      onLyricsRefineClose();
+
+      toast({
+        title: 'Lyrics refined successfully',
+        description: response.changes_made || 'Applied your requested changes',
+        status: 'success',
+        duration: 3000,
+      });
+    } catch (err) {
+      console.error('Error refining lyrics:', err);
+      toast({
+        title: 'Failed to refine lyrics',
+        description: err instanceof Error ? err.message : 'Unknown error',
+        status: 'error',
+        duration: 4000,
+      });
+    } finally {
+      setIsRefiningLyrics(false);
+    }
+  };
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -212,14 +275,25 @@ export default function AdvancedResultsDisplay({
               {lyricsLength} chars
             </Text>
             {lyricsLength > 0 && (
-              <Button
-                size="sm"
-                leftIcon={<CopyIcon />}
-                onClick={() => copyToClipboard(result.lyrics, 'Lyrics')}
-                colorScheme="green"
-              >
-                Copy
-              </Button>
+              <>
+                <Button
+                  size="sm"
+                  leftIcon={<EditIcon />}
+                  onClick={onLyricsRefineOpen}
+                  colorScheme="purple"
+                  variant="outline"
+                >
+                  Refine
+                </Button>
+                <Button
+                  size="sm"
+                  leftIcon={<CopyIcon />}
+                  onClick={() => copyToClipboard(currentLyrics, 'Lyrics')}
+                  colorScheme="green"
+                >
+                  Copy
+                </Button>
+              </>
             )}
           </HStack>
         </HStack>
@@ -231,7 +305,7 @@ export default function AdvancedResultsDisplay({
           fontFamily="monospace"
           fontSize="sm"
         >
-          {lyricsLength > 0 ? result.lyrics : (
+          {lyricsLength > 0 ? currentLyrics : (
             <Text color="gray.500" fontStyle="italic">
               No lyrics generated — instrumental mode
             </Text>
@@ -327,6 +401,64 @@ export default function AdvancedResultsDisplay({
           </Accordion>
         </>
       )}
+
+      {/* Lyrics Refinement Modal */}
+      <Modal isOpen={isLyricsRefineOpen} onClose={onLyricsRefineClose} size="xl">
+        <ModalOverlay />
+        <ModalContent bg="gray.900">
+          <ModalHeader>Refine Lyrics</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <VStack spacing={4} align="stretch">
+              <Box>
+                <Text fontWeight="bold" mb={2}>Current Lyrics</Text>
+                <Box
+                  p={3}
+                  bg="gray.800"
+                  borderRadius="md"
+                  whiteSpace="pre-wrap"
+                  fontFamily="monospace"
+                  fontSize="sm"
+                  maxH="300px"
+                  overflowY="auto"
+                >
+                  {currentLyrics}
+                </Box>
+              </Box>
+              <Box>
+                <Text fontWeight="bold" mb={2}>What would you like to change?</Text>
+                <Text fontSize="sm" color="gray.400" mb={2}>
+                  Examples: "change the chorus", "add another verse", "make the bridge darker"
+                </Text>
+                <Textarea
+                  value={lyricsChangeRequest}
+                  onChange={(e) => setLyricsChangeRequest(e.target.value)}
+                  placeholder="Describe the changes you want..."
+                  bg="gray.800"
+                  rows={4}
+                  maxLength={500}
+                />
+                <Text fontSize="xs" color="gray.500" mt={1}>
+                  {lyricsChangeRequest.length}/500
+                </Text>
+              </Box>
+            </VStack>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="ghost" mr={3} onClick={onLyricsRefineClose}>
+              Cancel
+            </Button>
+            <Button
+              colorScheme="purple"
+              onClick={handleRefineLyrics}
+              isLoading={isRefiningLyrics}
+              loadingText="Refining..."
+            >
+              Refine Lyrics
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </VStack>
   );
 }

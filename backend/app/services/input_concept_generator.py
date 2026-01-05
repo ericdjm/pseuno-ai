@@ -415,3 +415,105 @@ Refined prompt:"""
         refined = refined[:500].rsplit(" ", 1)[0]  # Trim at word boundary
 
     return refined
+
+
+async def refine_lyrics_with_llm(
+    current_lyrics: str,
+    change_request: str,
+    settings,
+) -> str:
+    """
+    Refine lyrics using LLM based on user feedback while preserving structure.
+
+    Args:
+        current_lyrics: The current lyrics text with structure markers
+        change_request: What the user wants to change
+        settings: App settings (contains llm_model, openai_api_key, etc.)
+
+    Returns:
+        The refined lyrics as a string
+    """
+    import httpx
+    
+    model = settings.llm_model
+    is_gemini = "gemini" in model.lower()
+
+    system_prompt = """You are a lyrics refinement assistant. Your job is to:
+
+1. Preserve ALL structure markers like [Verse], [Chorus], [Bridge], [Outro], [Intro], etc.
+2. Make ONLY the changes the user specifically requested
+3. Do not modify parts of the lyrics the user didn't mention
+4. Keep the lyrical style and tone consistent with the original unless asked to change it
+5. Return ONLY the complete refined lyrics with all structure markers intact
+
+Examples:
+- If user says "change the chorus", only modify the [Chorus] section
+- If user says "add another verse", insert a new [Verse] section in an appropriate location
+- If user says "make it darker", adjust the tone while preserving the structure
+
+Important: Return the COMPLETE lyrics, not just the changed parts."""
+
+    user_message = f"""Current lyrics:
+{current_lyrics}
+
+Change request:
+{change_request}
+
+Refined lyrics:"""
+
+    if is_gemini:
+        # Use Google Generative AI
+        if not settings.gemini_api_key:
+            raise RuntimeError("GEMINI_API_KEY is required for Gemini models")
+
+        import google.generativeai as genai
+
+        genai.configure(api_key=settings.gemini_api_key)
+        genai_model = genai.GenerativeModel(
+            model_name=model,
+            generation_config={
+                "temperature": 0.7,
+                "max_output_tokens": 2000,
+            },
+        )
+
+        # Gemini doesn't have separate system/user, combine them
+        combined_prompt = f"{system_prompt}\n\n{user_message}"
+        response = await asyncio.to_thread(genai_model.generate_content, combined_prompt)
+        refined = response.text.strip()
+
+    else:
+        # Use OpenAI-compatible API
+        if not settings.openai_api_key:
+            raise RuntimeError("OPENAI_API_KEY is required for OpenAI models")
+
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+            "temperature": 0.7,
+            "max_tokens": 2000,
+        }
+
+        headers = {
+            "Authorization": f"Bearer {settings.openai_api_key}",
+            "Content-Type": "application/json",
+        }
+
+        async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
+            response = await client.post(
+                "https://api.openai.com/v1/chat/completions",
+                json=payload,
+                headers=headers,
+            )
+            response.raise_for_status()
+            data = response.json()
+            refined = data["choices"][0]["message"]["content"].strip()
+
+    # Enforce max length
+    if len(refined) > 3000:
+        refined = refined[:3000].rsplit("\n", 1)[0]  # Trim at line boundary
+
+    return refined

@@ -18,6 +18,8 @@ from fastapi import APIRouter, HTTPException, Request, status
 from app.schemas.input_concept import (
     InputConceptRequest,
     InputConceptResponse,
+    LyricsRefinementRequest,
+    LyricsRefinementResponse,
     RefinementRequest,
     RefinementResponse,
 )
@@ -25,6 +27,7 @@ from app.services.input_concept_generator import (
     InputConceptGenerator,
     create_generator_with_providers,
     refine_concept_with_llm,
+    refine_lyrics_with_llm,
 )
 
 logger = logging.getLogger(__name__)
@@ -183,4 +186,72 @@ async def refine_concept(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to refine concept",
+        )
+
+
+@router.post(
+    "/refine-lyrics",
+    response_model=LyricsRefinementResponse,
+    summary="Refine lyrics based on user feedback",
+    description="""
+Refine existing lyrics based on user change requests while preserving structure markers.
+
+The refinement:
+- Preserves ALL structure markers like [Verse], [Chorus], [Bridge], etc.
+- Makes ONLY the changes specifically requested by the user
+- Keeps the lyrical style and tone consistent unless asked to change
+
+Examples of change requests:
+- "change the chorus to be more upbeat"
+- "add another verse"
+- "make the bridge darker"
+- "remove the third verse"
+""",
+)
+async def refine_lyrics(
+    request: LyricsRefinementRequest,
+    fastapi_request: Request,
+) -> LyricsRefinementResponse:
+    """Refine lyrics based on user feedback while preserving structure."""
+
+    try:
+        # Get settings from app state
+        settings = fastapi_request.app.state.settings if hasattr(fastapi_request.app.state, 'settings') else None
+        if settings is None:
+            from app.config import get_settings
+            settings = get_settings()
+
+        # Call LLM refiner
+        refined_lyrics = await refine_lyrics_with_llm(
+            current_lyrics=request.current_lyrics,
+            change_request=request.change_request,
+            settings=settings,
+        )
+
+        logger.info(
+            f"Refined lyrics: original_len={len(request.current_lyrics)}, "
+            f"refined_len={len(refined_lyrics)}"
+        )
+
+        return LyricsRefinementResponse(
+            refined_lyrics=refined_lyrics,
+            changes_made=None,  # Could extract diff summary later if needed
+        )
+
+    except RuntimeError as e:
+        # API key missing
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.exception("Error refining lyrics")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to refine lyrics",
         )

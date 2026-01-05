@@ -240,6 +240,16 @@ export interface RefinementResponse {
   changes_made: string | null;
 }
 
+export interface LyricsRefinementRequest {
+  current_lyrics: string;
+  change_request: string;
+}
+
+export interface LyricsRefinementResponse {
+  refined_lyrics: string;
+  changes_made: string | null;
+}
+
 export type TimeRange = 'short_term' | 'medium_term' | 'long_term';
 
 // === Saved Prompts Types ===
@@ -479,6 +489,26 @@ export async function refineInputConcept(
     body: JSON.stringify(payload),
   });
   return handleResponse<RefinementResponse>(response);
+}
+
+/**
+ * Refine existing lyrics based on user feedback.
+ * 
+ * Uses an LLM to make targeted edits to the lyrics while preserving
+ * structure markers like [Verse], [Chorus], [Bridge], etc.
+ */
+export async function refineLyrics(
+  payload: LyricsRefinementRequest
+): Promise<LyricsRefinementResponse> {
+  const response = await fetch(`${API_BASE}/generate/refine-lyrics`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  return handleResponse<LyricsRefinementResponse>(response);
 }
 
 // === Saved Prompts Functions ===
