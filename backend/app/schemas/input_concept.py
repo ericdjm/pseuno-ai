@@ -59,60 +59,6 @@ class InputConceptResponse(BaseModel):
     )
 
 
-class RefinementRequest(BaseModel):
-    """Request to refine an existing prompt based on user feedback."""
-
-    current_prompt: str = Field(
-        description="The current prompt text to refine",
-        min_length=1,
-        max_length=500,
-    )
-    change_request: str = Field(
-        description="Description of what the user wants to change",
-        min_length=1,
-        max_length=500,
-    )
-
-
-class RefinementResponse(BaseModel):
-    """Response containing the refined prompt."""
-
-    refined_prompt: str = Field(
-        description="The refined prompt incorporating requested changes"
-    )
-    changes_made: Optional[str] = Field(
-        default=None,
-        description="Optional summary of changes made (for debugging)",
-    )
-
-
-class LyricsRefinementRequest(BaseModel):
-    """Request to refine lyrics based on user feedback."""
-
-    current_lyrics: str = Field(
-        description="The current lyrics text to refine (with structure markers like [Verse], [Chorus])",
-        max_length=3000,
-    )
-    change_request: str = Field(
-        description="What the user wants to change in the lyrics (e.g., 'change the chorus', 'add another verse')",
-        min_length=1,
-        max_length=500,
-    )
-
-
-class LyricsRefinementResponse(BaseModel):
-    """Response containing the refined lyrics."""
-
-    refined_lyrics: str = Field(
-        description="The updated lyrics after applying user-requested changes",
-        max_length=3000,
-    )
-    changes_made: Optional[str] = Field(
-        default=None,
-        description="Optional summary of changes made",
-    )
-
-
 class LyricsTopicRequest(BaseModel):
     """Request to generate a short lyrics topic/theme from genre/mood influences."""
 

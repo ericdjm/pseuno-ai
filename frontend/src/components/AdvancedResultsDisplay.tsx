@@ -37,6 +37,7 @@ import {
   LyricsRefinementRequest,
   refineInputConcept,
   RefinementRequest,
+  ApiError,
 } from '../api';
 import DebugTraceViewer from './debug/DebugTraceViewer';
 
@@ -97,17 +98,19 @@ export default function AdvancedResultsDisplay({
 
       toast({
         title: 'Lyrics refined successfully',
-        description: response.changes_made || 'Applied your requested changes',
         status: 'success',
         duration: 3000,
       });
     } catch (err) {
       console.error('Error refining lyrics:', err);
+      const errorMsg = err instanceof ApiError 
+        ? (err.detail || err.message) 
+        : (err instanceof Error ? err.message : 'Unknown error');
       toast({
         title: 'Failed to refine lyrics',
-        description: err instanceof Error ? err.message : 'Unknown error',
+        description: errorMsg,
         status: 'error',
-        duration: 4000,
+        duration: 5000,
       });
     } finally {
       setIsRefiningLyrics(false);
@@ -139,17 +142,19 @@ export default function AdvancedResultsDisplay({
 
       toast({
         title: 'Prompt refined successfully',
-        description: response.changes_made || 'Applied your requested changes',
         status: 'success',
         duration: 3000,
       });
     } catch (err) {
       console.error('Error refining prompt:', err);
+      const errorMsg = err instanceof ApiError 
+        ? (err.detail || err.message) 
+        : (err instanceof Error ? err.message : 'Unknown error');
       toast({
         title: 'Failed to refine prompt',
-        description: err instanceof Error ? err.message : 'Unknown error',
+        description: errorMsg,
         status: 'error',
-        duration: 4000,
+        duration: 5000,
       });
     } finally {
       setIsRefiningPrompt(false);

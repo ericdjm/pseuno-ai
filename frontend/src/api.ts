@@ -237,7 +237,6 @@ export interface RefinementRequest {
 
 export interface RefinementResponse {
   refined_prompt: string;
-  changes_made: string | null;
 }
 
 export interface LyricsRefinementRequest {
@@ -247,7 +246,6 @@ export interface LyricsRefinementRequest {
 
 export interface LyricsRefinementResponse {
   refined_lyrics: string;
-  changes_made: string | null;
 }
 
 // === Lyrics Topic Types ===

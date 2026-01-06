@@ -18,18 +18,21 @@ from fastapi import APIRouter, HTTPException, Request, status
 from app.schemas.input_concept import (
     InputConceptRequest,
     InputConceptResponse,
-    LyricsRefinementRequest,
-    LyricsRefinementResponse,
     LyricsTopicRequest,
     LyricsTopicResponse,
+)
+from app.schemas.refine import (
+    LyricsRefinementRequest,
+    LyricsRefinementResponse,
     RefinementRequest,
     RefinementResponse,
 )
 from app.services.input_concept_generator import (
-    InputConceptGenerator,
     create_generator_with_providers,
-    refine_concept_with_llm,
-    refine_lyrics_with_llm,
+)
+from app.services.refine_service import (
+    refine_style_prompt,
+    refine_lyrics as refine_lyrics_service,
 )
 from app.services.lyrics_topic_generator import generate_lyrics_topic
 
@@ -108,7 +111,7 @@ async def generate_input_concept(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
-    except Exception as e:
+    except Exception:
         logger.exception("Error generating input concept")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -151,13 +154,18 @@ async def refine_concept(
 
     try:
         # Get settings from app state
-        settings = fastapi_request.app.state.settings if hasattr(fastapi_request.app.state, 'settings') else None
+        settings = (
+            fastapi_request.app.state.settings
+            if hasattr(fastapi_request.app.state, "settings")
+            else None
+        )
         if settings is None:
             from app.config import get_settings
+
             settings = get_settings()
 
-        # Call LLM refiner
-        refined_prompt = await refine_concept_with_llm(
+        # Call refine service
+        refined_prompt = await refine_style_prompt(
             current_prompt=request.current_prompt,
             change_request=request.change_request,
             settings=settings,
@@ -168,23 +176,26 @@ async def refine_concept(
             f"refined_len={len(refined_prompt)}"
         )
 
-        return RefinementResponse(
-            refined_prompt=refined_prompt,
-            changes_made=None,  # Could extract diff summary later if needed
-        )
+        return RefinementResponse(refined_prompt=refined_prompt)
 
     except RuntimeError as e:
-        # API key missing
+        error_msg = str(e)
+        # Use 504 for timeout errors, 500 for others
+        if "timed out" in error_msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail=error_msg,
+            )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail=error_msg,
         )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
-    except Exception as e:
+    except Exception:
         logger.exception("Error refining concept")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -219,13 +230,18 @@ async def refine_lyrics(
 
     try:
         # Get settings from app state
-        settings = fastapi_request.app.state.settings if hasattr(fastapi_request.app.state, 'settings') else None
+        settings = (
+            fastapi_request.app.state.settings
+            if hasattr(fastapi_request.app.state, "settings")
+            else None
+        )
         if settings is None:
             from app.config import get_settings
+
             settings = get_settings()
 
-        # Call LLM refiner
-        refined_lyrics = await refine_lyrics_with_llm(
+        # Call refine service
+        refined_lyrics = await refine_lyrics_service(
             current_lyrics=request.current_lyrics,
             change_request=request.change_request,
             settings=settings,
@@ -236,23 +252,26 @@ async def refine_lyrics(
             f"refined_len={len(refined_lyrics)}"
         )
 
-        return LyricsRefinementResponse(
-            refined_lyrics=refined_lyrics,
-            changes_made=None,  # Could extract diff summary later if needed
-        )
+        return LyricsRefinementResponse(refined_lyrics=refined_lyrics)
 
     except RuntimeError as e:
-        # API key missing
+        error_msg = str(e)
+        # Use 504 for timeout errors, 500 for others
+        if "timed out" in error_msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail=error_msg,
+            )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail=error_msg,
         )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
-    except Exception as e:
+    except Exception:
         logger.exception("Error refining lyrics")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -293,9 +312,7 @@ async def generate_lyrics_topic_endpoint(
             style_prompt=request.style_prompt,
         )
 
-        logger.info(
-            f"Generated lyrics topic: chosen_moods={result.chosen_moods}"
-        )
+        logger.info(f"Generated lyrics topic: chosen_moods={result.chosen_moods}")
 
         return LyricsTopicResponse(
             topic=result.topic,
@@ -308,7 +325,7 @@ async def generate_lyrics_topic_endpoint(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
-    except Exception as e:
+    except Exception:
         logger.exception("Error generating lyrics topic")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -1206,3 +1206,33 @@ If basis="unspecified", provide:
 - More conservative terms_to_use (core signature sounds)
 - Note in global_notes that era was not specified
 """
+
+# ===========================================================================
+# REFINEMENT SPECS (for /refine-concept and /refine-lyrics endpoints)
+# ===========================================================================
+
+REFINE_STYLE_SPEC = f"""\
+You edit Suno music prompts. Apply ONLY the requested change while preserving everything else.
+
+RULES:
+1. Keep original structure and phrasing intact except for the specific change
+2. Every sentence must be COMPLETE — no fragments or trailing phrases
+3. Final output MUST be ≤{SUNO_PROMPT_MAX_CHARS} characters (Suno's limit)
+4. Output ONLY the edited prompt — no explanations, quotes, or preamble
+
+If adding would exceed the limit, condense existing text slightly — never cut sentences short.
+"""
+
+REFINE_LYRICS_SPEC = """\
+You edit song lyrics. Apply ONLY the requested change while preserving structure.
+
+RULES:
+1. PRESERVE all section tags: [Verse], [Chorus], [Bridge], [Intro], [Outro], etc.
+2. PRESERVE section modifiers like [Verse, soft, introspective]
+3. Make ONLY the requested change — do not rewrite unmentioned sections
+4. Output the COMPLETE lyrics with all sections — not just changed parts
+5. Output ONLY the lyrics — no explanations, quotes, or preamble
+
+[Intro], [Breakdown], [Outro] have NO lyrics beneath them (tag only).
+Choruses should have identical lyrics when repeated.
+"""
