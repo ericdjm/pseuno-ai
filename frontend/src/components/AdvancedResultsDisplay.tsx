@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Box,
   VStack,
@@ -40,6 +40,45 @@ import {
 } from '../api';
 import DebugTraceViewer from './debug/DebugTraceViewer';
 
+// Session storage key prefix for refined result snapshots
+const REFINED_SNAPSHOT_PREFIX = 'pseuno:v1:refined:';
+
+// Serializable version of refine trace (Date -> ISO string)
+interface SerializableRefineTrace {
+  trace: DebugTrace;
+  timestamp: string; // ISO string
+  changedFields: string[];
+}
+
+interface RefinedSnapshot {
+  prompt: string;
+  lyrics: string;
+  exclude: string;
+  title: string;
+  weirdness: number;
+  refineTraces: SerializableRefineTrace[];
+}
+
+function loadRefinedSnapshot(generationId: string): RefinedSnapshot | null {
+  try {
+    const stored = sessionStorage.getItem(REFINED_SNAPSHOT_PREFIX + generationId);
+    if (stored) {
+      return JSON.parse(stored) as RefinedSnapshot;
+    }
+  } catch (e) {
+    console.warn('Failed to load refined snapshot:', e);
+  }
+  return null;
+}
+
+function saveRefinedSnapshot(generationId: string, snapshot: RefinedSnapshot): void {
+  try {
+    sessionStorage.setItem(REFINED_SNAPSHOT_PREFIX + generationId, JSON.stringify(snapshot));
+  } catch (e) {
+    console.warn('Failed to save refined snapshot:', e);
+  }
+}
+
 interface AdvancedResultsDisplayProps {
   result: AdvancedGenerateResponse;
   onFavoriteToggled?: () => void;
@@ -59,25 +98,106 @@ export default function AdvancedResultsDisplay({
   const [isRefining, setIsRefining] = useState(false);
 
   // Local preview state for all editable fields
-  const [currentPrompt, setCurrentPrompt] = useState(result.suno_prompt);
-  const [currentLyrics, setCurrentLyrics] = useState(result.lyrics);
-  const [currentExclude, setCurrentExclude] = useState(result.exclude);
-  const [currentTitle, setCurrentTitle] = useState(result.concept_title);
-  const [currentWeirdness, setCurrentWeirdness] = useState(result.weirdness);
+  // Initialize from persisted snapshot if available, otherwise from result
+  const getInitialState = useCallback((): RefinedSnapshot & { refineTracesDeserialized: Array<{ trace: DebugTrace; timestamp: Date; changedFields: string[] }> } => {
+    const snapshot = loadRefinedSnapshot(result.generation_id);
+    if (snapshot) {
+      // Convert ISO strings back to Date objects for refineTraces
+      const tracesWithDates = (snapshot.refineTraces || []).map(t => ({
+        ...t,
+        timestamp: new Date(t.timestamp),
+      }));
+      return { ...snapshot, refineTracesDeserialized: tracesWithDates };
+    }
+    return {
+      prompt: result.suno_prompt,
+      lyrics: result.lyrics,
+      exclude: result.exclude,
+      title: result.concept_title,
+      weirdness: result.weirdness,
+      refineTraces: [],
+      refineTracesDeserialized: [],
+    };
+  }, [result.generation_id, result.suno_prompt, result.lyrics, result.exclude, result.concept_title, result.weirdness]);
 
-  // Track refine debug traces
-  const [refineTraces, setRefineTraces] = useState<Array<{ trace: DebugTrace; timestamp: Date; changedFields: string[] }>>([]);
+  const [currentPrompt, setCurrentPrompt] = useState(() => getInitialState().prompt);
+  const [currentLyrics, setCurrentLyrics] = useState(() => getInitialState().lyrics);
+  const [currentExclude, setCurrentExclude] = useState(() => getInitialState().exclude);
+  const [currentTitle, setCurrentTitle] = useState(() => getInitialState().title);
+  const [currentWeirdness, setCurrentWeirdness] = useState(() => getInitialState().weirdness);
+
+  // Track refine debug traces (restored from snapshot if available)
+  const [refineTraces, setRefineTraces] = useState<Array<{ trace: DebugTrace; timestamp: Date; changedFields: string[] }>>(() => getInitialState().refineTracesDeserialized);
+
+  // Track the current generation_id to detect when result changes
+  const lastGenerationIdRef = useRef(result.generation_id);
+
+  // Check on mount if we loaded from a snapshot (for initial render)
+  useEffect(() => {
+    const snapshot = loadRefinedSnapshot(result.generation_id);
+    if (snapshot) {
+      hasRefinedRef.current = true;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run on mount
 
   // Sync state when result changes (new generation)
   useEffect(() => {
+    // Only reset if the generation_id actually changed (new result)
+    if (lastGenerationIdRef.current !== result.generation_id) {
+      lastGenerationIdRef.current = result.generation_id;
+      
+      // Check for persisted snapshot for this new result
+      const snapshot = loadRefinedSnapshot(result.generation_id);
+      if (snapshot) {
+        setCurrentPrompt(snapshot.prompt);
+        setCurrentLyrics(snapshot.lyrics);
+        setCurrentExclude(snapshot.exclude);
+        setCurrentTitle(snapshot.title);
+        setCurrentWeirdness(snapshot.weirdness);
+        // Restore refine traces (convert ISO strings back to Dates)
+        const tracesWithDates = (snapshot.refineTraces || []).map(t => ({
+          ...t,
+          timestamp: new Date(t.timestamp),
+        }));
+        setRefineTraces(tracesWithDates);
+        // Mark as refined since we restored from a snapshot
+        hasRefinedRef.current = true;
+      } else {
+        setCurrentPrompt(result.suno_prompt);
+        setCurrentLyrics(result.lyrics);
+        setCurrentExclude(result.exclude);
+        setCurrentTitle(result.concept_title);
+        setCurrentWeirdness(result.weirdness);
+        setRefineTraces([]); // Clear refine traces for fresh result
+        // Reset refined flag for fresh result
+        hasRefinedRef.current = false;
+      }
+    }
     setIsFavorite(result.is_favorite);
-    setCurrentPrompt(result.suno_prompt);
-    setCurrentLyrics(result.lyrics);
-    setCurrentExclude(result.exclude);
-    setCurrentTitle(result.concept_title);
-    setCurrentWeirdness(result.weirdness);
-    setRefineTraces([]); // Clear refine traces on new generation
-  }, [result.prompt_id, result.is_favorite, result.suno_prompt, result.lyrics, result.exclude, result.concept_title, result.weirdness]);
+  }, [result.generation_id, result.is_favorite, result.suno_prompt, result.lyrics, result.exclude, result.concept_title, result.weirdness]);
+
+  // Persist refined state whenever it changes (but only after initial refinement)
+  const hasRefinedRef = useRef(false);
+  useEffect(() => {
+    // Only persist if we've refined at least once (to avoid persisting initial state)
+    if (hasRefinedRef.current) {
+      // Serialize refineTraces with ISO date strings
+      const serializedTraces: SerializableRefineTrace[] = refineTraces.map(t => ({
+        trace: t.trace,
+        timestamp: t.timestamp.toISOString(),
+        changedFields: t.changedFields,
+      }));
+      saveRefinedSnapshot(result.generation_id, {
+        prompt: currentPrompt,
+        lyrics: currentLyrics,
+        exclude: currentExclude,
+        title: currentTitle,
+        weirdness: currentWeirdness,
+        refineTraces: serializedTraces,
+      });
+    }
+  }, [result.generation_id, currentPrompt, currentLyrics, currentExclude, currentTitle, currentWeirdness, refineTraces]);
 
   const handleUnifiedRefine = async () => {
     if (!changeRequest.trim()) {
@@ -122,6 +242,9 @@ export default function AdvancedResultsDisplay({
       setCurrentExclude(response.exclude);
       setCurrentTitle(response.title);
       setCurrentWeirdness(response.weirdness);
+
+      // Mark that we've refined, so the effect starts persisting
+      hasRefinedRef.current = true;
 
       // Add refine trace if available
       if (response.debug_info) {

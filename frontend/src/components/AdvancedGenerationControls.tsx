@@ -25,8 +25,9 @@ import {
   IconButton,
 } from '@chakra-ui/react';
 import { ChevronDownIcon, StarIcon } from '@chakra-ui/icons';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { ChangeEvent } from 'react';
+import { useSessionStorageState } from '../hooks';
 import {
   generateAdvanced,
   generateLyricsOnly,
@@ -176,12 +177,13 @@ export default function AdvancedGenerationControls({
   const MAX_GENRE_LEN = 40;
   const MAX_GENRES_COUNT = 20;
 
-  const [artistInput, setArtistInput] = useState('');
-  const [genreInput, setGenreInput] = useState('');
-  const [songPrompt, setSongPrompt] = useState('');
-  const [lyricsAbout, setLyricsAbout] = useState('');
-  const [tagsInput, setTagsInput] = useState('');
-  const [isInstrumental, setIsInstrumental] = useState(false);
+  // Persisted draft inputs (survive back/forward navigation)
+  const [artistInput, setArtistInput] = useSessionStorageState('draft:artistInput', '');
+  const [genreInput, setGenreInput] = useSessionStorageState('draft:genreInput', '');
+  const [songPrompt, setSongPrompt] = useSessionStorageState('draft:songPrompt', '');
+  const [lyricsAbout, setLyricsAbout] = useSessionStorageState('draft:lyricsAbout', '');
+  const [tagsInput, setTagsInput] = useSessionStorageState('draft:tagsInput', '');
+  const [isInstrumental, setIsInstrumental] = useSessionStorageState('draft:isInstrumental', false);
 
   // Input concept generation state
   const [isGeneratingConcept, setIsGeneratingConcept] = useState(false);
@@ -189,25 +191,27 @@ export default function AdvancedGenerationControls({
   // Lyrics topic generation state
   const [isGeneratingLyricsTopic, setIsGeneratingLyricsTopic] = useState(false);
 
-  // Prompt variant and model selection state
+  // Prompt variant and model selection state (persisted for back/forward)
   const [promptVariants, setPromptVariants] = useState<PromptVariantInfo[]>([]);
-  const [selectedVariant, setSelectedVariant] = useState<PromptVariant | ''>('');
+  const [selectedVariant, setSelectedVariant] = useSessionStorageState<PromptVariant | ''>('draft:selectedVariant', '');
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
-  const [selectedModel, setSelectedModel] = useState<string>('');
-  const [selectedStyleModel, setSelectedStyleModel] = useState<string>('');
-  const [selectedLyricsModel, setSelectedLyricsModel] = useState<string>('');
+  const [selectedModel, setSelectedModel] = useSessionStorageState<string>('draft:selectedModel', '');
+  const [selectedStyleModel, setSelectedStyleModel] = useSessionStorageState<string>('draft:selectedStyleModel', '');
+  const [selectedLyricsModel, setSelectedLyricsModel] = useSessionStorageState<string>('draft:selectedLyricsModel', '');
+  // Track if we've initialized selections from API (to avoid overwriting persisted values)
+  const initializedFromApi = useRef(false);
 
-  // Lyric controls state
-  const [showLyricControls, setShowLyricControls] = useState(false);
-  const [lyricAudience, setLyricAudience] = useState<LyricAudience>('auto');
-  const [lyricDirectness, setLyricDirectness] = useState<LyricDirectness>('auto');
-  const [lyricHumor, setLyricHumor] = useState<LyricHumor>('auto');
-  const [lyricExplicitness, setLyricExplicitness] = useState<LyricExplicitness>('auto');
-  const [lyricPersona, setLyricPersona] = useState<LyricPersona>('auto');
-  const [lyricLinesPerSection, setLyricLinesPerSection] = useState<LyricLinesPerSection>('auto');
-  const [lyricLineLength, setLyricLineLength] = useState<LyricLineLength>('auto');
-  const [lyricPOV, setLyricPOV] = useState<LyricPOV>('auto');
-  const [lyricRhymeScheme, setLyricRhymeScheme] = useState<LyricRhymeScheme>('auto');
+  // Lyric controls state (persisted for back/forward)
+  const [showLyricControls, setShowLyricControls] = useSessionStorageState('draft:showLyricControls', false);
+  const [lyricAudience, setLyricAudience] = useSessionStorageState<LyricAudience>('draft:lyricAudience', 'auto');
+  const [lyricDirectness, setLyricDirectness] = useSessionStorageState<LyricDirectness>('draft:lyricDirectness', 'auto');
+  const [lyricHumor, setLyricHumor] = useSessionStorageState<LyricHumor>('draft:lyricHumor', 'auto');
+  const [lyricExplicitness, setLyricExplicitness] = useSessionStorageState<LyricExplicitness>('draft:lyricExplicitness', 'auto');
+  const [lyricPersona, setLyricPersona] = useSessionStorageState<LyricPersona>('draft:lyricPersona', 'auto');
+  const [lyricLinesPerSection, setLyricLinesPerSection] = useSessionStorageState<LyricLinesPerSection>('draft:lyricLinesPerSection', 'auto');
+  const [lyricLineLength, setLyricLineLength] = useSessionStorageState<LyricLineLength>('draft:lyricLineLength', 'auto');
+  const [lyricPOV, setLyricPOV] = useSessionStorageState<LyricPOV>('draft:lyricPOV', 'auto');
+  const [lyricRhymeScheme, setLyricRhymeScheme] = useSessionStorageState<LyricRhymeScheme>('draft:lyricRhymeScheme', 'auto');
 
   // Fetch available prompt variants and models on mount
   useEffect(() => {
@@ -215,9 +219,12 @@ export default function AdvancedGenerationControls({
       try {
         const response = await getPromptVariants();
         setPromptVariants(response.variants);
-        const defaultVariant = response.variants.find((v: PromptVariantInfo) => v.is_default);
-        if (defaultVariant) {
-          setSelectedVariant(defaultVariant.id as PromptVariant);
+        // Only set default if no persisted value exists
+        if (!selectedVariant) {
+          const defaultVariant = response.variants.find((v: PromptVariantInfo) => v.is_default);
+          if (defaultVariant) {
+            setSelectedVariant(defaultVariant.id as PromptVariant);
+          }
         }
       } catch (error) {
         console.error('Failed to fetch prompt variants:', error);
@@ -228,9 +235,13 @@ export default function AdvancedGenerationControls({
       try {
         const response = await getModels();
         setAvailableModels(response.models);
-        setSelectedModel(response.default_model);
-        setSelectedStyleModel(response.default_style_model);
-        setSelectedLyricsModel(response.default_lyrics_model);
+        // Only set defaults if no persisted values exist
+        if (!initializedFromApi.current) {
+          if (!selectedModel) setSelectedModel(response.default_model);
+          if (!selectedStyleModel) setSelectedStyleModel(response.default_style_model);
+          if (!selectedLyricsModel) setSelectedLyricsModel(response.default_lyrics_model);
+          initializedFromApi.current = true;
+        }
       } catch (error) {
         console.error('Failed to fetch models:', error);
       }
@@ -238,6 +249,7 @@ export default function AdvancedGenerationControls({
     
     fetchVariants();
     fetchModels();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Filter variants based on instrumental mode (hide v1/v2 when instrumental is on)

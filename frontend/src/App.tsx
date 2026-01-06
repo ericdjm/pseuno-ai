@@ -29,7 +29,7 @@ import {
 import { FaSpotify } from 'react-icons/fa';
 
 import * as api from './api';
-import { usePersistedSettings } from './hooks';
+import { usePersistedSettings, useSessionStorageState } from './hooks';
 import { TasteDisplay } from './components/TasteDisplay';
 import { PrivacyNote } from './components/PrivacyNote';
 import AdvancedGenerationControls from './components/AdvancedGenerationControls';
@@ -51,24 +51,33 @@ function App() {
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
 
-  // Generation state
-  const [advancedResult, setAdvancedResult] = useState<api.AdvancedGenerateResponse | null>(null);
+  // Generation state (persisted to sessionStorage for back/forward survival)
+  const [advancedResult, setAdvancedResult] = useSessionStorageState<api.AdvancedGenerateResponse | null>(
+    'advancedResult',
+    null
+  );
   const [generating, setGenerating] = useState(false);
 
   // Saved prompts state
   const [savedPromptsRefresh, setSavedPromptsRefresh] = useState(0);
   const [savedPrompts, setSavedPrompts] = useState<api.SavedSunoPrompt[]>([]);
   const [selectedSavedPrompt, setSelectedSavedPrompt] = useState<api.SavedSunoPrompt | null>(null);
-  const [styleMode, setStyleMode] = useState<StyleMode>('songStylePrompt');
+  // Persist selectedSavedPromptId so we can reselect after prompts load
+  const [selectedSavedPromptId, setSelectedSavedPromptId] = useSessionStorageState<number | null>(
+    'selectedSavedPromptId',
+    null
+  );
+  // Persist styleMode for back/forward
+  const [styleMode, setStyleMode] = useSessionStorageState<StyleMode>('styleMode', 'songStylePrompt');
 
   // Ref to scroll to generation controls
   const generationControlsRef = useRef<HTMLDivElement>(null);
 
   // Refresh prompts when mode changes (to load favorites vs all)
+  // The handlePromptsLoaded callback will validate/clear selection if needed
   useEffect(() => {
     if (styleMode === 'pastSunoPrompts' || styleMode === 'favorites') {
       setSavedPromptsRefresh((n) => n + 1);
-      setSelectedSavedPrompt(null);
     }
   }, [styleMode]);
 
@@ -172,6 +181,26 @@ function App() {
 
   const handlePromptsLoaded = (prompts: api.SavedSunoPrompt[]) => {
     setSavedPrompts(prompts);
+    
+    // Always validate that the selected prompt exists in the new list
+    // This handles cases like: switching to favorites mode when a non-favorite was selected
+    if (selectedSavedPromptId !== null) {
+      const foundInList = prompts.find((p) => p.id === selectedSavedPromptId);
+      if (foundInList) {
+        // Prompt exists in new list - update the object reference (may have changed)
+        setSelectedSavedPrompt(foundInList);
+      } else {
+        // Prompt doesn't exist in new list - clear selection
+        setSelectedSavedPrompt(null);
+        setSelectedSavedPromptId(null);
+      }
+    }
+  };
+
+  // Keep selectedSavedPromptId in sync when user selects a prompt
+  const handleSelectSavedPrompt = (prompt: api.SavedSunoPrompt | null) => {
+    setSelectedSavedPrompt(prompt);
+    setSelectedSavedPromptId(prompt?.id ?? null);
   };
 
   return (
@@ -293,7 +322,7 @@ function App() {
               profile={profile}
               savedPrompts={savedPrompts}
               selectedSavedPrompt={selectedSavedPrompt}
-              onSelectSavedPrompt={setSelectedSavedPrompt}
+              onSelectSavedPrompt={handleSelectSavedPrompt}
               styleMode={styleMode}
               onStyleModeChange={setStyleMode}
               onPromptUpdated={() => setSavedPromptsRefresh((n) => n + 1)}
