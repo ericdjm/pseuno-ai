@@ -21,19 +21,14 @@ from app.schemas.input_concept import (
     LyricsTopicRequest,
     LyricsTopicResponse,
 )
-from app.schemas.refine import (
-    LyricsRefinementRequest,
-    LyricsRefinementResponse,
-    RefinementRequest,
-    RefinementResponse,
+from app.schemas.unified_refine import (
+    UnifiedRefineRequest,
+    UnifiedRefineResponse,
 )
 from app.services.input_concept_generator import (
     create_generator_with_providers,
 )
-from app.services.refine_service import (
-    refine_style_prompt,
-    refine_lyrics as refine_lyrics_service,
-)
+from app.services.unified_refine_service import refine_all
 from app.services.lyrics_topic_generator import generate_lyrics_topic
 
 logger = logging.getLogger(__name__)
@@ -120,166 +115,6 @@ async def generate_input_concept(
 
 
 @router.post(
-    "/refine-concept",
-    response_model=RefinementResponse,
-    summary="Refine an existing prompt based on user feedback",
-    description="""
-Refine an existing Suno concept based on user's change request.
-
-Uses an LLM to make targeted edits to the prompt while preserving
-the original intent and structure.
-
-**Input:**
-- `current_prompt`: The existing prompt text (1-500 chars)
-- `change_request`: What the user wants to change (1-500 chars)
-
-**Output:**
-- `refined_prompt`: The updated prompt incorporating requested changes
-- `changes_made`: Optional summary of changes (for debugging)
-
-**Example:**
-```
-{
-  "current_prompt": "A dreamy indie rock track...",
-  "change_request": "Make it more upbeat and add electronic elements"
-}
-```
-""",
-)
-async def refine_concept(
-    request: RefinementRequest,
-    fastapi_request: Request,
-) -> RefinementResponse:
-    """Refine an existing prompt based on user feedback."""
-
-    try:
-        # Get settings from app state
-        settings = (
-            fastapi_request.app.state.settings
-            if hasattr(fastapi_request.app.state, "settings")
-            else None
-        )
-        if settings is None:
-            from app.config import get_settings
-
-            settings = get_settings()
-
-        # Call refine service
-        refined_prompt = await refine_style_prompt(
-            current_prompt=request.current_prompt,
-            change_request=request.change_request,
-            settings=settings,
-        )
-
-        logger.info(
-            f"Refined concept: original_len={len(request.current_prompt)}, "
-            f"refined_len={len(refined_prompt)}"
-        )
-
-        return RefinementResponse(refined_prompt=refined_prompt)
-
-    except RuntimeError as e:
-        error_msg = str(e)
-        # Use 504 for timeout errors, 500 for others
-        if "timed out" in error_msg.lower():
-            raise HTTPException(
-                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail=error_msg,
-            )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=error_msg,
-        )
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
-    except Exception:
-        logger.exception("Error refining concept")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to refine concept",
-        )
-
-
-@router.post(
-    "/refine-lyrics",
-    response_model=LyricsRefinementResponse,
-    summary="Refine lyrics based on user feedback",
-    description="""
-Refine existing lyrics based on user change requests while preserving structure markers.
-
-The refinement:
-- Preserves ALL structure markers like [Verse], [Chorus], [Bridge], etc.
-- Makes ONLY the changes specifically requested by the user
-- Keeps the lyrical style and tone consistent unless asked to change
-
-Examples of change requests:
-- "change the chorus to be more upbeat"
-- "add another verse"
-- "make the bridge darker"
-- "remove the third verse"
-""",
-)
-async def refine_lyrics(
-    request: LyricsRefinementRequest,
-    fastapi_request: Request,
-) -> LyricsRefinementResponse:
-    """Refine lyrics based on user feedback while preserving structure."""
-
-    try:
-        # Get settings from app state
-        settings = (
-            fastapi_request.app.state.settings
-            if hasattr(fastapi_request.app.state, "settings")
-            else None
-        )
-        if settings is None:
-            from app.config import get_settings
-
-            settings = get_settings()
-
-        # Call refine service
-        refined_lyrics = await refine_lyrics_service(
-            current_lyrics=request.current_lyrics,
-            change_request=request.change_request,
-            settings=settings,
-        )
-
-        logger.info(
-            f"Refined lyrics: original_len={len(request.current_lyrics)}, "
-            f"refined_len={len(refined_lyrics)}"
-        )
-
-        return LyricsRefinementResponse(refined_lyrics=refined_lyrics)
-
-    except RuntimeError as e:
-        error_msg = str(e)
-        # Use 504 for timeout errors, 500 for others
-        if "timed out" in error_msg.lower():
-            raise HTTPException(
-                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail=error_msg,
-            )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=error_msg,
-        )
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
-    except Exception:
-        logger.exception("Error refining lyrics")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to refine lyrics",
-        )
-
-
-@router.post(
     "/lyrics-topic",
     response_model=LyricsTopicResponse,
     summary="Generate a short lyrics topic from mood/genre influences",
@@ -330,4 +165,91 @@ async def generate_lyrics_topic_endpoint(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to generate lyrics topic",
+        )
+
+
+@router.post(
+    "/refine",
+    response_model=UnifiedRefineResponse,
+    summary="Unified refinement for multi-field edits",
+    description="""
+Apply a single user instruction to refine multiple song fields at once.
+
+This endpoint can update:
+- **suno_prompt**: The Suno style prompt
+- **lyrics**: The song lyrics
+- **exclude**: Terms to exclude from generation
+- **title**: The song title
+- **weirdness**: The experimental-ness level (0-100)
+
+The backend uses an LLM planner to decide which fields to modify based on
+the user's natural language request, then applies targeted edits.
+
+**Examples:**
+- "make the ending a dubstep drop" → updates lyrics, prompt, possibly exclude
+- "make it more experimental" → increases weirdness, may update prompt
+- "change the chorus to be about love" → updates lyrics only
+""",
+)
+async def unified_refine(
+    request: UnifiedRefineRequest,
+    fastapi_request: Request,
+) -> UnifiedRefineResponse:
+    """Apply multi-field edits based on a single user instruction."""
+
+    try:
+        # Get settings from app state
+        settings = (
+            fastapi_request.app.state.settings
+            if hasattr(fastapi_request.app.state, "settings")
+            else None
+        )
+        if settings is None:
+            from app.config import get_settings
+
+            settings = get_settings()
+
+        # Call unified refine service
+        updated_snapshot, changed_fields, assistant_message, debug_info = await refine_all(
+            request=request,
+            settings=settings,
+        )
+
+        logger.info(
+            f"Unified refine: changed_fields={changed_fields}, "
+            f"change_request='{request.change_request[:50]}...'"
+        )
+
+        return UnifiedRefineResponse(
+            suno_prompt=updated_snapshot["suno_prompt"],
+            lyrics=updated_snapshot["lyrics"],
+            exclude=updated_snapshot["exclude"],
+            title=updated_snapshot["title"],
+            weirdness=updated_snapshot["weirdness"],
+            changed_fields=changed_fields,
+            assistant_message=assistant_message,
+            debug_info=debug_info,
+        )
+
+    except RuntimeError as e:
+        error_msg = str(e)
+        if "timed out" in error_msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail=error_msg,
+            )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_msg,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except Exception:
+        logger.exception("Error in unified refine")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to refine",
         )

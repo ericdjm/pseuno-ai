@@ -30,14 +30,13 @@ import {
   useDisclosure,
 } from '@chakra-ui/react';
 import { CopyIcon, StarIcon, ExternalLinkIcon, EditIcon } from '@chakra-ui/icons';
-import { 
+import {
   AdvancedGenerateResponse, 
   updateSavedPrompt, 
-  refineLyrics, 
-  LyricsRefinementRequest,
-  refineInputConcept,
-  RefinementRequest,
+  refineAll,
+  UnifiedRefineRequest,
   ApiError,
+  DebugTrace,
 } from '../api';
 import DebugTraceViewer from './debug/DebugTraceViewer';
 
@@ -54,27 +53,34 @@ export default function AdvancedResultsDisplay({
   const [isFavorite, setIsFavorite] = useState(result.is_favorite);
   const [togglingFavorite, setTogglingFavorite] = useState(false);
 
-  // Lyrics refinement state
-  const { isOpen: isLyricsRefineOpen, onOpen: onLyricsRefineOpen, onClose: onLyricsRefineClose } = useDisclosure();
-  const [currentLyrics, setCurrentLyrics] = useState(result.lyrics);
-  const [lyricsChangeRequest, setLyricsChangeRequest] = useState('');
-  const [isRefiningLyrics, setIsRefiningLyrics] = useState(false);
+  // Unified refinement state
+  const { isOpen: isRefineOpen, onOpen: onRefineOpen, onClose: onRefineClose } = useDisclosure();
+  const [changeRequest, setChangeRequest] = useState('');
+  const [isRefining, setIsRefining] = useState(false);
 
-  // Prompt refinement state
-  const { isOpen: isPromptRefineOpen, onOpen: onPromptRefineOpen, onClose: onPromptRefineClose } = useDisclosure();
+  // Local preview state for all editable fields
   const [currentPrompt, setCurrentPrompt] = useState(result.suno_prompt);
-  const [promptChangeRequest, setPromptChangeRequest] = useState('');
-  const [isRefiningPrompt, setIsRefiningPrompt] = useState(false);
+  const [currentLyrics, setCurrentLyrics] = useState(result.lyrics);
+  const [currentExclude, setCurrentExclude] = useState(result.exclude);
+  const [currentTitle, setCurrentTitle] = useState(result.concept_title);
+  const [currentWeirdness, setCurrentWeirdness] = useState(result.weirdness);
 
-  // Sync isFavorite state when result changes (new generation)
+  // Track refine debug traces
+  const [refineTraces, setRefineTraces] = useState<Array<{ trace: DebugTrace; timestamp: Date; changedFields: string[] }>>([]);
+
+  // Sync state when result changes (new generation)
   useEffect(() => {
     setIsFavorite(result.is_favorite);
-    setCurrentLyrics(result.lyrics);
     setCurrentPrompt(result.suno_prompt);
-  }, [result.prompt_id, result.is_favorite, result.lyrics, result.suno_prompt]);
+    setCurrentLyrics(result.lyrics);
+    setCurrentExclude(result.exclude);
+    setCurrentTitle(result.concept_title);
+    setCurrentWeirdness(result.weirdness);
+    setRefineTraces([]); // Clear refine traces on new generation
+  }, [result.prompt_id, result.is_favorite, result.suno_prompt, result.lyrics, result.exclude, result.concept_title, result.weirdness]);
 
-  const handleRefineLyrics = async () => {
-    if (!lyricsChangeRequest.trim()) {
+  const handleUnifiedRefine = async () => {
+    if (!changeRequest.trim()) {
       toast({
         title: 'Please describe the changes you want',
         status: 'warning',
@@ -83,81 +89,77 @@ export default function AdvancedResultsDisplay({
       return;
     }
 
-    setIsRefiningLyrics(true);
+    // Capture request and close modal immediately for non-blocking UX
+    const request = changeRequest;
+    setChangeRequest('');
+    onRefineClose();
+    setIsRefining(true);
+
+    // Show in-progress toast
+    toast({
+      title: 'Refining...',
+      description: 'Your changes are being applied',
+      status: 'loading',
+      duration: null, // Stays until dismissed or replaced
+      id: 'refine-progress',
+    });
+
     try {
-      const payload: LyricsRefinementRequest = {
-        current_lyrics: currentLyrics,
-        change_request: lyricsChangeRequest,
+      const payload: UnifiedRefineRequest = {
+        suno_prompt: currentPrompt,
+        lyrics: currentLyrics,
+        exclude: currentExclude,
+        title: currentTitle,
+        weirdness: currentWeirdness,
+        change_request: request,
       };
 
-      const response = await refineLyrics(payload);
+      const response = await refineAll(payload);
       
-      setCurrentLyrics(response.refined_lyrics);
-      setLyricsChangeRequest('');
-      onLyricsRefineClose();
+      // Update local state with response
+      setCurrentPrompt(response.suno_prompt);
+      setCurrentLyrics(response.lyrics);
+      setCurrentExclude(response.exclude);
+      setCurrentTitle(response.title);
+      setCurrentWeirdness(response.weirdness);
 
+      // Add refine trace if available
+      if (response.debug_info) {
+        setRefineTraces(prev => [...prev, {
+          trace: response.debug_info!,
+          timestamp: new Date(),
+          changedFields: response.changed_fields,
+        }]);
+      }
+
+      // Dismiss loading toast and show success
+      toast.close('refine-progress');
+      
+      const changedStr = response.changed_fields.length > 0
+        ? `Updated: ${response.changed_fields.join(', ')}`
+        : 'No changes made';
+      
       toast({
-        title: 'Lyrics refined successfully',
-        status: 'success',
-        duration: 3000,
+        title: 'Refinement complete',
+        description: response.assistant_message || changedStr,
+        status: response.changed_fields.length > 0 ? 'success' : 'info',
+        duration: 4000,
       });
     } catch (err) {
-      console.error('Error refining lyrics:', err);
+      console.error('Error refining:', err);
+      toast.close('refine-progress');
+      
       const errorMsg = err instanceof ApiError 
         ? (err.detail || err.message) 
         : (err instanceof Error ? err.message : 'Unknown error');
       toast({
-        title: 'Failed to refine lyrics',
+        title: 'Failed to refine',
         description: errorMsg,
         status: 'error',
         duration: 5000,
       });
     } finally {
-      setIsRefiningLyrics(false);
-    }
-  };
-
-  const handleRefinePrompt = async () => {
-    if (!promptChangeRequest.trim()) {
-      toast({
-        title: 'Please describe the changes you want',
-        status: 'warning',
-        duration: 2000,
-      });
-      return;
-    }
-
-    setIsRefiningPrompt(true);
-    try {
-      const payload: RefinementRequest = {
-        current_prompt: currentPrompt,
-        change_request: promptChangeRequest,
-      };
-
-      const response = await refineInputConcept(payload);
-      
-      setCurrentPrompt(response.refined_prompt);
-      setPromptChangeRequest('');
-      onPromptRefineClose();
-
-      toast({
-        title: 'Prompt refined successfully',
-        status: 'success',
-        duration: 3000,
-      });
-    } catch (err) {
-      console.error('Error refining prompt:', err);
-      const errorMsg = err instanceof ApiError 
-        ? (err.detail || err.message) 
-        : (err instanceof Error ? err.message : 'Unknown error');
-      toast({
-        title: 'Failed to refine prompt',
-        description: errorMsg,
-        status: 'error',
-        duration: 5000,
-      });
-    } finally {
-      setIsRefiningPrompt(false);
+      setIsRefining(false);
     }
   };
 
@@ -205,7 +207,7 @@ export default function AdvancedResultsDisplay({
   };
 
   const promptLength = currentPrompt.length;
-  const lyricsLength = result.lyrics.length;
+  const lyricsLength = currentLyrics.length;
 
   // Build the Suno create URL with the style prompt pre-filled
   const sunoCreateUrl = currentPrompt
@@ -220,12 +222,12 @@ export default function AdvancedResultsDisplay({
           <VStack align="start" spacing={1} flex={1}>
             <HStack spacing={2} align="center">
               <Text fontSize="2xl" fontWeight="bold">
-                {result.concept_title}
+                {currentTitle}
               </Text>
               <Button
                 size="xs"
                 leftIcon={<CopyIcon />}
-                onClick={() => copyToClipboard(result.concept_title, 'Title')}
+                onClick={() => copyToClipboard(currentTitle, 'Title')}
                 colorScheme="green"
                 variant="ghost"
               >
@@ -237,6 +239,15 @@ export default function AdvancedResultsDisplay({
             </Text>
           </VStack>
           <HStack spacing={2}>
+            <Button
+              leftIcon={<EditIcon />}
+              colorScheme="purple"
+              variant="outline"
+              size="sm"
+              onClick={onRefineOpen}
+            >
+              Refine
+            </Button>
             <Button
               leftIcon={<Icon as={StarIcon} color={isFavorite ? 'yellow.400' : undefined} />}
               colorScheme="yellow"
@@ -264,15 +275,6 @@ export default function AdvancedResultsDisplay({
             <Text fontSize="sm" color="gray.500">
               {promptLength} chars
             </Text>
-            <Button
-              size="sm"
-              leftIcon={<EditIcon />}
-              onClick={onPromptRefineOpen}
-              colorScheme="purple"
-              variant="outline"
-            >
-              Refine
-            </Button>
             <Button
               size="sm"
               leftIcon={<CopyIcon />}
@@ -340,25 +342,14 @@ export default function AdvancedResultsDisplay({
               {lyricsLength} chars
             </Text>
             {lyricsLength > 0 && (
-              <>
-                <Button
-                  size="sm"
-                  leftIcon={<EditIcon />}
-                  onClick={onLyricsRefineOpen}
-                  colorScheme="purple"
-                  variant="outline"
-                >
-                  Refine
-                </Button>
-                <Button
-                  size="sm"
-                  leftIcon={<CopyIcon />}
-                  onClick={() => copyToClipboard(currentLyrics, 'Lyrics')}
-                  colorScheme="green"
-                >
-                  Copy
-                </Button>
-              </>
+              <Button
+                size="sm"
+                leftIcon={<CopyIcon />}
+                onClick={() => copyToClipboard(currentLyrics, 'Lyrics')}
+                colorScheme="green"
+              >
+                Copy
+              </Button>
             )}
           </HStack>
         </HStack>
@@ -379,7 +370,7 @@ export default function AdvancedResultsDisplay({
       </Box>
 
       {/* Exclude - positioned after lyrics for easy copy-paste */}
-      {result.exclude && (
+      {currentExclude && (
         <>
           <Divider />
           <Box>
@@ -388,7 +379,7 @@ export default function AdvancedResultsDisplay({
               <Button
                 size="sm"
                 leftIcon={<CopyIcon />}
-                onClick={() => copyToClipboard(result.exclude, 'Exclude')}
+                onClick={() => copyToClipboard(currentExclude, 'Exclude')}
                 colorScheme="green"
               >
                 Copy
@@ -402,7 +393,7 @@ export default function AdvancedResultsDisplay({
               fontFamily="monospace"
               fontSize="sm"
             >
-              {result.exclude}
+              {currentExclude}
             </Box>
           </Box>
         </>
@@ -416,7 +407,7 @@ export default function AdvancedResultsDisplay({
         <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
           <Stat size="sm">
             <StatLabel>Weirdness</StatLabel>
-            <StatNumber>{result.weirdness}%</StatNumber>
+            <StatNumber>{currentWeirdness}%</StatNumber>
           </Stat>
           <Stat size="sm">
             <StatLabel>Style Influence</StatLabel>
@@ -426,158 +417,134 @@ export default function AdvancedResultsDisplay({
       </Box>
 
       {/* Debug Info - Expandable */}
-      {result.debug_info && (
+      {(result.debug_info || refineTraces.length > 0) && (
         <>
           <Divider />
           <Accordion allowToggle>
-            <AccordionItem border="none">
-              <AccordionButton px={0} _hover={{ bg: 'transparent' }}>
-                <HStack flex="1" justify="space-between">
-                  <Text fontSize="sm" color="gray.500">
-                    Debug Trace
-                  </Text>
-                  <HStack spacing={2}>
-                    {result.debug_info.summary && (
-                      <>
-                        <Badge colorScheme="blue" fontSize="xs">
-                          {(result.debug_info.summary.total_elapsed_ms / 1000).toFixed(1)}s
-                        </Badge>
-                        <Badge colorScheme="purple" fontSize="xs">
-                          {result.debug_info.summary.variant}
-                        </Badge>
-                        <Badge colorScheme="green" fontSize="xs">
-                          {result.debug_info.summary.model}
-                        </Badge>
-                        {result.debug_info.summary.repairs > 0 && (
-                          <Badge colorScheme="orange" fontSize="xs">
-                            {result.debug_info.summary.repairs} repairs
+            {/* Initial Generation Trace */}
+            {result.debug_info && (
+              <AccordionItem border="none">
+                <AccordionButton px={0} _hover={{ bg: 'transparent' }}>
+                  <HStack flex="1" justify="space-between">
+                    <Text fontSize="sm" color="gray.500">
+                      Generation Trace
+                    </Text>
+                    <HStack spacing={2}>
+                      {result.debug_info.summary && (
+                        <>
+                          <Badge colorScheme="blue" fontSize="xs">
+                            {(result.debug_info.summary.total_elapsed_ms / 1000).toFixed(1)}s
                           </Badge>
-                        )}
-                      </>
-                    )}
-                    <AccordionIcon />
+                          <Badge colorScheme="purple" fontSize="xs">
+                            {result.debug_info.summary.variant}
+                          </Badge>
+                          <Badge colorScheme="green" fontSize="xs">
+                            {result.debug_info.summary.model}
+                          </Badge>
+                          {result.debug_info.summary.repairs > 0 && (
+                            <Badge colorScheme="orange" fontSize="xs">
+                              {result.debug_info.summary.repairs} repairs
+                            </Badge>
+                          )}
+                        </>
+                      )}
+                      <AccordionIcon />
+                    </HStack>
                   </HStack>
-                </HStack>
-              </AccordionButton>
-              <AccordionPanel pb={4} px={0}>
-                <DebugTraceViewer trace={result.debug_info} />
-              </AccordionPanel>
-            </AccordionItem>
+                </AccordionButton>
+                <AccordionPanel pb={4} px={0}>
+                  <DebugTraceViewer trace={result.debug_info} />
+                </AccordionPanel>
+              </AccordionItem>
+            )}
+
+            {/* Refine Traces */}
+            {refineTraces.map((refineData, index) => (
+              <AccordionItem key={index} border="none">
+                <AccordionButton px={0} _hover={{ bg: 'transparent' }}>
+                  <HStack flex="1" justify="space-between">
+                    <Text fontSize="sm" color="gray.500">
+                      Refine #{index + 1}
+                    </Text>
+                    <HStack spacing={2}>
+                      {refineData.trace.summary && (
+                        <Badge colorScheme="blue" fontSize="xs">
+                          {(refineData.trace.summary.total_elapsed_ms / 1000).toFixed(1)}s
+                        </Badge>
+                      )}
+                      {refineData.changedFields.map(field => (
+                        <Badge key={field} colorScheme="teal" fontSize="xs">
+                          {field}
+                        </Badge>
+                      ))}
+                      <AccordionIcon />
+                    </HStack>
+                  </HStack>
+                </AccordionButton>
+                <AccordionPanel pb={4} px={0}>
+                  <DebugTraceViewer trace={refineData.trace} />
+                </AccordionPanel>
+              </AccordionItem>
+            ))}
           </Accordion>
         </>
       )}
 
-      {/* Lyrics Refinement Modal */}
-      <Modal isOpen={isLyricsRefineOpen} onClose={onLyricsRefineClose} size="xl">
+      {/* Unified Refinement Modal */}
+      <Modal isOpen={isRefineOpen} onClose={onRefineClose} size="xl">
         <ModalOverlay />
         <ModalContent bg="gray.900">
-          <ModalHeader>Refine Lyrics</ModalHeader>
+          <ModalHeader>Refine Song</ModalHeader>
           <ModalCloseButton />
           <ModalBody>
             <VStack spacing={4} align="stretch">
               <Box>
-                <Text fontWeight="bold" mb={2}>Current Lyrics</Text>
-                <Box
-                  p={3}
-                  bg="gray.800"
-                  borderRadius="md"
-                  whiteSpace="pre-wrap"
-                  fontFamily="monospace"
-                  fontSize="sm"
-                  maxH="300px"
-                  overflowY="auto"
-                >
-                  {currentLyrics}
-                </Box>
+                <Text fontSize="sm" color="gray.400" mb={3}>
+                  Describe the change you want. We'll intelligently update the prompt, lyrics, excludes, title, and/or weirdness as needed.
+                </Text>
+                <Text fontSize="xs" color="gray.500" mb={2}>
+                  Examples: "make the ending a dubstep drop", "change the chorus to be about heartbreak", "make it more experimental", "avoid any autotune"
+                </Text>
               </Box>
               <Box>
-                <Text fontWeight="bold" mb={2}>What would you like to change?</Text>
-                <Text fontSize="sm" color="gray.400" mb={2}>
-                  Examples: "change the chorus", "add another verse", "make the bridge darker"
-                </Text>
                 <Textarea
-                  value={lyricsChangeRequest}
-                  onChange={(e) => setLyricsChangeRequest(e.target.value)}
+                  value={changeRequest}
+                  onChange={(e) => setChangeRequest(e.target.value)}
                   placeholder="Describe the changes you want..."
                   bg="gray.800"
                   rows={4}
-                  maxLength={500}
+                  maxLength={1000}
+                  autoFocus
                 />
                 <Text fontSize="xs" color="gray.500" mt={1}>
-                  {lyricsChangeRequest.length}/500
+                  {changeRequest.length}/1000
                 </Text>
+              </Box>
+              
+              {/* Current state summary */}
+              <Box borderTop="1px solid" borderColor="gray.700" pt={4}>
+                <Text fontWeight="bold" mb={2} fontSize="sm">Current State</Text>
+                <SimpleGrid columns={2} spacing={2} fontSize="xs" color="gray.400">
+                  <Text>Title: {currentTitle}</Text>
+                  <Text>Weirdness: {currentWeirdness}%</Text>
+                  <Text>Prompt: {promptLength} chars</Text>
+                  <Text>Lyrics: {lyricsLength > 0 ? `${lyricsLength} chars` : 'instrumental'}</Text>
+                  {currentExclude && <Text gridColumn="span 2">Exclude: {currentExclude.slice(0, 50)}{currentExclude.length > 50 ? '...' : ''}</Text>}
+                </SimpleGrid>
               </Box>
             </VStack>
           </ModalBody>
           <ModalFooter>
-            <Button variant="ghost" mr={3} onClick={onLyricsRefineClose}>
+            <Button variant="ghost" mr={3} onClick={onRefineClose}>
               Cancel
             </Button>
             <Button
               colorScheme="purple"
-              onClick={handleRefineLyrics}
-              isLoading={isRefiningLyrics}
+              onClick={handleUnifiedRefine}
+              isLoading={isRefining}
               loadingText="Refining..."
             >
-              Refine Lyrics
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
-
-      {/* Prompt Refinement Modal */}
-      <Modal isOpen={isPromptRefineOpen} onClose={onPromptRefineClose} size="xl">
-        <ModalOverlay />
-        <ModalContent bg="gray.900">
-          <ModalHeader>Refine Suno Prompt</ModalHeader>
-          <ModalCloseButton />
-          <ModalBody>
-            <VStack spacing={4} align="stretch">
-              <Box>
-                <Text fontWeight="bold" mb={2}>Current Prompt</Text>
-                <Box
-                  p={3}
-                  bg="gray.800"
-                  borderRadius="md"
-                  whiteSpace="pre-wrap"
-                  fontFamily="monospace"
-                  fontSize="sm"
-                  maxH="200px"
-                  overflowY="auto"
-                >
-                  {currentPrompt}
-                </Box>
-              </Box>
-              <Box>
-                <Text fontWeight="bold" mb={2}>What would you like to change?</Text>
-                <Text fontSize="sm" color="gray.400" mb={2}>
-                  Examples: "make it more energetic", "add synth elements", "remove the drums"
-                </Text>
-                <Textarea
-                  value={promptChangeRequest}
-                  onChange={(e) => setPromptChangeRequest(e.target.value)}
-                  placeholder="Describe the changes you want..."
-                  bg="gray.800"
-                  rows={4}
-                  maxLength={500}
-                />
-                <Text fontSize="xs" color="gray.500" mt={1}>
-                  {promptChangeRequest.length}/500
-                </Text>
-              </Box>
-            </VStack>
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="ghost" mr={3} onClick={onPromptRefineClose}>
-              Cancel
-            </Button>
-            <Button
-              colorScheme="purple"
-              onClick={handleRefinePrompt}
-              isLoading={isRefiningPrompt}
-              loadingText="Refining..."
-            >
-              Refine Prompt
+              Apply Changes
             </Button>
           </ModalFooter>
         </ModalContent>
@@ -585,4 +552,3 @@ export default function AdvancedResultsDisplay({
     </VStack>
   );
 }
-

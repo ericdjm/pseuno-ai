@@ -20,7 +20,6 @@ from app.constants import SUNO_PROMPT_MAX_CHARS
 from app.prompts.specs import (
     REFINE_STYLE_SPEC,
     REFINE_LYRICS_SPEC,
-    VOCAL_FORMATTING_SPEC,
 )
 
 logger = logging.getLogger(__name__)
@@ -76,7 +75,6 @@ REQUESTED CHANGE:
             model=model,
             api_key=settings.gemini_api_key,
             temperature=0.3,
-            max_output_tokens=800,
         )
     else:
         refined = await _call_openai(
@@ -106,19 +104,11 @@ async def refine_lyrics(
 ) -> str:
     """
     Refine lyrics based on user feedback while preserving structure markers.
-
-    Args:
-        current_lyrics: The current lyrics with structure tags
-        change_request: What the user wants to change
-        settings: App settings (contains llm_model, api keys, etc.)
-
-    Returns:
-        The refined lyrics as a string with structure preserved
+    Uses configurable lyrics_refine_model for fast responses on long lyrics.
     """
-    model = settings.llm_model
+    model = settings.lyrics_refine_model
     is_gemini = model in GEMINI_MODELS or model.startswith("gemini-")
 
-    # Compose system prompt from specs
     system_prompt = _build_lyrics_refine_prompt()
 
     user_message = f"""CURRENT LYRICS:
@@ -127,6 +117,10 @@ async def refine_lyrics(
 REQUESTED CHANGE:
 {change_request}"""
 
+    # Log what we're sending for debugging
+    logger.debug(f"Lyrics refine system_prompt length: {len(system_prompt)} chars")
+    logger.debug(f"Lyrics refine user_message length: {len(user_message)} chars")
+
     if is_gemini:
         refined = await _call_gemini(
             system_prompt=system_prompt,
@@ -134,7 +128,6 @@ REQUESTED CHANGE:
             model=model,
             api_key=settings.gemini_api_key,
             temperature=0.5,
-            max_output_tokens=2000,
         )
     else:
         refined = await _call_openai(
@@ -143,16 +136,10 @@ REQUESTED CHANGE:
             model=model,
             api_key=settings.openai_api_key,
             temperature=0.5,
-            max_tokens=2000,
+            max_tokens=3000,
         )
 
-    # Clean up common LLM artifacts
     refined = _clean_llm_output(refined)
-
-    # Enforce max length at line boundary
-    if len(refined) > 3000:
-        refined = refined[:3000].rsplit("\n", 1)[0]
-
     logger.info(f"Refined lyrics: {len(current_lyrics)} -> {len(refined)} chars")
     return refined
 
@@ -188,13 +175,11 @@ def _build_lyrics_refine_prompt() -> str:
     """
     Build the system prompt for lyrics refinement.
 
-    Composes from:
-    - REFINE_LYRICS_SPEC: Core refinement instructions
-    - VOCAL_FORMATTING_SPEC: Proper vocal formatting rules
+    Uses REFINE_LYRICS_SPEC which includes:
+    - Refinement-specific instructions (preserve structure, targeted edits)
+    - Full LYRICS_SPEC (tags, vocal formatting, rhyme schemes, content rules)
     """
-    return f"""{REFINE_LYRICS_SPEC}
-
-{VOCAL_FORMATTING_SPEC}"""
+    return REFINE_LYRICS_SPEC
 
 
 # =============================================================================
@@ -212,9 +197,8 @@ async def _call_gemini(
     model: str,
     api_key: Optional[str],
     temperature: float,
-    max_output_tokens: int,
 ) -> str:
-    """Call Gemini API with timeout."""
+    """Call Gemini API with timeout. No max_output_tokens to match main pipeline."""
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY is required for Gemini models")
 
@@ -229,9 +213,9 @@ async def _call_gemini(
             api_key=api_key,
             http_options=types.HttpOptions(timeout=LLM_TIMEOUT_SECONDS * 1000),  # ms
         )
+        # No max_output_tokens - let model use default (matches agent_prompt_graph.py)
         config = types.GenerateContentConfig(
             temperature=temperature,
-            max_output_tokens=max_output_tokens,
             system_instruction=system_prompt,
         )
         try:

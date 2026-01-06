@@ -230,22 +230,26 @@ export interface InputConceptResponse {
   mood: string | null;
 }
 
-export interface RefinementRequest {
-  current_prompt: string;
+// === Unified Refine Types ===
+
+export interface UnifiedRefineRequest {
+  suno_prompt: string;
+  lyrics: string;
+  exclude: string;
+  title: string;
+  weirdness: number;
   change_request: string;
 }
 
-export interface RefinementResponse {
-  refined_prompt: string;
-}
-
-export interface LyricsRefinementRequest {
-  current_lyrics: string;
-  change_request: string;
-}
-
-export interface LyricsRefinementResponse {
-  refined_lyrics: string;
+export interface UnifiedRefineResponse {
+  suno_prompt: string;
+  lyrics: string;
+  exclude: string;
+  title: string;
+  weirdness: number;
+  changed_fields: string[];
+  assistant_message: string | null;
+  debug_info: DebugTrace | null;
 }
 
 // === Lyrics Topic Types ===
@@ -507,15 +511,15 @@ export async function generateLyricsTopic(
 }
 
 /**
- * Refine an existing prompt based on user feedback.
+ * Unified refinement for multi-field edits.
  * 
- * Uses an LLM to make targeted edits to the prompt while preserving
- * the original intent.
+ * Applies a single user instruction to refine multiple song fields at once:
+ * suno_prompt, lyrics, exclude, title, and weirdness.
  */
-export async function refineInputConcept(
-  payload: RefinementRequest
-): Promise<RefinementResponse> {
-  const response = await fetch(`${API_BASE}/generate/refine-concept`, {
+export async function refineAll(
+  payload: UnifiedRefineRequest
+): Promise<UnifiedRefineResponse> {
+  const response = await fetch(`${API_BASE}/generate/refine`, {
     method: 'POST',
     credentials: 'include',
     headers: {
@@ -523,27 +527,7 @@ export async function refineInputConcept(
     },
     body: JSON.stringify(payload),
   });
-  return handleResponse<RefinementResponse>(response);
-}
-
-/**
- * Refine existing lyrics based on user feedback.
- * 
- * Uses an LLM to make targeted edits to the lyrics while preserving
- * structure markers like [Verse], [Chorus], [Bridge], etc.
- */
-export async function refineLyrics(
-  payload: LyricsRefinementRequest
-): Promise<LyricsRefinementResponse> {
-  const response = await fetch(`${API_BASE}/generate/refine-lyrics`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  });
-  return handleResponse<LyricsRefinementResponse>(response);
+  return handleResponse<UnifiedRefineResponse>(response);
 }
 
 // === Saved Prompts Functions ===

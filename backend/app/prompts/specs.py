@@ -20,6 +20,28 @@ from app.constants import (
 )
 
 # ===========================================================================
+# SLIM CONSTANTS (shared between full specs and planner)
+# ===========================================================================
+
+WEIRDNESS_RANGES = """\
+- 20-30: Radio-friendly (pop, rock, country)
+- 30-55: Balanced (alternative, indie)
+- 55-75: Experimental (prog, avant-garde)
+- 75+: Chaos (use sparingly)"""
+
+TITLE_RULES = """\
+- 1-5 words, no quotes, title case
+- Capture emotional core, not generic phrase
+- Pull from striking phrase in lyrics if possible"""
+
+EXCLUDE_GUIDELINES = """\
+- Use musical/stylistic terms Suno understands (NOT audio engineering jargon)
+- Format: comma-separated, 8-12 items total
+- GOOD: "EDM", "trap", "overproduced", "robotic drums", "auto-tune"
+- BAD: "brick-wall compression", "sidechain", "dithering" (engineering jargon)
+- Sources: genre names, instrument sounds, vibe/feel words, era mismatches"""
+
+# ===========================================================================
 # CORE POLICY
 # ===========================================================================
 
@@ -336,13 +358,11 @@ Rhyme scheme adaptation (match pattern to section length):
 # SONG TITLE SPEC
 # ===========================================================================
 
-SONG_TITLE_SPEC = """\
+SONG_TITLE_SPEC = f"""\
 ═══════════════════════════════════════════════════════════════════════════════
 SONG TITLE SPEC
 ═══════════════════════════════════════════════════════════════════════════════
-- 1-5 words, no quotes, title case.
-- Capture the emotional core of the song, not generic phrase.
-- Pull directly from a striking phrase in the lyrics you wrote.
+{TITLE_RULES}
 
 """
 
@@ -601,15 +621,12 @@ Think: Describe what you DON'T want as if you're talking to a musician, not an a
 # PARAMETER SPEC
 # ===========================================================================
 
-PARAMETER_SPEC = """\
+PARAMETER_SPEC = f"""\
 ═══════════════════════════════════════════════════════════════════════════════
 PARAMETER SPEC
 ═══════════════════════════════════════════════════════════════════════════════
 WEIRDNESS:
-- 20-30: Radio-friendly (pop, rock, country)
-- 30-55: Balanced (alternative, indie)
-- 55-75: Experimental (prog, avant-garde)
-- 75+: Chaos (use sparingly)
+{WEIRDNESS_RANGES}
 
 STYLE INFLUENCE:
 - 90-95: Strict adherence (when style is specific)
@@ -1212,27 +1229,36 @@ If basis="unspecified", provide:
 # ===========================================================================
 
 REFINE_STYLE_SPEC = f"""\
-You edit Suno music prompts. Apply ONLY the requested change while preserving everything else.
+You are a STYLE PROMPT REFINEMENT AGENT. Your job is to make targeted tweaks to existing Suno prompts based on user requests.
 
-RULES:
-1. Keep original structure and phrasing intact except for the specific change
-2. Every sentence must be COMPLETE — no fragments or trailing phrases
-3. Final output MUST be ≤{SUNO_PROMPT_MAX_CHARS} characters (Suno's limit)
-4. Output ONLY the edited prompt — no explanations, quotes, or preamble
+REFINEMENT RULES:
+1. START by copying the ENTIRE original prompt
+2. Make ONLY the specific change requested — preserve everything else verbatim
+3. Output MUST be at least 80% of the original length (unless user asked to shorten)
+4. Every sentence must be COMPLETE — no fragments
 
-If adding would exceed the limit, condense existing text slightly — never cut sentences short.
+WRONG: Rewriting the whole prompt in your own words
+RIGHT: Copy original, change only the specific part mentioned
+
+{SUNO_PROMPT_SPEC_V10}
+
+Output the edited prompt only — no explanations.
 """
 
-REFINE_LYRICS_SPEC = """\
-You edit song lyrics. Apply ONLY the requested change while preserving structure.
+REFINE_LYRICS_SPEC = f"""\
+You are a LYRICS REFINEMENT AGENT. Your job is to make targeted tweaks to existing lyrics based on user requests.
 
-RULES:
-1. PRESERVE all section tags: [Verse], [Chorus], [Bridge], [Intro], [Outro], etc.
-2. PRESERVE section modifiers like [Verse, soft, introspective]
-3. Make ONLY the requested change — do not rewrite unmentioned sections
-4. Output the COMPLETE lyrics with all sections — not just changed parts
-5. Output ONLY the lyrics — no explanations, quotes, or preamble
+REFINEMENT RULES:
+1. Output the COMPLETE lyrics with ALL sections — not just the changed parts
+2. Make ONLY the specific change requested — preserve everything else verbatim
+3. PRESERVE all section tags and modifiers exactly as given
+4. If user asks to change one verse, copy other verses unchanged
 
-[Intro], [Breakdown], [Outro] have NO lyrics beneath them (tag only).
-Choruses should have identical lyrics when repeated.
+WRONG: Outputting only the changed section
+WRONG: Rewriting sections that weren't mentioned  
+RIGHT: Copy entire lyrics, tweak only the specific part mentioned
+
+{LYRICS_SPEC}
+
+Output the complete edited lyrics only — no explanations.
 """

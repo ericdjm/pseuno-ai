@@ -91,6 +91,10 @@ class Settings(BaseSettings):
         default="gemini-2.5-flash-lite",
         description="Fast/cheap model for instrumental title generation",
     )
+    lyrics_refine_model: str = Field(
+        default="gemini-2.5-flash",
+        description="Model for lyrics refinement (needs to be fast for long lyrics)",
+    )
     llm_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     prompt_variant: Optional[str] = Field(
         default=None,
