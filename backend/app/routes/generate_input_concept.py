@@ -68,6 +68,7 @@ async def generate_input_concept(
             request_genres=request.genres,
             request_artists=request.artists,
             user_id=None,  # v1: no auth
+            candidate_genres=request.candidate_genres,
         )
 
         # Get merged genre list from all providers

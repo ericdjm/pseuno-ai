@@ -191,22 +191,85 @@ class InputConceptGenerator:
         """
         Generate a short concept from the given genre list.
 
-        Randomly selects 1-3 genres from the list (fallback seeds if empty).
-        Uses template variants for natural variance across generations.
+        - If genres is empty: randomly select 1-5 from fallback seeds.
+        - If genres is non-empty: include all provided (up to 5), then fill
+          remaining slots with fallback seeds not already included.
+        - Returns chosen_genres ordered: user-selected first, then auto-filled.
         """
         ctx = InfluenceContext(user_id=user_id)
+        MAX_TAGS = 5
+
+        # Get fallback genres for filling
+        fallback_genres = await self._fallback_provider.get_influence_genres(ctx)
 
         # Build genre list from manual input
-        genre_list = list(genres) if genres else []
+        user_genres = list(genres) if genres else []
 
-        # If empty, use fallback provider
-        if not genre_list:
-            fallback_genres = await self._fallback_provider.get_influence_genres(ctx)
+        # Base weights for [1, 2, 3, 4, 5] tags
+        # Target distribution: 1=15%, 2=25%, 3=30%, 4=20%, 5=10%
+        BASE_WEIGHTS = [3, 5, 6, 4, 2]  # Total 20
+
+        def pick_target_count(min_count: int, max_count: int) -> int:
+            """
+            Pick a target tag count from min_count to max_count, biased towards lower values.
+
+            When min_count > 1, we absorb the weights of eliminated options into min_count.
+            E.g., if min=2, max=5: weights for [2,3,4,5] become [5+4, 3, 2, 1] = [9, 3, 2, 1]
+            """
+            if min_count > max_count:
+                return min_count
+            if min_count == max_count:
+                return min_count
+
+            # Absorb eliminated weights into the minimum
+            absorbed_weight = sum(BASE_WEIGHTS[: min_count - 1]) if min_count > 1 else 0
+            remaining_weights = BASE_WEIGHTS[min_count - 1 : max_count]
+
+            # Add absorbed weight to the first (minimum) option
+            weights = remaining_weights.copy()
+            weights[0] += absorbed_weight
+
+            choices = list(range(min_count, max_count + 1))
+            return random.choices(choices, weights=weights)[0]
+
+        if not user_genres:
+            # No user input: randomly pick 1-5 from fallback (biased towards fewer)
+            max_available = min(MAX_TAGS, len(fallback_genres))
+            target = pick_target_count(1, max_available) if max_available > 0 else 0
+            chosen_genres = (
+                random.sample(fallback_genres, target)
+                if fallback_genres and target > 0
+                else []
+            )
             genre_list = fallback_genres
+        else:
+            # User provided genres: include all (up to 5), then maybe fill with fallback
+            chosen_genres = user_genres[:MAX_TAGS]  # User-selected, capped at 5
 
-        # Pick 1-3 random genres
-        num_to_pick = min(random.randint(1, 3), len(genre_list))
-        chosen_genres = random.sample(genre_list, num_to_pick) if genre_list else []
+            if len(chosen_genres) < MAX_TAGS:
+                # Randomly decide how many extra tags to add (biased towards fewer/none)
+                chosen_lower = {g.lower() for g in chosen_genres}
+                available_fallbacks = [
+                    g for g in fallback_genres if g.lower() not in chosen_lower
+                ]
+
+                if available_fallbacks:
+                    # Pick target total: min is current count, max is up to MAX_TAGS
+                    min_total = len(chosen_genres)
+                    max_total = min(
+                        MAX_TAGS, len(chosen_genres) + len(available_fallbacks)
+                    )
+
+                    target_total = pick_target_count(min_total, max_total)
+
+                    num_to_fill = target_total - len(chosen_genres)
+                    if num_to_fill > 0:
+                        auto_filled = random.sample(available_fallbacks, num_to_fill)
+                        chosen_genres = (
+                            chosen_genres + auto_filled
+                        )  # User first, then auto
+
+            genre_list = user_genres
 
         # Generate short concept with template variance
         concept, inferred_mood = self._generate_concept(
@@ -264,13 +327,31 @@ class InputConceptGenerator:
                 f"{g1.capitalize()} meets {g2}, {conn} {d1['texture']}.",
                 f"{g1.capitalize()}/{g2} {blend}. {d1['vibe'].capitalize()}.",
             ]
-        else:  # 3 genres
+        elif len(chosen_genres) == 3:
             g1, g2, g3 = chosen_genres[:3]
             d1 = self._get_genre_descriptor(g1)
             templates = [
                 f"{g1.capitalize()}, {g2}, and {g3}. {d1['texture'].capitalize()}.",
                 f"A take on {g1}, {g2}, {g3}. {d1['texture'].capitalize()}.",
                 f"Crossing {g1} with {g2} and {g3}. {d1['vibe'].capitalize()}.",
+            ]
+        elif len(chosen_genres) == 4:
+            g1, g2, g3, g4 = chosen_genres[:4]
+            d1 = self._get_genre_descriptor(g1)
+            blend = random.choice(BLEND_WORDS)
+            templates = [
+                f"A {blend} of {g1}, {g2}, {g3}, and {g4}. {d1['texture'].capitalize()}.",
+                f"{g1.capitalize()} meets {g2}, {g3}, and {g4}. {d1['vibe'].capitalize()}.",
+                f"Weaving {g1}, {g2}, {g3}, {g4} together. {d1['texture'].capitalize()}.",
+            ]
+        else:  # 5+ genres
+            g1, g2, g3, g4, g5 = chosen_genres[:5]
+            d1 = self._get_genre_descriptor(g1)
+            blend = random.choice(BLEND_WORDS)
+            templates = [
+                f"A rich {blend} of {g1}, {g2}, {g3}, {g4}, and {g5}. {d1['texture'].capitalize()}.",
+                f"{g1.capitalize()}, {g2}, {g3}, {g4}, {g5}. {d1['vibe'].capitalize()} and eclectic.",
+                f"Blending {g1}, {g2}, {g3}, {g4}, {g5} into something new. {d1['texture'].capitalize()}.",
             ]
 
         return random.choice(templates), mood
@@ -292,6 +373,7 @@ async def create_generator_with_providers(
     request_genres: Sequence[str],
     request_artists: Sequence[str] = (),
     user_id: Optional[str] = None,
+    candidate_genres: Sequence[str] = (),
 ) -> tuple[InputConceptGenerator, CompositeGenreInfluenceProvider]:
     """
     Factory function to create generator with appropriate providers.
@@ -306,6 +388,12 @@ async def create_generator_with_providers(
     ]
 
     composite = CompositeGenreInfluenceProvider(providers)
-    generator = InputConceptGenerator()
+    # Candidate genres (e.g., Spotify-aided) should influence only the fallback sampling pool,
+    # while request_genres remain the primary, user-selected inputs.
+    fallback_provider: Optional[GenreInfluenceProvider] = None
+    if candidate_genres:
+        fallback_provider = ManualInputGenreProvider(candidate_genres)
+
+    generator = InputConceptGenerator(fallback_provider=fallback_provider)
 
     return generator, composite

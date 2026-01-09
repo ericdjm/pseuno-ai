@@ -220,6 +220,8 @@ export interface InputConceptRequest {
   genres?: string[];
   artists?: string[];
   mood?: string;
+  /** Optional candidate pool for sampling/fill (e.g., Spotify-aided tags). */
+  candidate_genres?: string[];
 }
 
 export interface InputConceptResponse {

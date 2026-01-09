@@ -7,8 +7,6 @@ import { useState, useEffect, useReducer } from 'react';
 import {
   Box,
   VStack,
-  HStack,
-  Heading,
   Text,
   Button,
   Flex,
@@ -31,14 +29,17 @@ import { FaSpotify } from 'react-icons/fa';
 
 import * as api from './api';
 import { usePersistedSettings } from './hooks';
-import { TasteDisplay } from './components/TasteDisplay';
-import AdvancedGenerationControls from './components/AdvancedGenerationControls';
 import PromptLibrarySidebar from './components/PromptLibrarySidebar';
 import WorkingPromptPanel from './components/WorkingPromptPanel';
+import NewSongView from './components/NewSongView';
+import NewLyricsForStyleView from './components/NewLyricsForStyleView';
 import {
   workingReducer,
   createInitialWorkingState,
 } from './types/workingState';
+
+// Right pane view modes
+type RightPaneMode = 'new_song' | 'new_lyrics_for_style' | 'song_view';
 
 function App() {
   const toast = useToast();
@@ -53,17 +54,20 @@ function App() {
   const [profileLoading, setProfileLoading] = useState(false);
   const [, setProfileError] = useState<string | null>(null);
 
-  // Generation state
-  const [generating, setGenerating] = useState(false);
-
   // WorkingState (single source of truth for current prompt/song)
   const [workingState, dispatch] = useReducer(workingReducer, undefined, createInitialWorkingState);
 
   // Prompt library refresh trigger
   const [libraryRefresh, setLibraryRefresh] = useState(0);
 
-  // Show generation controls in right panel (instead of WorkingPromptPanel)
-  const [showNewPromptPanel, setShowNewPromptPanel] = useState(false);
+  // Right pane view mode
+  const [rightPaneMode, setRightPaneMode] = useState<RightPaneMode>('new_song');
+  
+  // Reset key for NewSongView - increment to clear inputs
+  const [newSongResetKey, setNewSongResetKey] = useState(0);
+  
+  // For new_lyrics_for_style mode, we need to know which style we're generating for
+  const [newLyricsForStyleId, setNewLyricsForStyleId] = useState<number | null>(null);
 
   // Sidebar visibility - auto-hide on small screens
   const isLargeScreen = useBreakpointValue({ base: false, md: true });
@@ -83,9 +87,13 @@ function App() {
     setUserToggledSidebar(true);
   };
 
-  // Legacy: still needed for generation controls
-  const [savedPrompts] = useState<api.SavedSunoPrompt[]>([]);
-  const [selectedSavedPrompt, setSelectedSavedPrompt] = useState<api.SavedSunoPrompt | null>(null);
+  // Default to New Song when nothing is selected (avoid the empty "No prompt loaded" surface).
+  useEffect(() => {
+    if (rightPaneMode !== 'song_view') return;
+    if (!workingState.stylePromptId && !workingState.lyricsThreadId) {
+      setRightPaneMode('new_song');
+    }
+  }, [rightPaneMode, workingState.stylePromptId, workingState.lyricsThreadId]);
 
   // Check for OAuth callback
   useEffect(() => {
@@ -181,9 +189,9 @@ function App() {
 
   // Handle generation complete
   const handleAdvancedGenerate = async (result: api.AdvancedGenerateResponse) => {
-    setShowNewPromptPanel(false);
-
-    // Fetch the saved prompt to get full details
+    // Fetch the saved prompt to get full details, then switch to song_view.
+    // We must dispatch BEFORE setRightPaneMode('song_view') because there's a useEffect
+    // that resets to 'new_song' if song_view is active but no prompt is loaded yet.
     if (result.prompt_id) {
       try {
         const savedPrompt = await api.getSavedPrompt(result.prompt_id);
@@ -226,6 +234,9 @@ function App() {
       }
     }
 
+    // Now that workingState has a prompt loaded, switch to song_view
+    setRightPaneMode('song_view');
+
     // Refresh library
     setLibraryRefresh((n) => n + 1);
   };
@@ -236,6 +247,7 @@ function App() {
     threads: api.LyricsThreadSummary[]
   ) => {
     dispatch({ type: 'LOAD_STYLE_PROMPT', prompt });
+    setRightPaneMode('song_view');
 
     // Auto-select the most recent thread if available
     if (threads.length > 0) {
@@ -258,6 +270,7 @@ function App() {
     if (workingState.stylePromptId !== prompt.id) {
       dispatch({ type: 'LOAD_STYLE_PROMPT', prompt });
     }
+    setRightPaneMode('song_view');
 
     try {
       const fullThread = await api.getLyricsThread(threadSummary.id);
@@ -272,38 +285,18 @@ function App() {
     }
   };
 
-  // Handle new lyrics variation
-  const handleNewLyricsVariation = async (promptId: number) => {
-    try {
-      // Create a new thread, optionally seeding from current thread if same prompt
-      const seedFromThreadId =
-        workingState.stylePromptId === promptId && workingState.lyricsThreadId
-          ? workingState.lyricsThreadId
-          : undefined;
+  // Handle opening new lyrics variation view
+  const handleNewLyricsVariation = (promptId: number) => {
+    setNewLyricsForStyleId(promptId);
+    setRightPaneMode('new_lyrics_for_style');
+  };
 
-      const newThread = await api.createLyricsThread({
-        style_prompt_id: promptId,
-        seed_from_thread_id: seedFromThreadId,
-      });
-
-      dispatch({ type: 'SELECT_THREAD', thread: newThread });
-
-      // Refresh library to show new thread
-      setLibraryRefresh((n) => n + 1);
-
-      toast({
-        title: 'New lyrics variation created',
-        status: 'success',
-        duration: 2000,
-      });
-    } catch (err) {
-      console.error('Failed to create lyrics variation:', err);
-      toast({
-        title: 'Failed to create variation',
-        status: 'error',
-        duration: 2000,
-      });
-    }
+  // Handle new lyrics generation complete (from NewLyricsForStyleView)
+  const handleNewLyricsGenerated = (thread: api.LyricsThread) => {
+    // Dispatch first to populate workingState, then switch view
+    dispatch({ type: 'SELECT_THREAD', thread });
+    setRightPaneMode('song_view');
+    setLibraryRefresh((n) => n + 1);
   };
 
   return (
@@ -390,7 +383,10 @@ function App() {
             onSelectStylePrompt={handleSelectStylePrompt}
             onSelectThread={handleSelectThread}
             onNewLyricsVariation={handleNewLyricsVariation}
-            onNewPrompt={() => setShowNewPromptPanel(true)}
+            onNewPrompt={() => {
+              setRightPaneMode('new_song');
+              setNewSongResetKey(k => k + 1);
+            }}
             onCloseSidebar={() => handleToggleSidebar(false)}
             authStatus={authStatus}
             onLogin={handleLogin}
@@ -398,50 +394,31 @@ function App() {
         )}
 
 
-        {/* Right: Either New Prompt Generation or Working Prompt Panel */}
-        {showNewPromptPanel ? (
-          <Box flex={1} overflow="auto" bg="gray.900" py={4} pt={14} px={4} minW={0}>
-          <Box maxW="800px" mx="auto">
-            <VStack spacing={4} align="stretch">
-              <HStack justify="space-between">
-                <Heading size="md">Generate New Prompt</Heading>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setShowNewPromptPanel(false)}
-                >
-                  Cancel
-                </Button>
-              </HStack>
+        {/* Right: View based on rightPaneMode */}
+        {rightPaneMode === 'new_song' && (
+          <NewSongView
+            onGenerate={handleAdvancedGenerate}
+            onCancel={() => setRightPaneMode('song_view')}
+            profile={profile}
+            profileLoading={profileLoading}
+            isAuthenticated={authStatus.authenticated}
+            timeRange={settings.timeRange}
+            onTimeRangeChange={(tr) => updateSettings({ timeRange: tr })}
+            resetKey={newSongResetKey}
+          />
+        )}
 
-              {/* Show taste display if authenticated */}
-          {authStatus.authenticated && (
-            <TasteDisplay
-              profile={profile}
-              loading={profileLoading}
-              timeRange={settings.timeRange}
-              onTimeRangeChange={(tr) => updateSettings({ timeRange: tr })}
-            />
-          )}
+        {rightPaneMode === 'new_lyrics_for_style' && newLyricsForStyleId && (
+          <NewLyricsForStyleView
+            stylePromptId={newLyricsForStyleId}
+            stylePromptText={workingState.styleFields.suno_prompt}
+            styleTitle={workingState.styleFields.title}
+            onGenerate={handleNewLyricsGenerated}
+            onCancel={() => setRightPaneMode('song_view')}
+          />
+        )}
 
-              {/* Generation Controls - new style only mode */}
-            <AdvancedGenerationControls
-              onGenerate={handleAdvancedGenerate}
-              isLoading={generating}
-              setIsLoading={setGenerating}
-              profile={profile}
-              savedPrompts={savedPrompts}
-              selectedSavedPrompt={selectedSavedPrompt}
-                onSelectSavedPrompt={setSelectedSavedPrompt}
-                styleMode="songStylePrompt"
-                onStyleModeChange={() => {}}
-                onPromptUpdated={() => setLibraryRefresh((n) => n + 1)}
-                newStyleOnly
-              />
-            </VStack>
-          </Box>
-          </Box>
-        ) : (
+        {rightPaneMode === 'song_view' && (
           <WorkingPromptPanel
             state={workingState}
             dispatch={dispatch}

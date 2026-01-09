@@ -108,7 +108,7 @@ export default function PromptLibrarySidebar({
   // Your songs section collapsed state
   const [yourSongsOpen, setYourSongsOpen] = useState(true);
 
-  // Fetch all prompts
+  // Fetch all prompts (works for both Spotify-authenticated and guest users via device token)
   const fetchPrompts = useCallback(async () => {
     setLoading(true);
     try {
@@ -121,12 +121,17 @@ export default function PromptLibrarySidebar({
       });
       setAllPrompts(sorted);
     } catch (err) {
-      console.error('Failed to fetch prompts:', err);
-      toast({
-        title: 'Failed to load prompts',
-        status: 'error',
-        duration: 3000,
-      });
+      // 401 is expected for brand-new users without a device token yet - just show empty
+      if (err instanceof Error && err.message.includes('401')) {
+        setAllPrompts([]);
+      } else {
+        console.error('Failed to fetch prompts:', err);
+        toast({
+          title: 'Failed to load prompts',
+          status: 'error',
+          duration: 3000,
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -146,13 +151,14 @@ export default function PromptLibrarySidebar({
   // Global keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
       // Command+K or Ctrl+K to open search
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
         setSearchOpen(true);
       }
-      // Command+Enter or Ctrl+Enter to create new song
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      // Command+/ or Ctrl+/ to create new song
+      if ((e.metaKey || e.ctrlKey) && e.key === '/') {
         e.preventDefault();
         onNewPrompt();
       }
@@ -623,7 +629,7 @@ export default function PromptLibrarySidebar({
         >
           <AddIcon boxSize={4} color="gray.400" />
           <Text fontSize="sm" flex={1}>New Song</Text>
-          <Text fontSize="xs" color="gray.500" opacity={0} _groupHover={{ opacity: 1 }} transition="opacity 0.1s" flexShrink={0} w="50px" textAlign="right">⌘ Enter</Text>
+          <Text fontSize="xs" color="gray.500" opacity={0} _groupHover={{ opacity: 1 }} transition="opacity 0.1s" flexShrink={0} w="30px" textAlign="right">⌘/</Text>
         </HStack>
 
         {/* Search Styles */}
@@ -671,7 +677,7 @@ export default function PromptLibrarySidebar({
           >
             <SearchIcon boxSize={4} color="gray.400" />
             <Text fontSize="sm" flex={1}>Search Styles</Text>
-            <Text fontSize="xs" color="gray.500" opacity={0} _groupHover={{ opacity: 1 }} transition="opacity 0.1s" flexShrink={0} w="50px" textAlign="right">⌘ K</Text>
+            <Text fontSize="xs" color="gray.500" opacity={0} _groupHover={{ opacity: 1 }} transition="opacity 0.1s" flexShrink={0} w="40px" textAlign="right">⌘K</Text>
           </HStack>
         )}
       </VStack>

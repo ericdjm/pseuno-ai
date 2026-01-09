@@ -34,6 +34,16 @@ class InputConceptRequest(BaseModel):
         max_length=100,
     )
 
+    candidate_genres: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Optional candidate pool for random tag selection/fill. "
+            "When provided, this overrides the server's fallback seed list as the sampling pool. "
+            "This is useful for including personalized (e.g., Spotify-aided) tags in v1 without server-side Spotify calls."
+        ),
+        max_length=200,
+    )
+
 
 class InputConceptResponse(BaseModel):
     """Response containing the generated input concept."""

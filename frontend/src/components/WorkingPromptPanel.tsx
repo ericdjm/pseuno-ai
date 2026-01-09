@@ -24,23 +24,20 @@ import {
   SliderFilledTrack,
   SliderThumb,
   Divider,
-  Collapse,
   useToast,
-  Input,
-  Menu,
-  MenuButton,
-  MenuList,
-  MenuItem,
   Spinner,
+  Alert,
+  AlertIcon,
+  AlertDescription,
+  CloseButton,
 } from '@chakra-ui/react';
 import {
   CopyIcon,
   StarIcon,
-  ChevronDownIcon,
   TimeIcon,
   RepeatIcon,
 } from '@chakra-ui/icons';
-import type { WorkingState, WorkingAction, StyleFields } from '../types/workingState';
+import type { WorkingState, WorkingAction } from '../types/workingState';
 import type { LyricsCheckpoint, UnifiedRefineRequest, UnifiedRefineResponse } from '../api';
 import {
   updateLyricsThread,
@@ -48,6 +45,7 @@ import {
   listCheckpoints,
   restoreCheckpoint,
   refineAll,
+  getSavedPrompt,
   updateSavedPrompt,
 } from '../api';
 
@@ -72,7 +70,7 @@ export default function WorkingPromptPanel({
 
   // Lyrics save debounce
   const [savingLyrics, setSavingLyrics] = useState(false);
-  const lyricsSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lyricsSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Checkpoints loading
   const [loadingCheckpoints, setLoadingCheckpoints] = useState(false);
@@ -81,12 +79,45 @@ export default function WorkingPromptPanel({
   const [togglingFavorite, setTogglingFavorite] = useState(false);
   const [isFavorite, setIsFavorite] = useState(false);
 
+  // Banner for when a new style version was created
+  const [showStyleForkedBanner, setShowStyleForkedBanner] = useState(false);
+
   // Load checkpoints when thread changes
   useEffect(() => {
     if (state.lyricsThreadId) {
       loadCheckpoints();
     }
   }, [state.lyricsThreadId]);
+
+  // Reset style forked banner when navigating to a different prompt
+  useEffect(() => {
+    setShowStyleForkedBanner(false);
+  }, [state.stylePromptId]);
+
+  // Sync favorite state from backend whenever the loaded prompt changes.
+  // Otherwise the star can get "stuck" showing the previous prompt's favorite status.
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      if (!state.stylePromptId) {
+        setIsFavorite(false);
+        return;
+      }
+
+      try {
+        const prompt = await getSavedPrompt(state.stylePromptId);
+        if (!cancelled) setIsFavorite(prompt.is_favorite);
+      } catch (err) {
+        // Non-fatal; keep current UI state if fetch fails (e.g., not authenticated).
+        console.error('Failed to load favorite state:', err);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [state.stylePromptId]);
 
   const loadCheckpoints = async () => {
     if (!state.lyricsThreadId) return;
@@ -216,6 +247,10 @@ export default function WorkingPromptPanel({
 
       const response: UnifiedRefineResponse = await refineAll(payload);
 
+      // Check if style was changed (new StylePrompt created)
+      const styleChanged = response.changed_fields.includes('suno_prompt');
+      const lyricsChanged = response.changed_fields.includes('lyrics');
+
       // Dispatch refine end with updated fields
       dispatch({
         type: 'REFINE_END',
@@ -231,12 +266,34 @@ export default function WorkingPromptPanel({
       });
 
       toast.close('refine-progress');
-      toast({
-        title: 'Refinement complete',
-        description: response.assistant_message || `Changed: ${response.changed_fields.join(', ')}`,
-        status: 'success',
-        duration: 4000,
-      });
+
+      // Show appropriate feedback based on what changed
+      if (styleChanged) {
+        // Style changed - show banner and specific toast
+        setShowStyleForkedBanner(true);
+        toast({
+          title: 'New style version created',
+          description: response.assistant_message || 'Your prompt style was updated. A new version has been saved.',
+          status: 'info',
+          duration: 5000,
+        });
+      } else if (lyricsChanged) {
+        toast({
+          title: 'Lyrics updated',
+          description: response.assistant_message || 'Your lyrics have been updated.',
+          status: 'success',
+          duration: 3000,
+        });
+      } else {
+        toast({
+          title: 'Refinement complete',
+          description: response.assistant_message || (response.changed_fields.length > 0 
+            ? `Changed: ${response.changed_fields.join(', ')}`
+            : 'No changes were needed.'),
+          status: response.changed_fields.length > 0 ? 'success' : 'info',
+          duration: 4000,
+        });
+      }
 
       // Refresh prompts if new one was created
       if (response.saved_prompt_id) {
@@ -268,8 +325,8 @@ export default function WorkingPromptPanel({
     if (!state.stylePromptId) return;
     setTogglingFavorite(true);
     try {
-      await updateSavedPrompt(state.stylePromptId, { is_favorite: !isFavorite });
-      setIsFavorite(!isFavorite);
+      const updated = await updateSavedPrompt(state.stylePromptId, { is_favorite: !isFavorite });
+      setIsFavorite(updated.is_favorite);
       onFavoriteToggled();
     } catch (err) {
       console.error('Failed to toggle favorite:', err);
@@ -351,6 +408,22 @@ export default function WorkingPromptPanel({
               </Badge>
             ))}
           </HStack>
+        )}
+
+        {/* Style Forked Banner */}
+        {showStyleForkedBanner && (
+          <Alert status="info" variant="subtle" borderRadius="md">
+            <AlertIcon />
+            <AlertDescription flex={1} fontSize="sm">
+              A new style version was created from your refinement. The sidebar has been updated.
+            </AlertDescription>
+            <CloseButton
+              position="relative"
+              right={-1}
+              top={0}
+              onClick={() => setShowStyleForkedBanner(false)}
+            />
+          </Alert>
         )}
 
         <Divider borderColor="gray.700" />
