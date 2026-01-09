@@ -38,6 +38,16 @@ class UnifiedRefineRequest(BaseModel):
         le=100,
         description="Current weirdness value (0-100)",
     )
+    style_influence: int = Field(
+        default=50,
+        ge=0,
+        le=100,
+        description="Current style influence value (0-100)",
+    )
+    auto_tags: List[str] = Field(
+        default=[],
+        description="Current auto-generated tags for the prompt",
+    )
 
     # User instruction
     change_request: str = Field(

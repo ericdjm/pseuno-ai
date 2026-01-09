@@ -334,6 +334,7 @@ function App() {
             <AdvancedResultsDisplay
               result={advancedResult}
               onFavoriteToggled={() => setSavedPromptsRefresh((n: number) => n + 1)}
+              onPromptSaved={() => setSavedPromptsRefresh((n: number) => n + 1)}
             />
           )}
 

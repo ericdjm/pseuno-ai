@@ -13,7 +13,7 @@ Later: Logged-in users can have genres populated from Spotify/profiles.
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, status
 
 from app.schemas.input_concept import (
     InputConceptRequest,
@@ -21,14 +21,9 @@ from app.schemas.input_concept import (
     LyricsTopicRequest,
     LyricsTopicResponse,
 )
-from app.schemas.unified_refine import (
-    UnifiedRefineRequest,
-    UnifiedRefineResponse,
-)
 from app.services.input_concept_generator import (
     create_generator_with_providers,
 )
-from app.services.unified_refine_service import refine_all
 from app.services.lyrics_topic_generator import generate_lyrics_topic
 
 logger = logging.getLogger(__name__)
@@ -165,91 +160,4 @@ async def generate_lyrics_topic_endpoint(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to generate lyrics topic",
-        )
-
-
-@router.post(
-    "/refine",
-    response_model=UnifiedRefineResponse,
-    summary="Unified refinement for multi-field edits",
-    description="""
-Apply a single user instruction to refine multiple song fields at once.
-
-This endpoint can update:
-- **suno_prompt**: The Suno style prompt
-- **lyrics**: The song lyrics
-- **exclude**: Terms to exclude from generation
-- **title**: The song title
-- **weirdness**: The experimental-ness level (0-100)
-
-The backend uses an LLM planner to decide which fields to modify based on
-the user's natural language request, then applies targeted edits.
-
-**Examples:**
-- "make the ending a dubstep drop" → updates lyrics, prompt, possibly exclude
-- "make it more experimental" → increases weirdness, may update prompt
-- "change the chorus to be about love" → updates lyrics only
-""",
-)
-async def unified_refine(
-    request: UnifiedRefineRequest,
-    fastapi_request: Request,
-) -> UnifiedRefineResponse:
-    """Apply multi-field edits based on a single user instruction."""
-
-    try:
-        # Get settings from app state
-        settings = (
-            fastapi_request.app.state.settings
-            if hasattr(fastapi_request.app.state, "settings")
-            else None
-        )
-        if settings is None:
-            from app.config import get_settings
-
-            settings = get_settings()
-
-        # Call unified refine service
-        updated_snapshot, changed_fields, assistant_message, debug_info = await refine_all(
-            request=request,
-            settings=settings,
-        )
-
-        logger.info(
-            f"Unified refine: changed_fields={changed_fields}, "
-            f"change_request='{request.change_request[:50]}...'"
-        )
-
-        return UnifiedRefineResponse(
-            suno_prompt=updated_snapshot["suno_prompt"],
-            lyrics=updated_snapshot["lyrics"],
-            exclude=updated_snapshot["exclude"],
-            title=updated_snapshot["title"],
-            weirdness=updated_snapshot["weirdness"],
-            changed_fields=changed_fields,
-            assistant_message=assistant_message,
-            debug_info=debug_info,
-        )
-
-    except RuntimeError as e:
-        error_msg = str(e)
-        if "timed out" in error_msg.lower():
-            raise HTTPException(
-                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail=error_msg,
-            )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=error_msg,
-        )
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
-    except Exception:
-        logger.exception("Error in unified refine")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to refine",
         )

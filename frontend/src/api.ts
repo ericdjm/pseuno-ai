@@ -238,6 +238,8 @@ export interface UnifiedRefineRequest {
   exclude: string;
   title: string;
   weirdness: number;
+  style_influence: number;
+  auto_tags: string[];
   change_request: string;
 }
 

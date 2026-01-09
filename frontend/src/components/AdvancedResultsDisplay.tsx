@@ -82,11 +82,13 @@ function saveRefinedSnapshot(generationId: string, snapshot: RefinedSnapshot): v
 interface AdvancedResultsDisplayProps {
   result: AdvancedGenerateResponse;
   onFavoriteToggled?: () => void;
+  onPromptSaved?: () => void;
 }
 
 export default function AdvancedResultsDisplay({
   result,
   onFavoriteToggled,
+  onPromptSaved,
 }: AdvancedResultsDisplayProps) {
   const toast = useToast();
   const [isFavorite, setIsFavorite] = useState(result.is_favorite);
@@ -231,6 +233,8 @@ export default function AdvancedResultsDisplay({
         exclude: currentExclude,
         title: currentTitle,
         weirdness: currentWeirdness,
+        style_influence: result.style_influence,
+        auto_tags: result.auto_tags || [],
         change_request: request,
       };
 
@@ -268,6 +272,11 @@ export default function AdvancedResultsDisplay({
         status: response.changed_fields.length > 0 ? 'success' : 'info',
         duration: 4000,
       });
+
+      // If suno_prompt was changed, a new history entry was saved - refresh the list
+      if (response.changed_fields.includes('suno_prompt')) {
+        onPromptSaved?.();
+      }
     } catch (err) {
       console.error('Error refining:', err);
       toast.close('refine-progress');

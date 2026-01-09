@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import httpx
 
-from app.routes import auth, spotify, generate_advanced, generate_input_concept, prompts
+from app.routes import auth, spotify, generate_advanced, generate_input_concept, refine, prompts
 from app.services.agent_prompt_graph import AgentPromptGraph
 from app.services.rate_limiter import create_rate_limiter
 from app.services.session_store import session_store
@@ -115,6 +115,7 @@ app.include_router(
 app.include_router(
     generate_input_concept.router, tags=["Input Concept Generation"]
 )
+app.include_router(refine.router, tags=["Refinement"])
 app.include_router(prompts.router, prefix="/prompts", tags=["Saved Prompts"])
 
 # CORS Configuration (must be OUTERMOST so even early middleware returns get CORS headers)
