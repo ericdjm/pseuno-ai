@@ -56,7 +56,7 @@ export type WorkingAction =
   | { type: 'RESET' }
   | { type: 'LOAD_STYLE_PROMPT'; prompt: SavedSunoPrompt }
   | { type: 'SELECT_THREAD'; thread: LyricsThread }
-  | { type: 'SET_GENERATED'; prompt: SavedSunoPrompt; threadId: number | null }
+  | { type: 'SET_GENERATED'; prompt: SavedSunoPrompt; threadId: number | null; threadTitle?: string | null; lyricsText?: string }
   | { type: 'EDIT_STYLE_FIELD'; field: keyof StyleFields; value: string | number | string[] }
   | { type: 'EDIT_LYRICS_TEXT'; value: string }
   | { type: 'EDIT_LYRICS_TITLE'; value: string }
@@ -127,6 +127,8 @@ export function workingReducer(state: WorkingState, action: WorkingAction): Work
     case 'SELECT_THREAD':
       return {
         ...state,
+        // Sync stylePromptId from the thread to prevent inconsistency
+        stylePromptId: action.thread.style_prompt_id,
         lyricsThreadId: action.thread.id,
         lyricsFields: {
           lyrics_text: action.thread.lyrics_text,
@@ -149,8 +151,10 @@ export function workingReducer(state: WorkingState, action: WorkingAction): Work
           auto_tags: action.prompt.auto_tags,
         },
         lyricsFields: {
-          lyrics_text: action.prompt.lyrics,
-          lyrics_title: action.prompt.title || '',
+          // Use thread-specific lyrics if provided, fallback to prompt.lyrics
+          lyrics_text: action.lyricsText ?? action.prompt.lyrics,
+          // Use thread title if provided, fallback to prompt title
+          lyrics_title: action.threadTitle ?? action.prompt.title ?? '',
         },
         dirty: { style: false, lyrics: false },
         mode: 'generated',

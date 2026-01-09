@@ -60,7 +60,7 @@ interface PromptLibrarySidebarProps {
   activeThreadId: number | null;
   onSelectStylePrompt: (prompt: SavedSunoPrompt, threads: LyricsThreadSummary[]) => void;
   onSelectThread: (prompt: SavedSunoPrompt, thread: LyricsThreadSummary) => void;
-  onNewLyricsVariation: (promptId: number) => void;
+  onNewLyricsVariation: (prompt: SavedSunoPrompt) => void;
   onNewPrompt: () => void;
   onCloseSidebar: () => void;
   authStatus: AuthStatus;
@@ -524,7 +524,7 @@ export default function PromptLibrarySidebar({
                 _hover={{ bg: 'gray.700', color: 'gray.300' }}
                 onClick={(e) => {
                   e.stopPropagation();
-                  onNewLyricsVariation(prompt.id);
+                  onNewLyricsVariation(prompt);
                 }}
                 fontSize="xs"
               >
@@ -564,7 +564,7 @@ export default function PromptLibrarySidebar({
                   _hover={{ bg: 'gray.700', color: 'gray.300' }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    onNewLyricsVariation(prompt.id);
+                    onNewLyricsVariation(prompt);
                   }}
                   fontSize="xs"
                 >

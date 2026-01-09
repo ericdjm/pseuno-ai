@@ -192,7 +192,11 @@ async def generate_advanced(
 
         # Create the prompt history record (StylePrompt)
         auto_tags = result.get("auto_tags", [])
-        prompt_title = _derive_prompt_title(result["suno_prompt"], auto_tags)
+        # Use LLM-generated style_name if available, fallback to tag-derived title
+        style_name = result.get("style_name", "").strip()
+        prompt_title = style_name or _derive_prompt_title(
+            result["suno_prompt"], auto_tags
+        )
         prompt = SunoPrompt(
             owner_user_id=user_id,
             parent_prompt_id=None,  # Fresh generation has no parent
@@ -214,10 +218,12 @@ async def generate_advanced(
         # Create initial LyricsThread (song) for this StylePrompt
         # Always create a thread, even for instrumental songs (empty lyrics)
         lyrics_text = result.get("lyrics", "")
+        # Use the actual song title (concept_title) for the thread, not the style prompt title
+        song_title = result.get("concept_title") or prompt_title
         thread = LyricsThread(
             style_prompt_id=prompt.id,
             parent_thread_id=None,
-            title=prompt_title,
+            title=song_title,
             lyrics_text=lyrics_text,
             source_action="generate_initial",
         )

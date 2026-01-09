@@ -197,12 +197,13 @@ function App() {
         const savedPrompt = await api.getSavedPrompt(result.prompt_id);
         // Get the threads (should have one initial thread)
         const threads = await api.getPromptThreads(result.prompt_id);
-        const threadId = threads.length > 0 ? threads[0].id : null;
+        const thread = threads.length > 0 ? threads[0] : null;
 
         dispatch({
           type: 'SET_GENERATED',
           prompt: savedPrompt,
-          threadId,
+          threadId: thread?.id ?? null,
+          threadTitle: thread?.title,
         });
       } catch (err) {
         console.error('Failed to load generated prompt:', err);
@@ -286,8 +287,12 @@ function App() {
   };
 
   // Handle opening new lyrics variation view
-  const handleNewLyricsVariation = (promptId: number) => {
-    setNewLyricsForStyleId(promptId);
+  const handleNewLyricsVariation = (prompt: api.SavedSunoPrompt) => {
+    // Ensure workingState has the correct style prompt loaded
+    if (workingState.stylePromptId !== prompt.id) {
+      dispatch({ type: 'LOAD_STYLE_PROMPT', prompt });
+    }
+    setNewLyricsForStyleId(prompt.id);
     setRightPaneMode('new_lyrics_for_style');
   };
 
@@ -422,8 +427,6 @@ function App() {
           <WorkingPromptPanel
             state={workingState}
             dispatch={dispatch}
-            onPromptSaved={() => setLibraryRefresh((n) => n + 1)}
-            onFavoriteToggled={() => setLibraryRefresh((n) => n + 1)}
           />
         )}
       </Flex>

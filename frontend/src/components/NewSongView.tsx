@@ -105,8 +105,21 @@ export default function NewSongView({
 
   // UI state
   const [isLoading, setIsLoading] = useState(false);
+  const [showLongWaitMessage, setShowLongWaitMessage] = useState(false);
   const [isGeneratingConcept, setIsGeneratingConcept] = useState(false);
   const [isGeneratingLyricsTopic, setIsGeneratingLyricsTopic] = useState(false);
+
+  // Show "can take up to a minute" message after 10 seconds of loading
+  useEffect(() => {
+    if (!isLoading) {
+      setShowLongWaitMessage(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setShowLongWaitMessage(true);
+    }, 10000);
+    return () => clearTimeout(timer);
+  }, [isLoading]);
   
   // Suno-like collapsible sections
   const [stylesExpanded, setStylesExpanded] = useState(true);
@@ -912,7 +925,9 @@ export default function NewSongView({
 
           {/* Keyboard shortcut hint */}
           <Text fontSize="xs" color="gray.600" textAlign="center" mt={2}>
-            ⌘ Enter to create
+            {isLoading && showLongWaitMessage
+              ? 'Generations can take up to a minute...'
+              : '⌘ Enter to create'}
           </Text>
         </VStack>
       </Box>

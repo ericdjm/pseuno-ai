@@ -1,12 +1,11 @@
 /**
- * WorkingPromptPanel - Right panel showing the current StylePrompt + Song.
+ * WorkingPromptPanel - Right panel showing the current Song.
  * 
  * Features:
- * - Inline refine input
- * - Style prompt editor (read-only or editable)
- * - Lyrics editor with checkpoints
- * - Copy buttons
- * - Favorite toggle
+ * - Song title (copy-pastable)
+ * - Style prompt display with copy
+ * - Exclude display with copy
+ * - Lyrics editor with auto-save and checkpoints
  */
 
 import { useState, useRef, useEffect } from 'react';
@@ -19,10 +18,6 @@ import {
   Textarea,
   IconButton,
   Badge,
-  Slider,
-  SliderTrack,
-  SliderFilledTrack,
-  SliderThumb,
   Divider,
   useToast,
   Spinner,
@@ -33,40 +28,28 @@ import {
 } from '@chakra-ui/react';
 import {
   CopyIcon,
-  StarIcon,
   TimeIcon,
   RepeatIcon,
 } from '@chakra-ui/icons';
 import type { WorkingState, WorkingAction } from '../types/workingState';
-import type { LyricsCheckpoint, UnifiedRefineRequest, UnifiedRefineResponse } from '../api';
+import type { LyricsCheckpoint } from '../api';
 import {
   updateLyricsThread,
   createCheckpoint,
   listCheckpoints,
   restoreCheckpoint,
-  refineAll,
-  getSavedPrompt,
-  updateSavedPrompt,
 } from '../api';
 
 interface WorkingPromptPanelProps {
   state: WorkingState;
   dispatch: React.Dispatch<WorkingAction>;
-  onPromptSaved: () => void;
-  onFavoriteToggled: () => void;
 }
 
 export default function WorkingPromptPanel({
   state,
   dispatch,
-  onPromptSaved,
-  onFavoriteToggled,
 }: WorkingPromptPanelProps) {
   const toast = useToast();
-
-  // Refine input state
-  const [refineRequest, setRefineRequest] = useState('');
-  const refineInputRef = useRef<HTMLTextAreaElement>(null);
 
   // Lyrics save debounce
   const [savingLyrics, setSavingLyrics] = useState(false);
@@ -74,10 +57,6 @@ export default function WorkingPromptPanel({
 
   // Checkpoints loading
   const [loadingCheckpoints, setLoadingCheckpoints] = useState(false);
-
-  // Favorite toggling
-  const [togglingFavorite, setTogglingFavorite] = useState(false);
-  const [isFavorite, setIsFavorite] = useState(false);
 
   // Banner for when a new style version was created
   const [showStyleForkedBanner, setShowStyleForkedBanner] = useState(false);
@@ -92,31 +71,6 @@ export default function WorkingPromptPanel({
   // Reset style forked banner when navigating to a different prompt
   useEffect(() => {
     setShowStyleForkedBanner(false);
-  }, [state.stylePromptId]);
-
-  // Sync favorite state from backend whenever the loaded prompt changes.
-  // Otherwise the star can get "stuck" showing the previous prompt's favorite status.
-  useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      if (!state.stylePromptId) {
-        setIsFavorite(false);
-        return;
-      }
-
-      try {
-        const prompt = await getSavedPrompt(state.stylePromptId);
-        if (!cancelled) setIsFavorite(prompt.is_favorite);
-      } catch (err) {
-        // Non-fatal; keep current UI state if fetch fails (e.g., not authenticated).
-        console.error('Failed to load favorite state:', err);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
   }, [state.stylePromptId]);
 
   const loadCheckpoints = async () => {
@@ -207,134 +161,6 @@ export default function WorkingPromptPanel({
     }
   };
 
-  // Apply refine
-  const handleRefine = async () => {
-    if (!refineRequest.trim() || state.isRefining) return;
-
-    const request = refineRequest;
-    setRefineRequest('');
-    dispatch({ type: 'REFINE_START' });
-
-    // Create auto-checkpoint before refine
-    if (state.lyricsThreadId) {
-      try {
-        await createCheckpoint(state.lyricsThreadId, { label: 'Before refine' });
-      } catch (err) {
-        console.warn('Failed to create pre-refine checkpoint:', err);
-      }
-    }
-
-    toast({
-      id: 'refine-progress',
-      title: 'Refining...',
-      status: 'loading',
-      duration: null,
-    });
-
-    try {
-      const payload: UnifiedRefineRequest = {
-        suno_prompt: state.styleFields.suno_prompt,
-        lyrics: state.lyricsFields.lyrics_text,
-        exclude: state.styleFields.exclude,
-        title: state.styleFields.title,
-        weirdness: state.styleFields.weirdness,
-        style_influence: state.styleFields.style_influence,
-        auto_tags: state.styleFields.auto_tags,
-        base_prompt_id: state.stylePromptId || undefined,
-        base_thread_id: state.lyricsThreadId || undefined,
-        change_request: request,
-      };
-
-      const response: UnifiedRefineResponse = await refineAll(payload);
-
-      // Check if style was changed (new StylePrompt created)
-      const styleChanged = response.changed_fields.includes('suno_prompt');
-      const lyricsChanged = response.changed_fields.includes('lyrics');
-
-      // Dispatch refine end with updated fields
-      dispatch({
-        type: 'REFINE_END',
-        newPromptId: response.saved_prompt_id,
-        newThreadId: response.saved_thread_id,
-        updatedFields: {
-          suno_prompt: response.suno_prompt,
-          exclude: response.exclude,
-          title: response.title,
-          weirdness: response.weirdness,
-          lyrics_text: response.lyrics,
-        },
-      });
-
-      toast.close('refine-progress');
-
-      // Show appropriate feedback based on what changed
-      if (styleChanged) {
-        // Style changed - show banner and specific toast
-        setShowStyleForkedBanner(true);
-        toast({
-          title: 'New style version created',
-          description: response.assistant_message || 'Your prompt style was updated. A new version has been saved.',
-          status: 'info',
-          duration: 5000,
-        });
-      } else if (lyricsChanged) {
-        toast({
-          title: 'Lyrics updated',
-          description: response.assistant_message || 'Your lyrics have been updated.',
-          status: 'success',
-          duration: 3000,
-        });
-      } else {
-        toast({
-          title: 'Refinement complete',
-          description: response.assistant_message || (response.changed_fields.length > 0 
-            ? `Changed: ${response.changed_fields.join(', ')}`
-            : 'No changes were needed.'),
-          status: response.changed_fields.length > 0 ? 'success' : 'info',
-          duration: 4000,
-        });
-      }
-
-      // Refresh prompts if new one was created
-      if (response.saved_prompt_id) {
-        onPromptSaved();
-      }
-
-      // Reload checkpoints for new thread
-      if (response.saved_thread_id) {
-        loadCheckpoints();
-      }
-    } catch (err) {
-      console.error('Refine failed:', err);
-      toast.close('refine-progress');
-      toast({
-        title: 'Refine failed',
-        description: err instanceof Error ? err.message : 'Unknown error',
-        status: 'error',
-        duration: 4000,
-      });
-      dispatch({
-        type: 'REFINE_END',
-        updatedFields: {},
-      });
-    }
-  };
-
-  // Toggle favorite
-  const handleToggleFavorite = async () => {
-    if (!state.stylePromptId) return;
-    setTogglingFavorite(true);
-    try {
-      const updated = await updateSavedPrompt(state.stylePromptId, { is_favorite: !isFavorite });
-      setIsFavorite(updated.is_favorite);
-      onFavoriteToggled();
-    } catch (err) {
-      console.error('Failed to toggle favorite:', err);
-    } finally {
-      setTogglingFavorite(false);
-    }
-  };
-
   // Copy to clipboard
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -358,57 +184,25 @@ export default function WorkingPromptPanel({
   }
 
   return (
-    <Box flex={1} overflow="auto" bg="gray.900" py={4} pt={14} px={4} minW={0}>
-      <Box maxW="800px" mx="auto">
+    <Box flex={1} overflow="auto" bg="gray.900" py={6} pt={14} px={4} minW={0}>
+      <Box maxW={{ base: '600px', lg: '560px' }} w="100%" mx="auto">
       <VStack spacing={4} align="stretch">
-        {/* Header */}
-        <HStack justify="space-between" align="start">
-          <VStack align="start" spacing={1}>
-            <HStack>
-              <Text fontWeight="bold" fontSize="xl">
-                {state.styleFields.title || 'Working Prompt'}
-              </Text>
-              {state.mode === 'loaded' && (
-                <Badge colorScheme="blue">Loaded</Badge>
-              )}
-              {state.mode === 'generated' && (
-                <Badge colorScheme="green">Generated</Badge>
-              )}
-              {state.mode === 'refining' && (
-                <Badge colorScheme="purple">Refining...</Badge>
-              )}
-            </HStack>
-            {state.stylePromptId && (
-              <Text fontSize="xs" color="gray.500">
-                StylePrompt ID: {state.stylePromptId}
-                {state.lyricsThreadId && ` • Thread ID: ${state.lyricsThreadId}`}
-              </Text>
+        {/* Header - Song title (copy-pastable) */}
+        <HStack justify="space-between" align="center">
+          <Text fontWeight="semibold" fontSize="xl">
+            {state.lyricsFields.lyrics_title || state.styleFields.title || 'Untitled Song'}
+          </Text>
+          <IconButton
+            aria-label="Copy title"
+            icon={<CopyIcon />}
+            size="xs"
+            variant="ghost"
+            onClick={() => copyToClipboard(
+              state.lyricsFields.lyrics_title || state.styleFields.title || 'Untitled Song',
+              'Title'
             )}
-          </VStack>
-          <HStack>
-            <IconButton
-              aria-label={isFavorite ? 'Unfavorite' : 'Favorite'}
-              icon={<StarIcon />}
-              colorScheme="yellow"
-              variant={isFavorite ? 'solid' : 'outline'}
-              size="sm"
-              isLoading={togglingFavorite}
-              onClick={handleToggleFavorite}
-              isDisabled={!state.stylePromptId}
-            />
-          </HStack>
+          />
         </HStack>
-
-        {/* Tags */}
-        {state.styleFields.auto_tags.length > 0 && (
-          <HStack flexWrap="wrap" spacing={1}>
-            {state.styleFields.auto_tags.map((tag, idx) => (
-              <Badge key={idx} colorScheme="teal" fontSize="xs">
-                {tag}
-              </Badge>
-            ))}
-          </HStack>
-        )}
 
         {/* Style Forked Banner */}
         {showStyleForkedBanner && (
@@ -428,56 +222,19 @@ export default function WorkingPromptPanel({
 
         <Divider borderColor="gray.700" />
 
-        {/* Inline Refine */}
-        <Box bg="purple.900" borderRadius="md" p={3} border="1px solid" borderColor="purple.700">
-          <Text fontSize="sm" color="purple.200" mb={2}>
-            Refine: Describe what you want to change
-          </Text>
-          <HStack>
-            <Textarea
-              ref={refineInputRef}
-              value={refineRequest}
-              onChange={(e) => setRefineRequest(e.target.value)}
-              placeholder='e.g. "make it more aggressive", "change the chorus to be about rain"'
-              bg="gray.800"
-              borderColor="purple.600"
-              rows={2}
-              resize="none"
-              flex={1}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey && refineRequest.trim()) {
-                  e.preventDefault();
-                  handleRefine();
-                }
-              }}
-              isDisabled={state.isRefining}
-            />
-            <Button
-              colorScheme="purple"
-              onClick={handleRefine}
-              isLoading={state.isRefining}
-              isDisabled={!refineRequest.trim()}
-            >
-              Apply
-            </Button>
-          </HStack>
-        </Box>
-
-        <Divider borderColor="gray.700" />
-
-        {/* Suno Prompt */}
+        {/* Style (formerly "Suno Prompt") */}
         <Box>
           <HStack justify="space-between" mb={2}>
-            <Text fontWeight="bold">Suno Prompt</Text>
+            <Text fontWeight="bold">Style</Text>
             <HStack>
               <Text fontSize="xs" color="gray.500">
                 {state.styleFields.suno_prompt.length} chars
               </Text>
               <IconButton
-                aria-label="Copy prompt"
+                aria-label="Copy style"
                 icon={<CopyIcon />}
                 size="xs"
-                onClick={() => copyToClipboard(state.styleFields.suno_prompt, 'Prompt')}
+                onClick={() => copyToClipboard(state.styleFields.suno_prompt, 'Style')}
               />
             </HStack>
           </HStack>
@@ -513,40 +270,14 @@ export default function WorkingPromptPanel({
           </Box>
         )}
 
-        {/* Weirdness & Style Influence */}
-        <HStack spacing={8}>
-          <Box flex={1}>
-            <Text fontSize="sm" mb={1}>
-              Weirdness: {state.styleFields.weirdness}%
-            </Text>
-            <Slider
-              value={state.styleFields.weirdness}
-              min={0}
-              max={100}
-              isReadOnly
-            >
-              <SliderTrack bg="gray.700">
-                <SliderFilledTrack bg="orange.400" />
-              </SliderTrack>
-              <SliderThumb />
-            </Slider>
-          </Box>
-          <Box flex={1}>
-            <Text fontSize="sm" mb={1}>
-              Style Influence: {state.styleFields.style_influence}%
-            </Text>
-            <Slider
-              value={state.styleFields.style_influence}
-              min={0}
-              max={100}
-              isReadOnly
-            >
-              <SliderTrack bg="gray.700">
-                <SliderFilledTrack bg="blue.400" />
-              </SliderTrack>
-              <SliderThumb />
-            </Slider>
-          </Box>
+        {/* Weirdness & Style Influence - simple percentages */}
+        <HStack spacing={6}>
+          <Text fontSize="sm" color="gray.400">
+            Weirdness: {state.styleFields.weirdness}%
+          </Text>
+          <Text fontSize="sm" color="gray.400">
+            Style Influence: {state.styleFields.style_influence}%
+          </Text>
         </HStack>
 
         <Divider borderColor="gray.700" />

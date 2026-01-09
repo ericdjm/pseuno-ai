@@ -726,6 +726,7 @@ class AgentPromptGraph:
 
             return {
                 "concept_title": concept_title,
+                "style_name": style_result.get("style_name", ""),
                 "lyrics": "",  # No lyrics for instrumental
                 "suno_prompt": suno_prompt,
                 "exclude": style_result["exclude"],
@@ -784,6 +785,7 @@ class AgentPromptGraph:
 
         return {
             "concept_title": lyrics_result["song_title"],
+            "style_name": style_result.get("style_name", ""),
             "lyrics": lyrics_result["lyrics"],
             "suno_prompt": suno_prompt,
             "exclude": style_result["exclude"],
@@ -1470,7 +1472,10 @@ class AgentPromptGraph:
 
             if attempt < max_repairs:
                 logger.info(
-                    "Style branch: repair attempt %d/%d", attempt + 1, max_repairs
+                    "Style branch: repair attempt %d/%d (issues: %s)",
+                    attempt + 1,
+                    max_repairs,
+                    issues,
                 )
                 repair_prompt = ctx.style_repair_prompt
                 repair_context = (
@@ -1513,10 +1518,34 @@ class AgentPromptGraph:
             len(style_output.suno_prompt),
         )
 
+        # Generate style name from genre disambiguation data (runs after style complete)
+        genres_for_name = []
+        artists_for_name = []
+        if genre_data:
+            for artist in genre_data.get("artists", []):
+                if artist.get("genres_to_use"):
+                    genres_for_name.extend(artist["genres_to_use"])
+                if artist.get("name"):
+                    artists_for_name.append(artist["name"])
+        # Fallback to tags from context_pack if no genre_data
+        if not genres_for_name:
+            genres_for_name = context_pack.get("tags", [])[:5]
+
+        try:
+            style_name = await self._generate_style_name(
+                genres_for_name, artists_for_name, tracer
+            )
+        except Exception as e:
+            logger.warning("Style name generation failed: %s", e)
+            style_name = ""
+
+        logger.info("Style branch: style_name=%r", style_name)
+
         # Derive auto_tags from genre disambiguation data
         auto_tags = self._derive_auto_tags(genre_data)
 
         return {
+            "style_name": style_name,
             "suno_prompt": style_output.suno_prompt,
             "exclude": style_output.exclude,
             "weirdness": style_output.weirdness,
@@ -2478,9 +2507,10 @@ Please fix the issues and regenerate the complete output with all 6 sections.
         generation_id = self._create_generation_id(song_prompt, lyrics_about)
 
         # Result without debug_info - tracer will be attached in generate()
-        # Single-step variants (V1/V2) don't run genre disambiguation, so no auto_tags
+        # Single-step variants (V1/V2) don't run genre disambiguation, so no auto_tags or style_name
         result = {
             "concept_title": concept_title,
+            "style_name": "",  # Single-step variants don't generate style_name
             "lyrics": lyrics,
             "suno_prompt": suno_prompt,
             "exclude": exclude,
@@ -2857,6 +2887,86 @@ Output ONLY the title, nothing else."""
                 fallback_title = self._derive_title(user_prompt, "")
                 span.set_meta("fallback_title", fallback_title)
                 return fallback_title
+
+    async def _generate_style_name(
+        self,
+        genres: List[str],
+        artists: List[str],
+        tracer: "DebugTracer",
+    ) -> str:
+        """
+        Generate a creative fusion genre name from genre disambiguation data.
+
+        Takes the parsed genres and artists and creates a compact, creative
+        name like "Prog-Jazz Metal Fusion".
+        """
+        # Build context - include more genres for richer names
+        genres_str = ", ".join(genres[:8]) if genres else "various genres"
+        artists_str = ", ".join(artists[:3]) if artists else ""
+
+        context = f"Genres to fuse: {genres_str}"
+        if artists_str:
+            context += f"\nArtist influences: {artists_str}"
+
+        name_prompt = f"""Create a creative fusion genre name that represents these influences.
+
+{context}
+
+Requirements:
+- 3-6 words (use hyphenation to pack in more genre DNA)
+- Fuse genres creatively using compound words, prefixes, or hyphenation
+- Sound like an elegant genre label a music journalist would invent
+- Be evocative and distinctive
+- NO quotation marks
+
+Good examples:
+- "Prog-Jazz Metal Fusion"
+- "Folktronica Ambient-House"
+- "Neo-Soul Indie Electronica"
+- "Aggro-Industrial Bitcrush Metal"
+- "Electronic Shoegaze Dreamscape"
+
+Bad examples:
+- "Rock and Jazz" (boring, not fused)
+- "Electronic" (too narrow)
+- "Nice Music" (too vague)
+
+Output ONLY the style name, nothing else."""
+
+        name_model = self.settings.title_generation_model  # Use same fast model
+        system_content = "You create elegant, compact fusion genre names. Fuse the given genres into a short, evocative name. Output ONLY the name, nothing else."
+
+        with tracer.span("style.name_generate", "llm_call", model=name_model) as span:
+            span.set_artifact("system_prompt", system_content)
+            span.set_artifact("user_message", name_prompt)
+            span.set_meta("model", name_model)
+            span.set_meta("genres_count", len(genres))
+            span.set_meta("artists_count", len(artists))
+
+            try:
+                llm = self._get_or_create_llm(name_model)
+                messages = [
+                    {"role": "system", "content": system_content},
+                    {"role": "user", "content": name_prompt},
+                ]
+                response = await llm.ainvoke(messages)
+                raw = (
+                    response.content if hasattr(response, "content") else str(response)
+                )
+
+                span.set_artifact("raw_response", raw)
+
+                name = raw.strip().strip("\"'")
+                # Clean up and limit length
+                name = self._trim_text(name, 50)
+                span.set_meta("generated_name", name)
+                logger.info("Generated style name: %s", name)
+                return name if name else ""
+            except Exception as e:
+                logger.warning("Failed to generate style name: %s", e)
+                span.set_meta("error", str(e))
+                span.set_artifact("exception", str(e))
+                return ""
 
     def _create_generation_id(self, song_prompt: str, lyrics_about: str) -> str:
         content = f"{song_prompt}_{lyrics_about}_{time.time()}"
