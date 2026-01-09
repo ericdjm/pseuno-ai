@@ -24,6 +24,7 @@ import {
   PopoverHeader,
   PopoverBody,
   Spinner,
+  useBreakpointValue,
 } from '@chakra-ui/react';
 import { HamburgerIcon } from '@chakra-ui/icons';
 import { FaSpotify } from 'react-icons/fa';
@@ -64,8 +65,23 @@ function App() {
   // Show generation controls in right panel (instead of WorkingPromptPanel)
   const [showNewPromptPanel, setShowNewPromptPanel] = useState(false);
 
-  // Sidebar visibility
+  // Sidebar visibility - auto-hide on small screens
+  const isLargeScreen = useBreakpointValue({ base: false, md: true });
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [userToggledSidebar, setUserToggledSidebar] = useState(false);
+
+  // Auto-hide sidebar on small screens, restore on large screens (unless user manually closed it)
+  useEffect(() => {
+    if (isLargeScreen === undefined) return; // Still loading
+    if (!userToggledSidebar) {
+      setSidebarOpen(isLargeScreen);
+    }
+  }, [isLargeScreen, userToggledSidebar]);
+
+  const handleToggleSidebar = (open: boolean) => {
+    setSidebarOpen(open);
+    setUserToggledSidebar(true);
+  };
 
   // Legacy: still needed for generation controls
   const [savedPrompts] = useState<api.SavedSunoPrompt[]>([]);
@@ -291,7 +307,7 @@ function App() {
   };
 
   return (
-    <Box h="100vh" bg="gray.900" display="flex" flexDirection="column" overflow="hidden">
+    <Box h="100vh" w="100vw" bg="gray.900" display="flex" flexDirection="column" overflow="hidden" position="fixed" top={0} left={0}>
       {/* Floating profile avatar - top right */}
       <Box position="absolute" top={3} right={3} zIndex={10}>
             {authLoading ? (
@@ -357,7 +373,7 @@ function App() {
             variant="ghost"
             color="gray.400"
             _hover={{ color: 'white', bg: 'gray.700' }}
-            onClick={() => setSidebarOpen(true)}
+            onClick={() => handleToggleSidebar(true)}
             zIndex={10}
           />
         </Tooltip>
@@ -375,7 +391,7 @@ function App() {
             onSelectThread={handleSelectThread}
             onNewLyricsVariation={handleNewLyricsVariation}
             onNewPrompt={() => setShowNewPromptPanel(true)}
-            onCloseSidebar={() => setSidebarOpen(false)}
+            onCloseSidebar={() => handleToggleSidebar(false)}
             authStatus={authStatus}
             onLogin={handleLogin}
           />
@@ -384,7 +400,8 @@ function App() {
 
         {/* Right: Either New Prompt Generation or Working Prompt Panel */}
         {showNewPromptPanel ? (
-          <Box flex={1} overflowY="auto" bg="gray.900" p={4} pt={14}>
+          <Box flex={1} overflow="auto" bg="gray.900" py={4} pt={14} px={4} minW={0}>
+          <Box maxW="800px" mx="auto">
             <VStack spacing={4} align="stretch">
               <HStack justify="space-between">
                 <Heading size="md">Generate New Prompt</Heading>
@@ -422,6 +439,7 @@ function App() {
                 newStyleOnly
               />
             </VStack>
+          </Box>
           </Box>
         ) : (
           <WorkingPromptPanel

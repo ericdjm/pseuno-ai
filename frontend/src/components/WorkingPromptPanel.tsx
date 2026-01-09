@@ -291,7 +291,7 @@ export default function WorkingPromptPanel({
   // If no prompt loaded, show empty state
   if (!state.stylePromptId && state.mode === 'new') {
     return (
-      <Box flex={1} display="flex" alignItems="center" justifyContent="center" bg="gray.900" pt={10}>
+      <Box flex={1} display="flex" alignItems="center" justifyContent="center" bg="gray.900" pt={10} minW={0}>
         <VStack spacing={4} color="gray.500">
           <Text fontSize="xl">No prompt loaded</Text>
           <Text fontSize="sm">Generate a new prompt or select one from the library</Text>
@@ -301,7 +301,8 @@ export default function WorkingPromptPanel({
   }
 
   return (
-    <Box flex={1} overflowY="auto" bg="gray.900" p={4} pt={14}>
+    <Box flex={1} overflow="auto" bg="gray.900" py={4} pt={14} px={4} minW={0}>
+      <Box maxW="800px" mx="auto">
       <VStack spacing={4} align="stretch">
         {/* Header */}
         <HStack justify="space-between" align="start">
@@ -569,6 +570,7 @@ export default function WorkingPromptPanel({
           </Box>
         )}
       </VStack>
+      </Box>
     </Box>
   );
 }

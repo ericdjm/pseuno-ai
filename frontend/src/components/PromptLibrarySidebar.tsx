@@ -577,6 +577,7 @@ export default function PromptLibrarySidebar({
     <Box
       w="280px"
       minW="280px"
+      flexShrink={0}
       h="100%"
       maxH="100%"
       bg="gray.800"
