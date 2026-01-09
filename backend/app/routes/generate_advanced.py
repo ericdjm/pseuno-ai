@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.db.models import SunoPrompt, User
+from app.db.models import LyricsThread, SunoPrompt
 from app.deps import (
     get_db,
     get_current_user_id_optional,
@@ -190,23 +190,40 @@ async def generate_advanced(
                     max_age=DEVICE_TOKEN_MAX_AGE,
                 )
 
-        # Create the prompt history record
+        # Create the prompt history record (StylePrompt)
         auto_tags = result.get("auto_tags", [])
+        prompt_title = _derive_prompt_title(result["suno_prompt"], auto_tags)
         prompt = SunoPrompt(
             owner_user_id=user_id,
+            parent_prompt_id=None,  # Fresh generation has no parent
+            source_action="generate",
             suno_prompt=result["suno_prompt"],
+            lyrics=result.get("lyrics", ""),
             exclude=result.get("exclude", ""),
             weirdness=result.get("weirdness", 50),
             style_influence=result.get("style_influence", 50),
-            title=_derive_prompt_title(result["suno_prompt"], auto_tags),
+            title=prompt_title,
             is_favorite=False,
             auto_tags=auto_tags,
             generation_id=result.get("generation_id"),
         )
         db.add(prompt)
-        db.commit()
-        db.refresh(prompt)
+        db.flush()  # Get the ID before creating thread
         prompt_id = prompt.id
+
+        # Create initial LyricsThread (song) for this StylePrompt
+        # Always create a thread, even for instrumental songs (empty lyrics)
+        lyrics_text = result.get("lyrics", "")
+        thread = LyricsThread(
+            style_prompt_id=prompt.id,
+            parent_thread_id=None,
+            title=prompt_title,
+            lyrics_text=lyrics_text,
+            source_action="generate_initial",
+        )
+        db.add(thread)
+
+        db.commit()
         logger.info("Auto-saved prompt id=%d for user=%s", prompt_id, user_id)
 
     except Exception as e:

@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.db.models import SunoPrompt
+from app.db.models import LyricsThread, SunoPrompt
 from app.deps import get_current_user_id_optional, get_db, get_or_create_device_user
 from app.schemas.unified_refine import (
     UnifiedRefineRequest,
@@ -100,7 +100,10 @@ async def unified_refine(
             f"change_request='{request.change_request[:50]}...'"
         )
 
-        # === Auto-save prompt to history if suno_prompt changed ===
+        # === Auto-save: create new StylePrompt + fork thread if suno_prompt changed ===
+        saved_prompt_id = None
+        saved_thread_id = None
+
         if "suno_prompt" in changed_fields:
             try:
                 # Resolve user: Spotify session OR device token (create guest if needed)
@@ -136,9 +139,14 @@ async def unified_refine(
                 title = _derive_title_from_prompt(
                     updated_snapshot["suno_prompt"], title_tags
                 )
+
+                # Create new StylePrompt with parent linking
                 prompt = SunoPrompt(
                     owner_user_id=user_id,
+                    parent_prompt_id=request.base_prompt_id,  # Link to parent
+                    source_action="refine",
                     suno_prompt=updated_snapshot["suno_prompt"],
+                    lyrics=updated_snapshot["lyrics"],
                     exclude=updated_snapshot["exclude"],
                     weirdness=updated_snapshot["weirdness"],
                     style_influence=request.style_influence,
@@ -148,16 +156,48 @@ async def unified_refine(
                     generation_id=None,  # Refine doesn't have a generation_id
                 )
                 db.add(prompt)
+                db.flush()  # Get the ID before creating thread
+                saved_prompt_id = prompt.id
+
+                # Fork the LyricsThread if we have a base_thread_id
+                if request.base_thread_id:
+                    thread = LyricsThread(
+                        style_prompt_id=prompt.id,
+                        parent_thread_id=request.base_thread_id,
+                        title=title,  # Same title as the prompt
+                        lyrics_text=updated_snapshot["lyrics"],
+                        source_action="refine_fork",
+                    )
+                    db.add(thread)
+                    db.flush()
+                    saved_thread_id = thread.id
+                else:
+                    # No base thread - create a new thread with the lyrics
+                    thread = LyricsThread(
+                        style_prompt_id=prompt.id,
+                        parent_thread_id=None,
+                        title=title,
+                        lyrics_text=updated_snapshot["lyrics"],
+                        source_action="refine_initial",
+                    )
+                    db.add(thread)
+                    db.flush()
+                    saved_thread_id = thread.id
+
                 db.commit()
-                db.refresh(prompt)
                 logger.info(
-                    "Auto-saved refined prompt id=%d for user=%s", prompt.id, user_id
+                    "Auto-saved refined prompt id=%d thread=%d for user=%s",
+                    saved_prompt_id,
+                    saved_thread_id,
+                    user_id,
                 )
 
             except Exception as e:
                 # Don't fail the request if auto-save fails - just log it
                 logger.warning("Failed to auto-save refined prompt: %s", e)
                 db.rollback()
+                saved_prompt_id = None
+                saved_thread_id = None
 
         return UnifiedRefineResponse(
             suno_prompt=updated_snapshot["suno_prompt"],
@@ -168,6 +208,8 @@ async def unified_refine(
             changed_fields=changed_fields,
             assistant_message=assistant_message,
             debug_info=debug_info,
+            saved_prompt_id=saved_prompt_id,
+            saved_thread_id=saved_thread_id,
         )
 
     except RuntimeError as e:

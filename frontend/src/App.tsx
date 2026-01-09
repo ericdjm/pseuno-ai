@@ -1,23 +1,21 @@
 /**
  * Main App Component for Pseuno AI
+ * Two-panel layout: PromptLibrarySidebar + WorkingPromptPanel
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useReducer } from 'react';
 import {
   Box,
-  Container,
   VStack,
   HStack,
   Heading,
   Text,
   Button,
   Flex,
-  Avatar,
   useToast,
-  Spinner,
-  Alert,
-  AlertIcon,
-  AlertDescription,
+  IconButton,
+  Tooltip,
+  Avatar,
   Popover,
   PopoverTrigger,
   PopoverContent,
@@ -25,18 +23,21 @@ import {
   PopoverCloseButton,
   PopoverHeader,
   PopoverBody,
+  Spinner,
 } from '@chakra-ui/react';
+import { HamburgerIcon } from '@chakra-ui/icons';
 import { FaSpotify } from 'react-icons/fa';
 
 import * as api from './api';
-import { usePersistedSettings, useSessionStorageState } from './hooks';
+import { usePersistedSettings } from './hooks';
 import { TasteDisplay } from './components/TasteDisplay';
-import { PrivacyNote } from './components/PrivacyNote';
 import AdvancedGenerationControls from './components/AdvancedGenerationControls';
-import AdvancedResultsDisplay from './components/AdvancedResultsDisplay';
-import SavedPromptsLibrary from './components/SavedPromptsLibrary';
-
-type StyleMode = 'songStylePrompt' | 'pastSunoPrompts' | 'favorites';
+import PromptLibrarySidebar from './components/PromptLibrarySidebar';
+import WorkingPromptPanel from './components/WorkingPromptPanel';
+import {
+  workingReducer,
+  createInitialWorkingState,
+} from './types/workingState';
 
 function App() {
   const toast = useToast();
@@ -49,37 +50,26 @@ function App() {
   // Profile state
   const [profile, setProfile] = useState<api.SpotifyProfileResponse | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
-  const [profileError, setProfileError] = useState<string | null>(null);
+  const [, setProfileError] = useState<string | null>(null);
 
-  // Generation state (persisted to sessionStorage for back/forward survival)
-  const [advancedResult, setAdvancedResult] = useSessionStorageState<api.AdvancedGenerateResponse | null>(
-    'advancedResult',
-    null
-  );
+  // Generation state
   const [generating, setGenerating] = useState(false);
 
-  // Saved prompts state
-  const [savedPromptsRefresh, setSavedPromptsRefresh] = useState(0);
-  const [savedPrompts, setSavedPrompts] = useState<api.SavedSunoPrompt[]>([]);
+  // WorkingState (single source of truth for current prompt/song)
+  const [workingState, dispatch] = useReducer(workingReducer, undefined, createInitialWorkingState);
+
+  // Prompt library refresh trigger
+  const [libraryRefresh, setLibraryRefresh] = useState(0);
+
+  // Show generation controls in right panel (instead of WorkingPromptPanel)
+  const [showNewPromptPanel, setShowNewPromptPanel] = useState(false);
+
+  // Sidebar visibility
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // Legacy: still needed for generation controls
+  const [savedPrompts] = useState<api.SavedSunoPrompt[]>([]);
   const [selectedSavedPrompt, setSelectedSavedPrompt] = useState<api.SavedSunoPrompt | null>(null);
-  // Persist selectedSavedPromptId so we can reselect after prompts load
-  const [selectedSavedPromptId, setSelectedSavedPromptId] = useSessionStorageState<number | null>(
-    'selectedSavedPromptId',
-    null
-  );
-  // Persist styleMode for back/forward
-  const [styleMode, setStyleMode] = useSessionStorageState<StyleMode>('styleMode', 'songStylePrompt');
-
-  // Ref to scroll to generation controls
-  const generationControlsRef = useRef<HTMLDivElement>(null);
-
-  // Refresh prompts when mode changes (to load favorites vs all)
-  // The handlePromptsLoaded callback will validate/clear selection if needed
-  useEffect(() => {
-    if (styleMode === 'pastSunoPrompts' || styleMode === 'favorites') {
-      setSavedPromptsRefresh((n) => n + 1);
-    }
-  }, [styleMode]);
 
   // Check for OAuth callback
   useEffect(() => {
@@ -120,7 +110,7 @@ function App() {
     checkAuth();
   }, []);
 
-  // Load profile when authenticated or time range changes
+  // Load profile when authenticated
   useEffect(() => {
     if (!authStatus.authenticated) {
       setProfile(null);
@@ -165,7 +155,7 @@ function App() {
     await api.logout();
     setAuthStatus({ authenticated: false });
     setProfile(null);
-    setAdvancedResult(null);
+    dispatch({ type: 'RESET' });
     toast({
       title: 'Logged out',
       status: 'info',
@@ -173,62 +163,143 @@ function App() {
     });
   };
 
-  const handleAdvancedGenerate = (result: api.AdvancedGenerateResponse) => {
-    setAdvancedResult(result);
-    // Refresh prompts list since generation now auto-saves
-    setSavedPromptsRefresh((n) => n + 1);
+  // Handle generation complete
+  const handleAdvancedGenerate = async (result: api.AdvancedGenerateResponse) => {
+    setShowNewPromptPanel(false);
+
+    // Fetch the saved prompt to get full details
+    if (result.prompt_id) {
+      try {
+        const savedPrompt = await api.getSavedPrompt(result.prompt_id);
+        // Get the threads (should have one initial thread)
+        const threads = await api.getPromptThreads(result.prompt_id);
+        const threadId = threads.length > 0 ? threads[0].id : null;
+
+        dispatch({
+          type: 'SET_GENERATED',
+          prompt: savedPrompt,
+          threadId,
+        });
+      } catch (err) {
+        console.error('Failed to load generated prompt:', err);
+        // Fallback: just use the result data
+        dispatch({
+          type: 'SET_GENERATED',
+          prompt: {
+            id: result.prompt_id,
+            suno_prompt: result.suno_prompt,
+            lyrics: result.lyrics,
+            exclude: result.exclude,
+            weirdness: result.weirdness,
+            style_influence: result.style_influence,
+            title: result.concept_title,
+            notes: null,
+            is_favorite: result.is_favorite,
+            auto_tags: result.auto_tags || [],
+            generation_id: result.generation_id,
+            visibility: 'private',
+            share_id: '',
+            parent_prompt_id: null,
+            source_action: 'generate',
+            threads_count: 1,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          } as api.SavedSunoPrompt,
+          threadId: null,
+        });
+      }
+    }
+
+    // Refresh library
+    setLibraryRefresh((n) => n + 1);
   };
 
-  const handlePromptsLoaded = (prompts: api.SavedSunoPrompt[]) => {
-    setSavedPrompts(prompts);
-    
-    // Always validate that the selected prompt exists in the new list
-    // This handles cases like: switching to favorites mode when a non-favorite was selected
-    if (selectedSavedPromptId !== null) {
-      const foundInList = prompts.find((p) => p.id === selectedSavedPromptId);
-      if (foundInList) {
-        // Prompt exists in new list - update the object reference (may have changed)
-        setSelectedSavedPrompt(foundInList);
-      } else {
-        // Prompt doesn't exist in new list - clear selection
-        setSelectedSavedPrompt(null);
-        setSelectedSavedPromptId(null);
+  // Handle selecting a StylePrompt from sidebar
+  const handleSelectStylePrompt = async (
+    prompt: api.SavedSunoPrompt,
+    threads: api.LyricsThreadSummary[]
+  ) => {
+    dispatch({ type: 'LOAD_STYLE_PROMPT', prompt });
+
+    // Auto-select the most recent thread if available
+    if (threads.length > 0) {
+      const mostRecent = threads[0]; // Already sorted by updated_at desc
+      try {
+        const fullThread = await api.getLyricsThread(mostRecent.id);
+        dispatch({ type: 'SELECT_THREAD', thread: fullThread });
+      } catch (err) {
+        console.error('Failed to load thread:', err);
       }
     }
   };
 
-  // Keep selectedSavedPromptId in sync when user selects a prompt
-  const handleSelectSavedPrompt = (prompt: api.SavedSunoPrompt | null) => {
-    setSelectedSavedPrompt(prompt);
-    setSelectedSavedPromptId(prompt?.id ?? null);
+  // Handle selecting a specific thread
+  const handleSelectThread = async (
+    prompt: api.SavedSunoPrompt,
+    threadSummary: api.LyricsThreadSummary
+  ) => {
+    // If different prompt, load it first
+    if (workingState.stylePromptId !== prompt.id) {
+      dispatch({ type: 'LOAD_STYLE_PROMPT', prompt });
+    }
+
+    try {
+      const fullThread = await api.getLyricsThread(threadSummary.id);
+      dispatch({ type: 'SELECT_THREAD', thread: fullThread });
+    } catch (err) {
+      console.error('Failed to load thread:', err);
+      toast({
+        title: 'Failed to load song',
+        status: 'error',
+        duration: 2000,
+      });
+    }
+  };
+
+  // Handle new lyrics variation
+  const handleNewLyricsVariation = async (promptId: number) => {
+    try {
+      // Create a new thread, optionally seeding from current thread if same prompt
+      const seedFromThreadId =
+        workingState.stylePromptId === promptId && workingState.lyricsThreadId
+          ? workingState.lyricsThreadId
+          : undefined;
+
+      const newThread = await api.createLyricsThread({
+        style_prompt_id: promptId,
+        seed_from_thread_id: seedFromThreadId,
+      });
+
+      dispatch({ type: 'SELECT_THREAD', thread: newThread });
+
+      // Refresh library to show new thread
+      setLibraryRefresh((n) => n + 1);
+
+      toast({
+        title: 'New lyrics variation created',
+        status: 'success',
+        duration: 2000,
+      });
+    } catch (err) {
+      console.error('Failed to create lyrics variation:', err);
+      toast({
+        title: 'Failed to create variation',
+        status: 'error',
+        duration: 2000,
+      });
+    }
   };
 
   return (
-    <Box minH="100vh" bg="gray.900">
-      {/* Header */}
-      <Box bg="gray.800" borderBottom="1px" borderColor="gray.700" py={4}>
-        <Container maxW="container.lg">
-          <Flex align="center">
-            <HStack spacing={3}>
-              <Box color="brand.500" fontSize="2xl">
-                🎵
-              </Box>
-              <Heading size="lg" fontWeight="bold">
-                Pseuno AI
-              </Heading>
-            </HStack>
-            <Box flex="1" />
+    <Box h="100vh" bg="gray.900" display="flex" flexDirection="column" overflow="hidden">
+      {/* Floating profile avatar - top right */}
+      <Box position="absolute" top={3} right={3} zIndex={10}>
             {authLoading ? (
               <Spinner size="sm" />
             ) : (
               <Popover placement="bottom-end">
                 <PopoverTrigger>
-                  <Button
-                    variant="ghost"
-                    p={0}
-                    minW="auto"
-                    aria-label="Profile menu"
-                  >
+              <Button variant="ghost" p={0} minW="auto" aria-label="Profile menu">
                     <Avatar
                       size="sm"
                       src={authStatus.user_image || undefined}
@@ -259,7 +330,7 @@ function App() {
                         </Text>
                         <Button
                           leftIcon={<FaSpotify />}
-                          variant="spotify"
+                      colorScheme="green"
                           size="sm"
                           onClick={handleLogin}
                         >
@@ -271,39 +342,62 @@ function App() {
                 </PopoverContent>
               </Popover>
             )}
-          </Flex>
-        </Container>
       </Box>
 
-      {/* Main Content */}
-      <Container maxW="container.lg" py={8}>
-        <VStack spacing={8} align="stretch">
-          <Box textAlign={{ base: 'left', md: 'center' }}>
-            <Heading size="xl">Generate Music Prompts</Heading>
-            <Text fontSize="lg" color="gray.400" maxW="2xl" mx={{ md: 'auto' }} mt={2}>
-              Use the generator right away, or connect Spotify from the profile
-              menu to personalize your prompts.
-            </Text>
-          </Box>
+      {/* Floating sidebar toggle when closed */}
+      {!sidebarOpen && (
+        <Tooltip label="Open sidebar" placement="right">
+          <IconButton
+            aria-label="Open sidebar"
+            icon={<HamburgerIcon />}
+            position="absolute"
+            top={3}
+            left={3}
+            size="sm"
+            variant="ghost"
+            color="gray.400"
+            _hover={{ color: 'white', bg: 'gray.700' }}
+            onClick={() => setSidebarOpen(true)}
+            zIndex={10}
+          />
+        </Tooltip>
+      )}
 
-          {!authStatus.authenticated && (
-            <Alert status="info" borderRadius="md">
-              <AlertIcon />
-              <AlertDescription>
-                You are in guest mode. Connect Spotify from the avatar to unlock taste-based
-                suggestions.
-              </AlertDescription>
-            </Alert>
-          )}
+      {/* Two-panel layout */}
+      <Flex flex={1} overflow="hidden">
+        {/* Left: Prompt Library Sidebar */}
+        {sidebarOpen && (
+          <PromptLibrarySidebar
+            refreshTrigger={libraryRefresh}
+            activeStylePromptId={workingState.stylePromptId}
+            activeThreadId={workingState.lyricsThreadId}
+            onSelectStylePrompt={handleSelectStylePrompt}
+            onSelectThread={handleSelectThread}
+            onNewLyricsVariation={handleNewLyricsVariation}
+            onNewPrompt={() => setShowNewPromptPanel(true)}
+            onCloseSidebar={() => setSidebarOpen(false)}
+            authStatus={authStatus}
+            onLogin={handleLogin}
+          />
+        )}
 
-          {/* Profile Error */}
-          {profileError && (
-            <Alert status="error" borderRadius="md">
-              <AlertIcon />
-              <AlertDescription>{profileError}</AlertDescription>
-            </Alert>
-          )}
 
+        {/* Right: Either New Prompt Generation or Working Prompt Panel */}
+        {showNewPromptPanel ? (
+          <Box flex={1} overflowY="auto" bg="gray.900" p={4} pt={14}>
+            <VStack spacing={4} align="stretch">
+              <HStack justify="space-between">
+                <Heading size="md">Generate New Prompt</Heading>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setShowNewPromptPanel(false)}
+                >
+                  Cancel
+                </Button>
+              </HStack>
+
+              {/* Show taste display if authenticated */}
           {authStatus.authenticated && (
             <TasteDisplay
               profile={profile}
@@ -313,8 +407,7 @@ function App() {
             />
           )}
 
-          {/* Generation Controls */}
-          <Box ref={generationControlsRef}>
+              {/* Generation Controls - new style only mode */}
             <AdvancedGenerationControls
               onGenerate={handleAdvancedGenerate}
               isLoading={generating}
@@ -322,35 +415,23 @@ function App() {
               profile={profile}
               savedPrompts={savedPrompts}
               selectedSavedPrompt={selectedSavedPrompt}
-              onSelectSavedPrompt={handleSelectSavedPrompt}
-              styleMode={styleMode}
-              onStyleModeChange={setStyleMode}
-              onPromptUpdated={() => setSavedPromptsRefresh((n) => n + 1)}
-            />
+                onSelectSavedPrompt={setSelectedSavedPrompt}
+                styleMode="songStylePrompt"
+                onStyleModeChange={() => {}}
+                onPromptUpdated={() => setLibraryRefresh((n) => n + 1)}
+                newStyleOnly
+              />
+            </VStack>
           </Box>
-
-          {/* Results */}
-          {advancedResult && (
-            <AdvancedResultsDisplay
-              result={advancedResult}
-              onFavoriteToggled={() => setSavedPromptsRefresh((n: number) => n + 1)}
-              onPromptSaved={() => setSavedPromptsRefresh((n: number) => n + 1)}
-            />
-          )}
-
-          {/* Hidden SavedPromptsLibrary - for loading prompts based on mode */}
-          <Box display="none">
-            <SavedPromptsLibrary
-              refreshTrigger={savedPromptsRefresh}
-              onPromptsLoaded={handlePromptsLoaded}
-              favoritesOnly={styleMode === 'favorites'}
-            />
-          </Box>
-
-          {/* Privacy Note */}
-          <PrivacyNote />
-        </VStack>
-      </Container>
+        ) : (
+          <WorkingPromptPanel
+            state={workingState}
+            dispatch={dispatch}
+            onPromptSaved={() => setLibraryRefresh((n) => n + 1)}
+            onFavoriteToggled={() => setLibraryRefresh((n) => n + 1)}
+          />
+        )}
+      </Flex>
     </Box>
   );
 }

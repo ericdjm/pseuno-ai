@@ -240,6 +240,9 @@ export interface UnifiedRefineRequest {
   weirdness: number;
   style_influence: number;
   auto_tags: string[];
+  // IDs for iteration tracking
+  base_prompt_id?: number;
+  base_thread_id?: number;
   change_request: string;
 }
 
@@ -252,6 +255,9 @@ export interface UnifiedRefineResponse {
   changed_fields: string[];
   assistant_message: string | null;
   debug_info: DebugTrace | null;
+  // Saved IDs (only present if suno_prompt changed and auto-save succeeded)
+  saved_prompt_id?: number;
+  saved_thread_id?: number;
 }
 
 // === Lyrics Topic Types ===
@@ -275,6 +281,7 @@ export type TimeRange = 'short_term' | 'medium_term' | 'long_term';
 export interface SavedSunoPrompt {
   id: number;
   suno_prompt: string;
+  lyrics: string;
   exclude: string;
   weirdness: number;
   style_influence: number;
@@ -285,6 +292,10 @@ export interface SavedSunoPrompt {
   generation_id: string | null;
   visibility: 'private' | 'unlisted' | 'public';
   share_id: string;
+  // Iteration chain fields
+  parent_prompt_id: number | null;
+  source_action: string;
+  threads_count: number;
   created_at: string;
   updated_at: string;
 }
@@ -294,14 +305,50 @@ export interface SavedPromptsListResponse {
   total: number;
 }
 
+// === LyricsThread Types ===
+
+export interface LyricsThread {
+  id: number;
+  style_prompt_id: number;
+  parent_thread_id: number | null;
+  title: string | null;
+  lyrics_text: string;
+  source_action: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LyricsThreadSummary {
+  id: number;
+  title: string | null;
+  source_action: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LyricsCheckpoint {
+  id: number;
+  thread_id: number;
+  label: string | null;
+  lyrics_text: string;
+  created_at: string;
+}
+
+export interface LyricsCheckpointListResponse {
+  checkpoints: LyricsCheckpoint[];
+  total: number;
+}
+
 export interface CreateSunoPromptRequest {
   suno_prompt: string;
+  lyrics?: string;
   exclude: string;
   weirdness: number;
   style_influence: number;
   title?: string;
   notes?: string;
   is_favorite?: boolean;
+  auto_tags?: string[];
 }
 
 export interface UpdateSunoPromptRequest {
@@ -617,6 +664,138 @@ export async function deleteSavedPrompt(promptId: number): Promise<void> {
   if (!response.ok) {
     throw new ApiError(`Delete failed: ${response.status}`, response.status);
   }
+}
+
+/**
+ * Get all LyricsThreads (songs) for a StylePrompt
+ */
+export async function getPromptThreads(promptId: number): Promise<LyricsThreadSummary[]> {
+  const response = await fetch(`${API_BASE}/prompts/${promptId}/threads`, {
+    credentials: 'include',
+  });
+  return handleResponse<LyricsThreadSummary[]>(response);
+}
+
+// === LyricsThread Functions ===
+
+export interface CreateLyricsThreadRequest {
+  style_prompt_id: number;
+  title?: string;
+  seed_from_thread_id?: number;
+}
+
+/**
+ * Create a new LyricsThread (song) under a StylePrompt
+ */
+export async function createLyricsThread(
+  payload: CreateLyricsThreadRequest
+): Promise<LyricsThread> {
+  const response = await fetch(`${API_BASE}/lyrics-threads`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  return handleResponse<LyricsThread>(response);
+}
+
+/**
+ * Get a single LyricsThread by ID
+ */
+export async function getLyricsThread(threadId: number): Promise<LyricsThread> {
+  const response = await fetch(`${API_BASE}/lyrics-threads/${threadId}`, {
+    credentials: 'include',
+  });
+  return handleResponse<LyricsThread>(response);
+}
+
+export interface UpdateLyricsThreadRequest {
+  title?: string;
+  lyrics_text?: string;
+}
+
+/**
+ * Update a LyricsThread (title and/or lyrics)
+ */
+export async function updateLyricsThread(
+  threadId: number,
+  payload: UpdateLyricsThreadRequest
+): Promise<LyricsThread> {
+  const response = await fetch(`${API_BASE}/lyrics-threads/${threadId}`, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  return handleResponse<LyricsThread>(response);
+}
+
+/**
+ * Delete a LyricsThread
+ */
+export async function deleteLyricsThread(threadId: number): Promise<void> {
+  const response = await fetch(`${API_BASE}/lyrics-threads/${threadId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    throw new ApiError(`Delete failed: ${response.status}`, response.status);
+  }
+}
+
+// === LyricsCheckpoint Functions ===
+
+export interface CreateCheckpointRequest {
+  label?: string;
+}
+
+/**
+ * Create a checkpoint (snapshot) of current lyrics
+ */
+export async function createCheckpoint(
+  threadId: number,
+  payload: CreateCheckpointRequest = {}
+): Promise<LyricsCheckpoint> {
+  const response = await fetch(`${API_BASE}/lyrics-threads/${threadId}/checkpoints`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  return handleResponse<LyricsCheckpoint>(response);
+}
+
+/**
+ * List all checkpoints for a thread
+ */
+export async function listCheckpoints(threadId: number): Promise<LyricsCheckpointListResponse> {
+  const response = await fetch(`${API_BASE}/lyrics-threads/${threadId}/checkpoints`, {
+    credentials: 'include',
+  });
+  return handleResponse<LyricsCheckpointListResponse>(response);
+}
+
+/**
+ * Restore a checkpoint (sets thread lyrics to checkpoint content)
+ */
+export async function restoreCheckpoint(
+  threadId: number,
+  checkpointId: number
+): Promise<LyricsThread> {
+  const response = await fetch(
+    `${API_BASE}/lyrics-threads/${threadId}/checkpoints/${checkpointId}/restore`,
+    {
+      method: 'POST',
+      credentials: 'include',
+    }
+  );
+  return handleResponse<LyricsThread>(response);
 }
 
 // === Utility Functions ===

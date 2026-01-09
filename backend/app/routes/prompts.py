@@ -13,7 +13,7 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.db.models import SunoPrompt, User
+from app.db.models import LyricsThread, SunoPrompt, User
 from app.deps import (
     get_current_user_id_optional,
     get_db,
@@ -26,6 +26,7 @@ from app.schemas.prompts import (
     SunoPromptResponse,
     SunoPromptUpdate,
 )
+from app.schemas.lyrics_threads import LyricsThreadSummary
 
 router = APIRouter()
 
@@ -48,6 +49,39 @@ def _get_user_id_or_raise(
     raise HTTPException(
         status_code=401,
         detail="Not authenticated. Please log in or enable cookies.",
+    )
+
+
+def _prompt_to_response(prompt: SunoPrompt, db: Session) -> SunoPromptResponse:
+    """Convert a SunoPrompt to SunoPromptResponse, including threads_count."""
+    threads_count = (
+        db.scalar(
+            select(func.count())
+            .select_from(LyricsThread)
+            .where(LyricsThread.style_prompt_id == prompt.id)
+        )
+        or 0
+    )
+
+    return SunoPromptResponse(
+        id=prompt.id,
+        suno_prompt=prompt.suno_prompt,
+        lyrics=prompt.lyrics,
+        exclude=prompt.exclude,
+        weirdness=prompt.weirdness,
+        style_influence=prompt.style_influence,
+        title=prompt.title,
+        notes=prompt.notes,
+        is_favorite=prompt.is_favorite,
+        auto_tags=prompt.auto_tags,
+        generation_id=prompt.generation_id,
+        visibility=prompt.visibility,
+        share_id=prompt.share_id,
+        parent_prompt_id=prompt.parent_prompt_id,
+        source_action=prompt.source_action,
+        threads_count=threads_count,
+        created_at=prompt.created_at,
+        updated_at=prompt.updated_at,
     )
 
 
@@ -89,17 +123,20 @@ def create_prompt(
     prompt = SunoPrompt(
         owner_user_id=user_id,
         suno_prompt=body.suno_prompt,
+        lyrics=body.lyrics,
         exclude=body.exclude,
         weirdness=body.weirdness,
         style_influence=body.style_influence,
         title=body.title,
         notes=body.notes,
         is_favorite=body.is_favorite,
+        auto_tags=body.auto_tags,
+        source_action="manual_save",
     )
     db.add(prompt)
     db.commit()
     db.refresh(prompt)
-    return prompt
+    return _prompt_to_response(prompt, db)
 
 
 @router.get("", response_model=SunoPromptListResponse)
@@ -137,14 +174,12 @@ def list_prompts(
     )
     prompts = list(db.scalars(query).all())
 
-    total_query = (
-        select(func.count())
-        .select_from(SunoPrompt)
-        .where(base_filter)
-    )
+    total_query = select(func.count()).select_from(SunoPrompt).where(base_filter)
     total = db.scalar(total_query) or 0
 
-    return SunoPromptListResponse(prompts=prompts, total=total)
+    # Convert to response objects with threads_count
+    prompt_responses = [_prompt_to_response(p, db) for p in prompts]
+    return SunoPromptListResponse(prompts=prompt_responses, total=total)
 
 
 @router.get("/{prompt_id}", response_model=SunoPromptResponse)
@@ -168,7 +203,40 @@ def get_prompt(
             status_code=403, detail="Not authorized to access this prompt"
         )
 
-    return prompt
+    return _prompt_to_response(prompt, db)
+
+
+@router.get("/{prompt_id}/threads", response_model=list[LyricsThreadSummary])
+def get_prompt_threads(
+    prompt_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    device_user: User | None = Depends(get_device_user),
+):
+    """Get all LyricsThreads (songs) for a StylePrompt (owner only).
+
+    Used by sidebar to expand a StylePrompt and show its songs.
+    """
+    spotify_user_id = get_current_user_id_optional(request)
+    user_id = _get_user_id_or_raise(spotify_user_id, device_user)
+
+    prompt = db.get(SunoPrompt, prompt_id)
+
+    if not prompt:
+        raise HTTPException(status_code=404, detail="Prompt not found")
+
+    if prompt.owner_user_id != user_id:
+        raise HTTPException(
+            status_code=403, detail="Not authorized to access this prompt"
+        )
+
+    query = (
+        select(LyricsThread)
+        .where(LyricsThread.style_prompt_id == prompt_id)
+        .order_by(LyricsThread.updated_at.desc())
+    )
+    threads = list(db.scalars(query).all())
+    return threads
 
 
 @router.patch("/{prompt_id}", response_model=SunoPromptResponse)
@@ -199,7 +267,7 @@ def update_prompt(
 
     db.commit()
     db.refresh(prompt)
-    return prompt
+    return _prompt_to_response(prompt, db)
 
 
 @router.delete("/{prompt_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -244,4 +312,4 @@ def get_shared_prompt(
     if prompt.visibility == "private":
         raise HTTPException(status_code=404, detail="Prompt not found")
 
-    return prompt
+    return _prompt_to_response(prompt, db)

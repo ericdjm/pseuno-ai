@@ -20,12 +20,14 @@ class SunoPromptCreate(BaseModel):
 
     # Suno hard cap: prompts cannot exceed SUNO_PROMPT_MAX_CHARS
     suno_prompt: str = Field(..., min_length=1, max_length=SUNO_PROMPT_MAX_CHARS)
+    lyrics: str = Field(default="")
     exclude: str = Field(default="", max_length=SUNO_EXCLUDE_MAX_CHARS)
     weirdness: int = Field(default=50, ge=0, le=100)
     style_influence: int = Field(default=50, ge=0, le=100)
     title: Optional[str] = Field(default=None, max_length=SAVED_PROMPT_TITLE_MAX_CHARS)
     notes: Optional[str] = Field(default=None, max_length=SAVED_PROMPT_NOTES_MAX_CHARS)
     is_favorite: bool = Field(default=True)  # Manual saves default to favorite
+    auto_tags: list[str] = Field(default=[])
 
 
 class SunoPromptUpdate(BaseModel):
@@ -52,10 +54,11 @@ class SunoPromptUpdate(BaseModel):
 
 
 class SunoPromptResponse(BaseModel):
-    """Response for a single saved Suno prompt."""
+    """Response for a single saved Suno prompt (StylePrompt)."""
 
     id: int
     suno_prompt: str
+    lyrics: str
     exclude: str
     weirdness: int
     style_influence: int
@@ -66,6 +69,11 @@ class SunoPromptResponse(BaseModel):
     generation_id: Optional[str]
     visibility: str
     share_id: str
+    # Iteration chain
+    parent_prompt_id: Optional[int] = None
+    source_action: str = "unknown"
+    # Count of LyricsThreads (songs) under this StylePrompt
+    threads_count: int = 0
     created_at: datetime
     updated_at: datetime
 

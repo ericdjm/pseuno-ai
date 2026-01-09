@@ -19,15 +19,8 @@ import {
   AccordionPanel,
   AccordionIcon,
   Link,
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalCloseButton,
-  ModalBody,
-  ModalFooter,
   Textarea,
-  useDisclosure,
+  Collapse,
 } from '@chakra-ui/react';
 import { CopyIcon, StarIcon, ExternalLinkIcon, EditIcon } from '@chakra-ui/icons';
 import {
@@ -94,10 +87,11 @@ export default function AdvancedResultsDisplay({
   const [isFavorite, setIsFavorite] = useState(result.is_favorite);
   const [togglingFavorite, setTogglingFavorite] = useState(false);
 
-  // Unified refinement state
-  const { isOpen: isRefineOpen, onOpen: onRefineOpen, onClose: onRefineClose } = useDisclosure();
+  // Unified refinement state (inline mode)
+  const [isRefineInputVisible, setIsRefineInputVisible] = useState(false);
   const [changeRequest, setChangeRequest] = useState('');
   const [isRefining, setIsRefining] = useState(false);
+  const refineInputRef = useRef<HTMLTextAreaElement>(null);
 
   // Local preview state for all editable fields
   // Initialize from persisted snapshot if available, otherwise from result
@@ -211,10 +205,10 @@ export default function AdvancedResultsDisplay({
       return;
     }
 
-    // Capture request and close modal immediately for non-blocking UX
+    // Capture request and close inline input
     const request = changeRequest;
     setChangeRequest('');
-    onRefineClose();
+    setIsRefineInputVisible(false);
     setIsRefining(true);
 
     // Show in-progress toast
@@ -235,6 +229,7 @@ export default function AdvancedResultsDisplay({
         weirdness: currentWeirdness,
         style_influence: result.style_influence,
         auto_tags: result.auto_tags || [],
+        base_prompt_id: result.prompt_id ?? undefined,
         change_request: request,
       };
 
@@ -374,11 +369,18 @@ export default function AdvancedResultsDisplay({
             <Button
               leftIcon={<EditIcon />}
               colorScheme="purple"
-              variant="outline"
+              variant={isRefineInputVisible ? 'solid' : 'outline'}
               size="sm"
-              onClick={onRefineOpen}
+              onClick={() => {
+                setIsRefineInputVisible(!isRefineInputVisible);
+                if (!isRefineInputVisible) {
+                  // Focus the input when opening
+                  setTimeout(() => refineInputRef.current?.focus(), 100);
+                }
+              }}
+              isDisabled={isRefining}
             >
-              Refine
+              {isRefineInputVisible ? 'Close Refine' : 'Refine'}
             </Button>
             <Button
               leftIcon={<Icon as={StarIcon} color={isFavorite ? 'yellow.400' : undefined} />}
@@ -396,6 +398,53 @@ export default function AdvancedResultsDisplay({
           </HStack>
         </HStack>
       </Box>
+
+      {/* Inline Refine Input */}
+      <Collapse in={isRefineInputVisible} animateOpacity>
+        <Box bg="purple.900" borderRadius="md" p={4} border="1px solid" borderColor="purple.700">
+          <VStack spacing={3} align="stretch">
+            <Text fontSize="sm" color="purple.200">
+              Describe the change you want. We'll update the prompt, lyrics, excludes, and/or weirdness as needed.
+            </Text>
+            <HStack spacing={2} align="start">
+              <Textarea
+                ref={refineInputRef}
+                value={changeRequest}
+                onChange={(e) => setChangeRequest(e.target.value)}
+                placeholder='e.g. "make the ending a dubstep drop", "change the chorus to be about heartbreak"'
+                bg="gray.800"
+                borderColor="purple.600"
+                _hover={{ borderColor: 'purple.500' }}
+                _focus={{ borderColor: 'purple.400', boxShadow: '0 0 0 1px var(--chakra-colors-purple-400)' }}
+                rows={2}
+                maxLength={1000}
+                resize="none"
+                flex={1}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey && changeRequest.trim()) {
+                    e.preventDefault();
+                    handleUnifiedRefine();
+                  }
+                }}
+              />
+              <Button
+                colorScheme="purple"
+                onClick={handleUnifiedRefine}
+                isLoading={isRefining}
+                loadingText="Refining..."
+                isDisabled={!changeRequest.trim()}
+                height="auto"
+                py={4}
+              >
+                Apply
+              </Button>
+            </HStack>
+            <Text fontSize="xs" color="purple.400">
+              {changeRequest.length}/1000 • Press Enter to apply
+            </Text>
+          </VStack>
+        </Box>
+      </Collapse>
 
       <Divider />
 
@@ -622,65 +671,6 @@ export default function AdvancedResultsDisplay({
         </>
       )}
 
-      {/* Unified Refinement Modal */}
-      <Modal isOpen={isRefineOpen} onClose={onRefineClose} size="xl">
-        <ModalOverlay />
-        <ModalContent bg="gray.900">
-          <ModalHeader>Refine Song</ModalHeader>
-          <ModalCloseButton />
-          <ModalBody>
-            <VStack spacing={4} align="stretch">
-              <Box>
-                <Text fontSize="sm" color="gray.400" mb={3}>
-                  Describe the change you want. We'll intelligently update the prompt, lyrics, excludes, title, and/or weirdness as needed.
-                </Text>
-                <Text fontSize="xs" color="gray.500" mb={2}>
-                  Examples: "make the ending a dubstep drop", "change the chorus to be about heartbreak", "make it more experimental", "avoid any autotune"
-                </Text>
-              </Box>
-              <Box>
-                <Textarea
-                  value={changeRequest}
-                  onChange={(e) => setChangeRequest(e.target.value)}
-                  placeholder="Describe the changes you want..."
-                  bg="gray.800"
-                  rows={4}
-                  maxLength={1000}
-                  autoFocus
-                />
-                <Text fontSize="xs" color="gray.500" mt={1}>
-                  {changeRequest.length}/1000
-                </Text>
-              </Box>
-              
-              {/* Current state summary */}
-              <Box borderTop="1px solid" borderColor="gray.700" pt={4}>
-                <Text fontWeight="bold" mb={2} fontSize="sm">Current State</Text>
-                <SimpleGrid columns={2} spacing={2} fontSize="xs" color="gray.400">
-                  <Text>Title: {currentTitle}</Text>
-                  <Text>Weirdness: {currentWeirdness}%</Text>
-                  <Text>Prompt: {promptLength} chars</Text>
-                  <Text>Lyrics: {lyricsLength > 0 ? `${lyricsLength} chars` : 'instrumental'}</Text>
-                  {currentExclude && <Text gridColumn="span 2">Exclude: {currentExclude.slice(0, 50)}{currentExclude.length > 50 ? '...' : ''}</Text>}
-                </SimpleGrid>
-              </Box>
-            </VStack>
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="ghost" mr={3} onClick={onRefineClose}>
-              Cancel
-            </Button>
-            <Button
-              colorScheme="purple"
-              onClick={handleUnifiedRefine}
-              isLoading={isRefining}
-              loadingText="Refining..."
-            >
-              Apply Changes
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
     </VStack>
   );
 }

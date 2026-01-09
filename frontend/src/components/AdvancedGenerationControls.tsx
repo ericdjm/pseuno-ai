@@ -24,7 +24,7 @@ import {
   Switch,
   IconButton,
 } from '@chakra-ui/react';
-import { ChevronDownIcon, StarIcon } from '@chakra-ui/icons';
+import { ChevronDownIcon, StarIcon, EditIcon } from '@chakra-ui/icons';
 import { useState, useEffect, useRef } from 'react';
 import type { ChangeEvent } from 'react';
 import { useSessionStorageState } from '../hooks';
@@ -36,6 +36,7 @@ import {
   getPromptVariants,
   getModels,
   updateSavedPrompt,
+  createSavedPrompt,
   AdvancedGenerateRequest,
   SpotifyProfileResponse,
   SavedSunoPrompt,
@@ -70,6 +71,7 @@ const TWO_STEP_VARIANTS: PromptVariant[] = [
 
 interface AdvancedGenerationControlsProps {
   onGenerate: (result: any) => void;
+  onEditPrompt?: (prompt: SavedSunoPrompt) => void;
   isLoading: boolean;
   setIsLoading: (loading: boolean) => void;
   profile?: SpotifyProfileResponse | null;
@@ -79,10 +81,13 @@ interface AdvancedGenerationControlsProps {
   styleMode: StyleMode;
   onStyleModeChange: (mode: StyleMode) => void;
   onPromptUpdated?: () => void;
+  /** Hide the Style Source selector (Past Prompts / Favorites) - for new prompt mode */
+  newStyleOnly?: boolean;
 }
 
 export default function AdvancedGenerationControls({
   onGenerate,
+  onEditPrompt,
   isLoading,
   setIsLoading,
   profile,
@@ -92,6 +97,7 @@ export default function AdvancedGenerationControls({
   styleMode,
   onStyleModeChange,
   onPromptUpdated,
+  newStyleOnly = false,
 }: AdvancedGenerationControlsProps) {
   const toast = useToast();
 
@@ -315,25 +321,43 @@ export default function AdvancedGenerationControls({
         const sunoPrompt = selectedSavedPrompt!.suno_prompt.slice(0, MAX_STYLE_PROMPT_LEN);
 
         if (isInstrumental) {
-          // Instrumental mode: skip lyrics generation, return empty lyrics
-          const result = {
-            generation_id: `reuse-${Date.now()}`,
-            concept_title: selectedSavedPrompt!.title || 'Instrumental',
+          // Instrumental mode: skip lyrics generation, save with empty lyrics
+          // Add "reused" tag to distinguish from original
+          const reusedTags = [...(selectedSavedPrompt!.auto_tags || [])];
+          if (!reusedTags.some(t => t.toLowerCase() === 'reused')) {
+            reusedTags.unshift('reused');
+          }
+
+          // Save the reused prompt as a new entry
+          const savedPrompt = await createSavedPrompt({
             suno_prompt: sunoPrompt,
             lyrics: '',
             exclude: selectedSavedPrompt!.exclude,
             weirdness: selectedSavedPrompt!.weirdness,
             style_influence: selectedSavedPrompt!.style_influence,
-            prompt_id: selectedSavedPrompt!.id,
-            is_favorite: selectedSavedPrompt!.is_favorite,
-            auto_tags: selectedSavedPrompt!.auto_tags,
+            title: selectedSavedPrompt!.title || 'Instrumental',
+            is_favorite: false,
+            auto_tags: reusedTags,
+          });
+
+          const result = {
+            generation_id: `reuse-${Date.now()}`,
+            concept_title: savedPrompt.title || 'Instrumental',
+            suno_prompt: sunoPrompt,
+            lyrics: '',
+            exclude: selectedSavedPrompt!.exclude,
+            weirdness: selectedSavedPrompt!.weirdness,
+            style_influence: selectedSavedPrompt!.style_influence,
+            prompt_id: savedPrompt.id,
+            is_favorite: savedPrompt.is_favorite,
+            auto_tags: reusedTags,
           };
 
           onGenerate(result);
 
           toast({
             title: 'Instrumental prompt ready!',
-            description: 'No lyrics generated for instrumental mode.',
+            description: 'Saved to history.',
             status: 'success',
             duration: 3000,
           });
@@ -344,24 +368,43 @@ export default function AdvancedGenerationControls({
             lyrics_about: lyricsAbout.trim(),
           });
 
-          // Build a result object that matches AdvancedGenerateResponse shape
-          const result = {
-            generation_id: `reuse-${Date.now()}`,
-            concept_title: lyricsResult.song_title || selectedSavedPrompt!.title || 'Reused Prompt',
+          // Add "reused" tag to distinguish from original
+          const reusedTags = [...(selectedSavedPrompt!.auto_tags || [])];
+          if (!reusedTags.some(t => t.toLowerCase() === 'reused')) {
+            reusedTags.unshift('reused');
+          }
+
+          // Save the reused prompt with new lyrics as a new entry
+          const savedPrompt = await createSavedPrompt({
             suno_prompt: sunoPrompt,
             lyrics: lyricsResult.lyrics,
             exclude: selectedSavedPrompt!.exclude,
             weirdness: selectedSavedPrompt!.weirdness,
             style_influence: selectedSavedPrompt!.style_influence,
-            prompt_id: selectedSavedPrompt!.id,
-            is_favorite: selectedSavedPrompt!.is_favorite,
-            auto_tags: selectedSavedPrompt!.auto_tags,
+            title: lyricsResult.song_title || selectedSavedPrompt!.title || 'Reused Prompt',
+            is_favorite: false,
+            auto_tags: reusedTags,
+          });
+
+          // Build a result object that matches AdvancedGenerateResponse shape
+          const result = {
+            generation_id: `reuse-${Date.now()}`,
+            concept_title: savedPrompt.title || 'Reused Prompt',
+            suno_prompt: sunoPrompt,
+            lyrics: lyricsResult.lyrics,
+            exclude: selectedSavedPrompt!.exclude,
+            weirdness: selectedSavedPrompt!.weirdness,
+            style_influence: selectedSavedPrompt!.style_influence,
+            prompt_id: savedPrompt.id,
+            is_favorite: savedPrompt.is_favorite,
+            auto_tags: reusedTags,
           };
 
           onGenerate(result);
 
           toast({
             title: 'Lyrics generated!',
+            description: 'Saved to history.',
             status: 'success',
             duration: 3000,
           });
@@ -530,42 +573,44 @@ export default function AdvancedGenerationControls({
           </FormControl>
         </Collapse>
 
-        {/* Style Mode Toggle */}
-        <FormControl>
-          <FormLabel>Style Source</FormLabel>
-          <ButtonGroup size="sm" isAttached variant="outline" width="100%">
-            <Button
-              flex={1}
-              colorScheme={styleMode === 'songStylePrompt' ? 'green' : 'gray'}
-              variant={styleMode === 'songStylePrompt' ? 'solid' : 'outline'}
-              onClick={() => {
-                onStyleModeChange('songStylePrompt');
-                onSelectSavedPrompt(null);
-              }}
-            >
-              New Style
-            </Button>
-            <Button
-              flex={1}
-              colorScheme={styleMode === 'pastSunoPrompts' ? 'blue' : 'gray'}
-              variant={styleMode === 'pastSunoPrompts' ? 'solid' : 'outline'}
-              onClick={() => onStyleModeChange('pastSunoPrompts')}
-            >
-              Past Prompts
-            </Button>
-            <Button
-              flex={1}
-              colorScheme={styleMode === 'favorites' ? 'yellow' : 'gray'}
-              variant={styleMode === 'favorites' ? 'solid' : 'outline'}
-              onClick={() => onStyleModeChange('favorites')}
-            >
-              Favorites
-            </Button>
-          </ButtonGroup>
-        </FormControl>
+        {/* Style Mode Toggle - hidden in newStyleOnly mode */}
+        {!newStyleOnly && (
+          <FormControl>
+            <FormLabel>Style Source</FormLabel>
+            <ButtonGroup size="sm" isAttached variant="outline" width="100%">
+              <Button
+                flex={1}
+                colorScheme={styleMode === 'songStylePrompt' ? 'green' : 'gray'}
+                variant={styleMode === 'songStylePrompt' ? 'solid' : 'outline'}
+                onClick={() => {
+                  onStyleModeChange('songStylePrompt');
+                  onSelectSavedPrompt(null);
+                }}
+              >
+                New Style
+              </Button>
+              <Button
+                flex={1}
+                colorScheme={styleMode === 'pastSunoPrompts' ? 'blue' : 'gray'}
+                variant={styleMode === 'pastSunoPrompts' ? 'solid' : 'outline'}
+                onClick={() => onStyleModeChange('pastSunoPrompts')}
+              >
+                Past Prompts
+              </Button>
+              <Button
+                flex={1}
+                colorScheme={styleMode === 'favorites' ? 'yellow' : 'gray'}
+                variant={styleMode === 'favorites' ? 'solid' : 'outline'}
+                onClick={() => onStyleModeChange('favorites')}
+              >
+                Favorites
+              </Button>
+            </ButtonGroup>
+          </FormControl>
+        )}
 
-        {/* Song Style Prompt (editable) */}
-        <Collapse in={styleMode === 'songStylePrompt'} animateOpacity>
+        {/* Song Style Prompt (editable) - always visible in newStyleOnly mode */}
+        <Collapse in={newStyleOnly || styleMode === 'songStylePrompt'} animateOpacity>
           <FormControl isRequired>
             <HStack justify="space-between" align="center" mb={1}>
               <FormLabel mb={0}>Song Style Prompt</FormLabel>
@@ -653,8 +698,8 @@ export default function AdvancedGenerationControls({
           </FormControl>
         </Collapse>
 
-        {/* Prompt Selector for Past/Favorites modes */}
-        <Collapse in={styleMode === 'pastSunoPrompts' || styleMode === 'favorites'} animateOpacity>
+        {/* Prompt Selector for Past/Favorites modes - hidden in newStyleOnly mode */}
+        <Collapse in={!newStyleOnly && (styleMode === 'pastSunoPrompts' || styleMode === 'favorites')} animateOpacity>
           <FormControl isRequired>
             <FormLabel>
               {styleMode === 'favorites' ? 'Select a Favorite' : 'Select a Past Prompt'}
@@ -759,16 +804,31 @@ export default function AdvancedGenerationControls({
                             Selected
                           </Badge>
                         )}
-                        <IconButton
-                          aria-label={prompt.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
-                          icon={<StarIcon />}
-                          size="xs"
-                          variant="ghost"
-                          color={prompt.is_favorite ? 'yellow.400' : 'gray.500'}
-                          onClick={(e) => handleToggleFavorite(e, prompt)}
-                          isLoading={togglingFavoriteId === prompt.id}
-                          _hover={{ color: prompt.is_favorite ? 'yellow.300' : 'yellow.400' }}
-                        />
+                        <HStack spacing={1}>
+                          {onEditPrompt && (
+                            <IconButton
+                              aria-label="Edit prompt"
+                              icon={<EditIcon />}
+                              size="xs"
+                              variant="ghost"
+                              colorScheme="purple"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onEditPrompt(prompt);
+                              }}
+                            />
+                          )}
+                          <IconButton
+                            aria-label={prompt.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
+                            icon={<StarIcon />}
+                            size="xs"
+                            variant="ghost"
+                            color={prompt.is_favorite ? 'yellow.400' : 'gray.500'}
+                            onClick={(e) => handleToggleFavorite(e, prompt)}
+                            isLoading={togglingFavoriteId === prompt.id}
+                            _hover={{ color: prompt.is_favorite ? 'yellow.300' : 'yellow.400' }}
+                          />
+                        </HStack>
                       </VStack>
                     </HStack>
                     <Text

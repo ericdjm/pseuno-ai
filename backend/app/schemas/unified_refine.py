@@ -49,6 +49,16 @@ class UnifiedRefineRequest(BaseModel):
         description="Current auto-generated tags for the prompt",
     )
 
+    # IDs for iteration tracking (optional for backward compat)
+    base_prompt_id: Optional[int] = Field(
+        default=None,
+        description="ID of the StylePrompt being refined (for parent linking)",
+    )
+    base_thread_id: Optional[int] = Field(
+        default=None,
+        description="ID of the LyricsThread being refined (for forking)",
+    )
+
     # User instruction
     change_request: str = Field(
         description="What the user wants to change",
@@ -78,6 +88,16 @@ class UnifiedRefineResponse(BaseModel):
     debug_info: Optional[Dict[str, Any]] = Field(
         default=None,
         description="Debug trace with timing information for each step",
+    )
+
+    # Saved IDs (only present if suno_prompt changed and auto-save succeeded)
+    saved_prompt_id: Optional[int] = Field(
+        default=None,
+        description="ID of the newly created StylePrompt (if suno_prompt changed)",
+    )
+    saved_thread_id: Optional[int] = Field(
+        default=None,
+        description="ID of the newly created LyricsThread (forked from base_thread_id)",
     )
 
 

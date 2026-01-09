@@ -12,7 +12,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import httpx
 
-from app.routes import auth, spotify, generate_advanced, generate_input_concept, refine, prompts
+from app.routes import (
+    auth,
+    spotify,
+    generate_advanced,
+    generate_input_concept,
+    refine,
+    prompts,
+    lyrics_threads,
+)
 from app.services.agent_prompt_graph import AgentPromptGraph
 from app.services.rate_limiter import create_rate_limiter
 from app.services.session_store import session_store
@@ -112,11 +120,10 @@ app.include_router(spotify.router, prefix="/spotify", tags=["Spotify"])
 app.include_router(
     generate_advanced.router, prefix="/generate", tags=["Advanced Generation"]
 )
-app.include_router(
-    generate_input_concept.router, tags=["Input Concept Generation"]
-)
+app.include_router(generate_input_concept.router, tags=["Input Concept Generation"])
 app.include_router(refine.router, tags=["Refinement"])
 app.include_router(prompts.router, prefix="/prompts", tags=["Saved Prompts"])
+app.include_router(lyrics_threads.router, tags=["LyricsThreads"])
 
 # CORS Configuration (must be OUTERMOST so even early middleware returns get CORS headers)
 # In development, allow both 127.0.0.1 and localhost; in production, use exact origin only.
