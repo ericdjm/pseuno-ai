@@ -292,12 +292,19 @@ async def generate_lyrics_only(
     Generate new lyrics using a saved Suno prompt as style context.
     This is a simpler flow for reusing saved prompts with new lyric topics.
 
-    For instrumental requests (blank/keyword lyrics_about), returns empty lyrics
-    without making any LLM calls.
+    For instrumental requests (blank/keyword lyrics_about), generates a creative
+    title using the fast title generator and returns empty lyrics.
     """
-    # Short-circuit for instrumental requests
+    # Instrumental requests: generate a real title, no lyrics
     if _is_instrumental_lyrics_request(body.lyrics_about):
-        return LyricsOnlyResponse(song_title="Instrumental", lyrics="")
+        from app.services.debug_trace import DebugTracer
+
+        tracer = DebugTracer(
+            variant="lyrics_only", model="instrumental", architecture="title_only"
+        )
+        # Use the style prompt as the "music described as" input for title generation
+        title = await agent._generate_instrumental_title(body.suno_prompt, tracer)
+        return LyricsOnlyResponse(song_title=title, lyrics="")
 
     # Build context for lyrics-only generation
     context_text = f"""BEGIN_CONTEXT

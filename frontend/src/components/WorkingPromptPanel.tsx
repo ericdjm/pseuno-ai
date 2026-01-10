@@ -35,6 +35,7 @@ import {
 import { CopyIcon, ChevronRightIcon, ChevronDownIcon, ExternalLinkIcon, EditIcon, AddIcon, DeleteIcon } from '@chakra-ui/icons';
 import { LuSparkles } from 'react-icons/lu';
 import type { WorkingState, WorkingAction } from '../types/workingState';
+import { LuDices } from 'react-icons/lu';
 import { 
   updateLyricsThread, 
   refineAll, 
@@ -44,13 +45,15 @@ import {
   getLyricsThread,
   deleteLyricsThread,
   updateSavedPrompt,
+  generateLyricsOnly,
+  generateLyricsTopic,
+  createLyricsThread,
 } from '../api';
 
 interface WorkingPromptPanelProps {
   state: WorkingState;
   dispatch: React.Dispatch<WorkingAction>;
   onRefineApplied?: (response: UnifiedRefineResponse) => Promise<void>;
-  onRequestNewLyricsVariation?: (stylePromptId: number) => void;
   onThreadUpdated?: () => void;
   refreshKey?: number;
 }
@@ -59,7 +62,6 @@ export default function WorkingPromptPanel({
   state,
   dispatch,
   onRefineApplied,
-  onRequestNewLyricsVariation,
   onThreadUpdated,
   refreshKey,
 }: WorkingPromptPanelProps) {
@@ -103,10 +105,48 @@ export default function WorkingPromptPanel({
   const [styleRenameValue, setStyleRenameValue] = useState('');
   const styleRenameInputRef = useRef<HTMLInputElement>(null);
 
+  // Draft tab state (inline new song composer)
+  const [draftOpen, setDraftOpen] = useState(false);
+  const [draftLyricsAbout, setDraftLyricsAbout] = useState('');
+  const [isCreatingSong, setIsCreatingSong] = useState(false);
+  const [isGeneratingTopic, setIsGeneratingTopic] = useState(false);
+  const [showLongWaitMessage, setShowLongWaitMessage] = useState(false);
+
+  // Show "can take up to a minute" message after 10 seconds of loading
+  useEffect(() => {
+    if (!isCreatingSong) {
+      setShowLongWaitMessage(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setShowLongWaitMessage(true);
+    }, 10000);
+    return () => clearTimeout(timer);
+  }, [isCreatingSong]);
+
+  // Keyboard shortcut: Cmd/Ctrl + Enter to create (only when draft is open)
+  useEffect(() => {
+    if (!draftOpen) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      const isMetaOrCtrl = e.metaKey || e.ctrlKey;
+      if (!isMetaOrCtrl) return;
+      if (e.altKey || e.shiftKey) return;
+      if (e.key !== 'Enter') return;
+      if (isCreatingSong) return;
+
+      e.preventDefault();
+      handleCreateSong();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [draftOpen, isCreatingSong, state.stylePromptId, state.styleFields.suno_prompt, draftLyricsAbout]);
+
   // Fetch all threads when stylePromptId changes
   useEffect(() => {
     if (!state.stylePromptId) {
       setThreads([]);
+      setDraftOpen(false);
       return;
     }
 
@@ -115,6 +155,10 @@ export default function WorkingPromptPanel({
       try {
         const fetchedThreads = await getPromptThreads(state.stylePromptId!);
         setThreads(fetchedThreads);
+        // Auto-open draft when style has no threads
+        if (fetchedThreads.length === 0 && !state.lyricsThreadId) {
+          setDraftOpen(true);
+        }
       } catch (err) {
         console.error('Failed to fetch threads:', err);
         setThreads([]);
@@ -126,12 +170,14 @@ export default function WorkingPromptPanel({
     fetchThreads();
   }, [state.stylePromptId, state.lyricsThreadId, refreshKey]);
 
-  // Reset refine/edit state when navigating to a different prompt
+  // Reset refine/edit/draft state when navigating to a different prompt
   useEffect(() => {
     setStyleRefineOpen(false);
     setStyleRefineText('');
     setLyricsEditOpen(false);
     setLyricsEditText('');
+    setDraftLyricsAbout('');
+    // Don't reset draftOpen here - the fetch effect handles that
   }, [state.stylePromptId]);
 
   // Build Suno URL with style as query param
@@ -146,16 +192,22 @@ export default function WorkingPromptPanel({
 
   // Handle tab selection
   const handleTabChange = async (index: number) => {
-    // If clicking "+ New" tab (last tab), create a new thread
+    // If clicking "+" button, open the draft tab
     if (index === threads.length) {
-      if (state.stylePromptId && onRequestNewLyricsVariation) {
-        onRequestNewLyricsVariation(state.stylePromptId);
-      }
+      setDraftOpen(true);
       return;
     }
 
+    // Clicking any existing tab closes the draft
+    const wasDraftOpen = draftOpen;
+    setDraftOpen(false);
+    setDraftLyricsAbout('');
+
     const selectedThread = threads[index];
-    if (!selectedThread || selectedThread.id === state.lyricsThreadId) return;
+    if (!selectedThread) return;
+    
+    // Skip if already selected (unless we were in draft mode - need to re-display the thread)
+    if (selectedThread.id === state.lyricsThreadId && !wasDraftOpen) return;
 
     // Fetch full thread data and update state
     try {
@@ -190,13 +242,11 @@ export default function WorkingPromptPanel({
       const nextThreads = prevThreads.filter((t) => t.id !== deletingId);
       setThreads(nextThreads);
 
-      // If we deleted the selected thread, pick a neighbor; if none, clear selection (style remains).
+      // If we deleted the selected thread, pick a neighbor; if none, open the draft tab.
       if (wasSelected) {
         if (nextThreads.length === 0) {
           dispatch({ type: 'CLEAR_THREAD' });
-          if (state.stylePromptId && onRequestNewLyricsVariation) {
-            onRequestNewLyricsVariation(state.stylePromptId);
-          }
+          setDraftOpen(true);
         } else {
           const candidateIndex = Math.max(0, Math.min(deletedIndex - 1, nextThreads.length - 1));
           const candidate = nextThreads[candidateIndex];
@@ -338,6 +388,102 @@ export default function WorkingPromptPanel({
     }
   };
 
+  // Handle "Surprise me" topic generation for draft composer
+  const handleGenerateTopic = async () => {
+    if (!state.styleFields.suno_prompt) return;
+    
+    setIsGeneratingTopic(true);
+    try {
+      const result = await generateLyricsTopic({
+        style_prompt: state.styleFields.suno_prompt,
+      });
+      setDraftLyricsAbout(result.topic);
+      // No toast - the topic appearing in the box is enough feedback
+    } catch (error) {
+      toast({
+        title: 'Failed to generate topic',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        status: 'error',
+        duration: 5000,
+      });
+    } finally {
+      setIsGeneratingTopic(false);
+    }
+  };
+
+  // Handle creating a new song from the draft composer
+  const handleCreateSong = async () => {
+    if (!state.stylePromptId) {
+      toast({
+        title: 'No style loaded',
+        status: 'error',
+        duration: 2000,
+      });
+      return;
+    }
+
+    setIsCreatingSong(true);
+    try {
+      // Generate lyrics + title (or just title for instrumental)
+      const lyricsResult = await generateLyricsOnly({
+        suno_prompt: state.styleFields.suno_prompt,
+        lyrics_about: draftLyricsAbout.trim(),
+      });
+
+      const songTitle = lyricsResult.song_title || 'New Song';
+      const lyricsText = lyricsResult.lyrics || '';
+
+      // Create a new thread
+      const newThread = await createLyricsThread({
+        style_prompt_id: state.stylePromptId,
+        title: songTitle,
+      });
+
+      // Update the thread with lyrics (if any)
+      await updateLyricsThread(newThread.id, { 
+        title: songTitle,
+        lyrics_text: lyricsText,
+      });
+
+      // Fetch the full thread and select it
+      const fullThread = await getLyricsThread(newThread.id);
+      dispatch({ type: 'SELECT_THREAD', thread: fullThread });
+
+      // Close draft and clear input
+      setDraftOpen(false);
+      setDraftLyricsAbout('');
+
+      // Add to threads list
+      setThreads(prev => [...prev, { 
+        id: fullThread.id, 
+        title: fullThread.title,
+        source_action: fullThread.source_action,
+        created_at: fullThread.created_at,
+        updated_at: fullThread.updated_at,
+      }]);
+
+      // Notify parent to refresh sidebar
+      onThreadUpdated?.();
+
+      toast({
+        title: lyricsText ? 'Song created!' : 'Instrumental created!',
+        description: songTitle,
+        status: 'success',
+        duration: 3000,
+      });
+    } catch (error) {
+      console.error('Failed to create song:', error);
+      toast({
+        title: 'Failed to create song',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        status: 'error',
+        duration: 5000,
+      });
+    } finally {
+      setIsCreatingSong(false);
+    }
+  };
+
   // Handle STYLE refine submission (creates new StylePrompt + forks thread)
   const handleStyleRefineSubmit = async () => {
     if (!styleRefineText.trim()) {
@@ -360,14 +506,6 @@ export default function WorkingPromptPanel({
 
     setIsRefiningStyle(true);
 
-    toast({
-      title: 'Refining style...',
-      description: 'Creating new style version',
-      status: 'loading',
-      duration: null,
-      id: 'refine-style-progress',
-    });
-
     try {
       const response = await refineAll({
         suno_prompt: state.styleFields.suno_prompt,
@@ -385,14 +523,12 @@ export default function WorkingPromptPanel({
 
       setStyleRefineOpen(false);
       setStyleRefineText('');
-      toast.close('refine-style-progress');
 
       if (onRefineApplied) {
         await onRefineApplied(response);
       }
     } catch (err) {
       console.error('Style refine failed:', err);
-      toast.close('refine-style-progress');
       toast({
         title: 'Style refinement failed',
         description: err instanceof Error ? err.message : 'Unknown error',
@@ -426,14 +562,6 @@ export default function WorkingPromptPanel({
 
     setIsEditingLyrics(true);
 
-    toast({
-      title: 'Editing lyrics...',
-      description: 'Updating your lyrics',
-      status: 'loading',
-      duration: null,
-      id: 'edit-lyrics-progress',
-    });
-
     try {
       const response = await refineAll({
         suno_prompt: state.styleFields.suno_prompt,
@@ -451,14 +579,12 @@ export default function WorkingPromptPanel({
 
       setLyricsEditOpen(false);
       setLyricsEditText('');
-      toast.close('edit-lyrics-progress');
 
       if (onRefineApplied) {
         await onRefineApplied(response);
       }
     } catch (err) {
       console.error('Lyrics edit failed:', err);
-      toast.close('edit-lyrics-progress');
       toast({
         title: 'Lyrics edit failed',
         description: err instanceof Error ? err.message : 'Unknown error',
@@ -746,25 +872,6 @@ export default function WorkingPromptPanel({
                 <Spinner size="sm" color="gray.500" />
                 <Text fontSize="sm" color="gray.500">Loading songs...</Text>
               </HStack>
-            ) : threads.length === 0 ? (
-              <VStack align="stretch" spacing={3} py={3}>
-                <Text fontSize="sm" color="gray.500">No lyrics yet for this style.</Text>
-                <Button
-                  size="sm"
-                  bg="gray.800"
-                  color="gray.200"
-                  _hover={{ bg: 'gray.700' }}
-                  alignSelf="flex-start"
-                  leftIcon={<AddIcon />}
-                  onClick={() => {
-                    if (state.stylePromptId && onRequestNewLyricsVariation) {
-                      onRequestNewLyricsVariation(state.stylePromptId);
-                    }
-                  }}
-                >
-                  New lyrics
-                </Button>
-              </VStack>
             ) : (
               <HStack 
                 spacing={0}
@@ -778,7 +885,7 @@ export default function WorkingPromptPanel({
                 }}
               >
                 {threads.map((thread, idx) => {
-                  const isSelected = thread.id === state.lyricsThreadId;
+                  const isSelected = thread.id === state.lyricsThreadId && !draftOpen;
                   return (
                     <HStack
                       key={thread.id}
@@ -805,26 +912,120 @@ export default function WorkingPromptPanel({
                     </HStack>
                   );
                 })}
-                {/* "+ New" button */}
-                <Tooltip label="New lyrics variation" placement="top" hasArrow>
-                  <Box
-                    px={2}
+                {/* "New Song" draft tab - shown when draftOpen or no threads */}
+                {(draftOpen || threads.length === 0) && (
+                  <HStack
+                    px={3}
                     py={2}
+                    spacing={1}
                     cursor="pointer"
-                    color="gray.600"
-                    _hover={{ color: 'gray.400' }}
+                    fontSize="sm"
+                    whiteSpace="nowrap"
+                    color="white"
+                    bg="gray.800"
+                    borderTopRadius="md"
+                    borderBottom="2px solid"
+                    borderColor="purple.500"
+                    mb="-1px"
                     transition="all 0.15s"
-                    onClick={() => handleTabChange(threads.length)}
+                    onClick={() => setDraftOpen(true)}
                   >
-                    <AddIcon boxSize={3} />
-                  </Box>
-                </Tooltip>
+                    <Text>New Song</Text>
+                  </HStack>
+                )}
+                {/* "+ New" button - only show when draft is not open and we have threads */}
+                {!draftOpen && threads.length > 0 && (
+                  <Tooltip label="New lyrics variation" placement="top" hasArrow>
+                    <Box
+                      px={2}
+                      py={2}
+                      cursor="pointer"
+                      color="gray.600"
+                      _hover={{ color: 'gray.400' }}
+                      transition="all 0.15s"
+                      onClick={() => handleTabChange(threads.length)}
+                    >
+                      <AddIcon boxSize={3} />
+                    </Box>
+                  </Tooltip>
+                )}
               </HStack>
             )}
           </Box>
 
+          {/* === DRAFT COMPOSER (New Song) === */}
+          {draftOpen && (
+            <Box px={3} pt={3}>
+              <VStack spacing={3} align="stretch">
+                {/* Lyrics section - styled like NewSongView */}
+                <Box
+                  borderWidth="1px"
+                  borderColor="gray.700"
+                  borderRadius="lg"
+                  overflow="hidden"
+                >
+                  {/* Section header */}
+                  <HStack px={4} py={3} justify="space-between">
+                    <Text fontWeight="medium">Lyrics</Text>
+                    <Tooltip label="Generate random topic" placement="top" hasArrow>
+                      <IconButton
+                        aria-label="Surprise me"
+                        icon={<LuDices size={14} />}
+                        size="xs"
+                        variant="ghost"
+                        isLoading={isGeneratingTopic}
+                        onClick={handleGenerateTopic}
+                        color="gray.400"
+                        _hover={{ color: 'white' }}
+                      />
+                    </Tooltip>
+                  </HStack>
+
+                  {/* Section content */}
+                  <Box px={4} pb={4}>
+                    <Textarea
+                      value={draftLyricsAbout}
+                      onChange={(e) => setDraftLyricsAbout(e.target.value)}
+                      placeholder="Write some lyrics or a prompt — or leave blank for instrumental"
+                      bg="transparent"
+                      border="none"
+                      fontSize="sm"
+                      minH="60px"
+                      resize="none"
+                      maxLength={500}
+                      p={0}
+                      _focus={{ boxShadow: 'none' }}
+                    />
+                  </Box>
+                </Box>
+
+                {/* Create button - styled like NewSongView */}
+                <Button
+                  colorScheme="gray"
+                  bg="gray.800"
+                  _hover={{ bg: 'gray.700' }}
+                  size="lg"
+                  w="100%"
+                  onClick={handleCreateSong}
+                  isLoading={isCreatingSong}
+                  loadingText="Creating..."
+                  leftIcon={<LuSparkles size={18} />}
+                >
+                  Create
+                </Button>
+
+                {/* Keyboard shortcut hint */}
+                <Text fontSize="xs" color="gray.600" textAlign="center">
+                  {isCreatingSong && showLongWaitMessage
+                    ? 'Generations can take up to a minute...'
+                    : '⌘ Enter to create'}
+                </Text>
+              </VStack>
+            </Box>
+          )}
+
           {/* === SONG CONTENT === */}
-          {state.lyricsThreadId && (
+          {!draftOpen && state.lyricsThreadId && (
             <Box px={3} pt={3}>
               {/* Song Title Row */}
               <HStack justify="space-between" align="center" mb={3}>

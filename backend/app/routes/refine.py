@@ -29,6 +29,44 @@ router = APIRouter(prefix="/generate", tags=["Refinement"])
 DEVICE_TOKEN_MAX_AGE = 365 * 24 * 60 * 60  # 1 year in seconds
 
 
+def _verify_base_prompt_ownership(
+    db: Session, prompt_id: int | None, user_id: str
+) -> SunoPrompt | None:
+    """
+    Verify the user owns the base prompt if provided.
+    Returns the prompt if valid, None if no prompt_id, or raises 403/404.
+    """
+    if prompt_id is None:
+        return None
+    prompt = db.get(SunoPrompt, prompt_id)
+    if not prompt:
+        raise HTTPException(status_code=404, detail="Base prompt not found")
+    if prompt.owner_user_id != user_id:
+        raise HTTPException(
+            status_code=403, detail="Not authorized to access this prompt"
+        )
+    return prompt
+
+
+def _verify_base_thread_ownership(
+    db: Session, thread_id: int | None, user_id: str
+) -> LyricsThread | None:
+    """
+    Verify the user owns the base thread (via its prompt) if provided.
+    Returns the thread if valid, None if no thread_id, or raises 403/404.
+    """
+    if thread_id is None:
+        return None
+    thread = db.get(LyricsThread, thread_id)
+    if not thread:
+        raise HTTPException(status_code=404, detail="Base thread not found")
+    if thread.style_prompt.owner_user_id != user_id:
+        raise HTTPException(
+            status_code=403, detail="Not authorized to access this thread"
+        )
+    return thread
+
+
 def _derive_title_from_prompt(suno_prompt: str, auto_tags: list[str]) -> str:
     """
     Derive a title from auto_tags or suno_prompt, matching /generate/advanced behavior.
@@ -87,6 +125,28 @@ async def unified_refine(
         if settings is None:
             settings = get_settings()
 
+        # === Resolve user identity early ===
+        # We need the user ID to verify ownership of base_prompt_id/base_thread_id
+        spotify_user_id = get_current_user_id_optional(fastapi_request)
+        device_user = None
+        device_user_created = False
+
+        if spotify_user_id:
+            user_id = spotify_user_id
+        else:
+            # Fall back to device token (create guest user if needed)
+            device_user, device_user_created = get_or_create_device_user(
+                fastapi_request, db
+            )
+            user_id = device_user.id
+
+        # === Verify ownership of referenced IDs ===
+        # Prevent users from referencing other users' prompts/threads
+        if request.base_prompt_id is not None:
+            _verify_base_prompt_ownership(db, request.base_prompt_id, user_id)
+        if request.base_thread_id is not None:
+            _verify_base_thread_ownership(db, request.base_thread_id, user_id)
+
         # Call unified refine service
         updated_snapshot, changed_fields, assistant_message, debug_info = (
             await refine_all(
@@ -108,26 +168,16 @@ async def unified_refine(
         if "suno_prompt" in changed_fields:
             # Style changed: create NEW StylePrompt + fork LyricsThread
             try:
-                # Resolve user: Spotify session OR device token (create guest if needed)
-                spotify_user_id = get_current_user_id_optional(fastapi_request)
-
-                if spotify_user_id:
-                    user_id = spotify_user_id
-                else:
-                    # Fall back to device token (create guest user if needed)
-                    user, created = get_or_create_device_user(fastapi_request, db)
-                    user_id = user.id
-
-                    if created:
-                        # Set device_token cookie for new guest users
-                        response.set_cookie(
-                            key="device_token",
-                            value=user.device_token,
-                            httponly=True,
-                            secure=settings.session_cookie_secure,
-                            samesite=settings.session_cookie_samesite,
-                            max_age=DEVICE_TOKEN_MAX_AGE,
-                        )
+                # Set device_token cookie for newly created guest users
+                if device_user_created and device_user is not None:
+                    response.set_cookie(
+                        key="device_token",
+                        value=device_user.device_token,
+                        httponly=True,
+                        secure=settings.session_cookie_secure,
+                        samesite=settings.session_cookie_samesite,
+                        max_age=DEVICE_TOKEN_MAX_AGE,
+                    )
 
                 # Create the prompt history record
                 # Use passed-in auto_tags (from original generation) and add "refined" tag
@@ -166,9 +216,11 @@ async def unified_refine(
                 song_title = updated_snapshot["title"]
                 if not song_title and request.base_thread_id:
                     # Try to get the previous thread's title
-                    prev_thread = db.query(LyricsThread).filter(
-                        LyricsThread.id == request.base_thread_id
-                    ).first()
+                    prev_thread = (
+                        db.query(LyricsThread)
+                        .filter(LyricsThread.id == request.base_thread_id)
+                        .first()
+                    )
                     if prev_thread:
                         song_title = prev_thread.title or style_title
                 if not song_title:
@@ -224,9 +276,11 @@ async def unified_refine(
                 if request.base_thread_id and (
                     "lyrics" in changed_fields or "title" in changed_fields
                 ):
-                    thread = db.query(LyricsThread).filter(
-                        LyricsThread.id == request.base_thread_id
-                    ).first()
+                    thread = (
+                        db.query(LyricsThread)
+                        .filter(LyricsThread.id == request.base_thread_id)
+                        .first()
+                    )
                     if thread:
                         if "lyrics" in changed_fields:
                             thread.lyrics_text = updated_snapshot["lyrics"]
@@ -243,9 +297,11 @@ async def unified_refine(
                 if request.base_prompt_id and (
                     "exclude" in changed_fields or "weirdness" in changed_fields
                 ):
-                    prompt = db.query(SunoPrompt).filter(
-                        SunoPrompt.id == request.base_prompt_id
-                    ).first()
+                    prompt = (
+                        db.query(SunoPrompt)
+                        .filter(SunoPrompt.id == request.base_prompt_id)
+                        .first()
+                    )
                     if prompt:
                         if "exclude" in changed_fields:
                             prompt.exclude = updated_snapshot["exclude"]
@@ -255,7 +311,11 @@ async def unified_refine(
                         logger.info(
                             "Updated SunoPrompt id=%d with changed_fields=%s",
                             request.base_prompt_id,
-                            [f for f in ["exclude", "weirdness"] if f in changed_fields],
+                            [
+                                f
+                                for f in ["exclude", "weirdness"]
+                                if f in changed_fields
+                            ],
                         )
 
                 if needs_commit:

@@ -32,14 +32,13 @@ import { usePersistedSettings } from './hooks';
 import PromptLibrarySidebar from './components/PromptLibrarySidebar';
 import WorkingPromptPanel from './components/WorkingPromptPanel';
 import NewSongView from './components/NewSongView';
-import NewLyricsForStyleView from './components/NewLyricsForStyleView';
 import {
   workingReducer,
   createInitialWorkingState,
 } from './types/workingState';
 
 // Right pane view modes
-type RightPaneMode = 'new_song' | 'new_lyrics_for_style' | 'song_view';
+type RightPaneMode = 'new_song' | 'song_view';
 
 function App() {
   const toast = useToast();
@@ -65,9 +64,6 @@ function App() {
   
   // Reset key for NewSongView - increment to clear inputs
   const [newSongResetKey, setNewSongResetKey] = useState(0);
-  
-  // For new_lyrics_for_style mode, we need to know which style we're generating for
-  const [newLyricsForStyleId, setNewLyricsForStyleId] = useState<number | null>(null);
 
   // Sidebar visibility - auto-hide on small screens
   // Sidebar is 280px, content needs ~560px min, hide at md (768px) for more breathing room
@@ -260,9 +256,10 @@ function App() {
     threads: api.LyricsThreadSummary[]
   ) => {
     dispatch({ type: 'LOAD_STYLE_PROMPT', prompt });
+    setRightPaneMode('song_view');
+    
     // Auto-select the most recent thread if available
     if (threads.length > 0) {
-      setRightPaneMode('song_view');
       const mostRecent = threads[0]; // Already sorted by updated_at desc
       try {
         const fullThread = await api.getLyricsThread(mostRecent.id);
@@ -271,9 +268,8 @@ function App() {
         console.error('Failed to load thread:', err);
       }
     } else {
-      // No songs for this style yet → default to New Lyrics for this style
-      setNewLyricsForStyleId(prompt.id);
-      setRightPaneMode('new_lyrics_for_style');
+      // No songs for this style yet → WorkingPromptPanel will auto-open draft tab
+      dispatch({ type: 'CLEAR_THREAD' });
     }
   };
 
@@ -299,24 +295,6 @@ function App() {
         duration: 2000,
       });
     }
-  };
-
-  // Handle opening new lyrics variation view
-  const handleNewLyricsVariation = (prompt: api.SavedSunoPrompt) => {
-    // Ensure workingState has the correct style prompt loaded
-    if (workingState.stylePromptId !== prompt.id) {
-      dispatch({ type: 'LOAD_STYLE_PROMPT', prompt });
-    }
-    setNewLyricsForStyleId(prompt.id);
-    setRightPaneMode('new_lyrics_for_style');
-  };
-
-  // Handle new lyrics generation complete (from NewLyricsForStyleView)
-  const handleNewLyricsGenerated = (thread: api.LyricsThread) => {
-    // Dispatch first to populate workingState, then switch view
-    dispatch({ type: 'SELECT_THREAD', thread });
-    setRightPaneMode('song_view');
-    setLibraryRefresh((n) => n + 1);
   };
 
   // Handle unified refine response (from WorkingPromptPanel)
@@ -472,7 +450,14 @@ function App() {
             activeThreadId={workingState.lyricsThreadId}
             onSelectStylePrompt={handleSelectStylePrompt}
             onSelectThread={handleSelectThread}
-            onNewLyricsVariation={handleNewLyricsVariation}
+            onNewLyricsVariation={(prompt) => {
+              // Go to song_view for this style; WorkingPromptPanel will auto-open draft tab
+              if (workingState.stylePromptId !== prompt.id) {
+                dispatch({ type: 'LOAD_STYLE_PROMPT', prompt });
+              }
+              dispatch({ type: 'CLEAR_THREAD' });
+              setRightPaneMode('song_view');
+            }}
             onNewPrompt={() => {
               setRightPaneMode('new_song');
               setNewSongResetKey(k => k + 1);
@@ -507,25 +492,11 @@ function App() {
           />
         )}
 
-        {rightPaneMode === 'new_lyrics_for_style' && newLyricsForStyleId && (
-          <NewLyricsForStyleView
-            stylePromptId={newLyricsForStyleId}
-            stylePromptText={workingState.styleFields.suno_prompt}
-            styleTitle={workingState.styleFields.title}
-            onGenerate={handleNewLyricsGenerated}
-            onCancel={() => setRightPaneMode('song_view')}
-          />
-        )}
-
         {rightPaneMode === 'song_view' && (
           <WorkingPromptPanel
             state={workingState}
             dispatch={dispatch}
             onRefineApplied={handleRefineApplied}
-            onRequestNewLyricsVariation={(stylePromptId) => {
-              setNewLyricsForStyleId(stylePromptId);
-              setRightPaneMode('new_lyrics_for_style');
-            }}
             onThreadUpdated={() => {
               // Refresh sidebar when a thread is renamed/updated from the right pane
               setLibraryRefresh((n) => n + 1);
