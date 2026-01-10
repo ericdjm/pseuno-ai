@@ -5,7 +5,7 @@ These models define the request/response shapes for the /generate/refine endpoin
 which can update prompt, lyrics, exclude, title, and weirdness in a single turn.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -66,6 +66,16 @@ class UnifiedRefineRequest(BaseModel):
         max_length=1000,
     )
 
+    # Refinement scope control
+    refine_target: Optional[Literal["style", "lyrics"]] = Field(
+        default=None,
+        description=(
+            "Scope of refinement: 'style' = modify style/exclude/weirdness (creates new StylePrompt), "
+            "'lyrics' = modify lyrics/title only (updates in-place). "
+            "If None, the planner decides based on the change_request."
+        ),
+    )
+
 
 class UnifiedRefineResponse(BaseModel):
     """Response containing the updated snapshot and list of changed fields."""
@@ -88,6 +98,13 @@ class UnifiedRefineResponse(BaseModel):
     debug_info: Optional[Dict[str, Any]] = Field(
         default=None,
         description="Debug trace with timing information for each step",
+    )
+
+    # Persistence status
+    updates_persisted: bool = Field(
+        default=True,
+        description="Whether the changes were successfully persisted to the database. "
+        "If False, the frontend should not assume changes are saved.",
     )
 
     # Saved IDs (only present if suno_prompt changed and auto-save succeeded)

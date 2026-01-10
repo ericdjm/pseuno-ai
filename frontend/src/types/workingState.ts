@@ -4,10 +4,10 @@
  * This follows the plan's specification for the two-panel UX.
  */
 
-import type { SavedSunoPrompt, LyricsThread, LyricsCheckpoint } from '../api';
+import type { SavedSunoPrompt, LyricsThread } from '../api';
 
 // Mode indicates how the current state was reached
-export type WorkingMode = 'new' | 'loaded' | 'generated' | 'refining';
+export type WorkingMode = 'new' | 'loaded' | 'generated';
 
 // Fields for the style prompt (the template)
 export interface StyleFields {
@@ -43,12 +43,15 @@ export interface WorkingState {
 
   // Current mode
   mode: WorkingMode;
+}
 
-  // Checkpoints for the current thread
-  checkpoints: LyricsCheckpoint[];
-
-  // Is a refine in progress?
-  isRefining: boolean;
+// Refine snapshot for in-place updates (when style didn't change)
+export interface RefineSnapshot {
+  suno_prompt?: string;
+  lyrics_text?: string;
+  lyrics_title?: string;
+  exclude?: string;
+  weirdness?: number;
 }
 
 // Action types for the reducer
@@ -61,12 +64,8 @@ export type WorkingAction =
   | { type: 'EDIT_LYRICS_TEXT'; value: string }
   | { type: 'EDIT_LYRICS_TITLE'; value: string }
   | { type: 'SAVE_THREAD_SUCCESS'; thread: LyricsThread }
-  | { type: 'SET_CHECKPOINTS'; checkpoints: LyricsCheckpoint[] }
-  | { type: 'ADD_CHECKPOINT'; checkpoint: LyricsCheckpoint }
-  | { type: 'RESTORE_CHECKPOINT'; lyrics_text: string }
-  | { type: 'REFINE_START' }
-  | { type: 'REFINE_END'; newPromptId?: number; newThreadId?: number; updatedFields: Partial<StyleFields & LyricsFields> }
-  | { type: 'MARK_CLEAN'; which: 'style' | 'lyrics' | 'both' };
+  | { type: 'MARK_CLEAN'; which: 'style' | 'lyrics' | 'both' }
+  | { type: 'APPLY_REFINE_SNAPSHOT'; snapshot: RefineSnapshot };
 
 // Initial state factory
 export function createInitialWorkingState(): WorkingState {
@@ -90,8 +89,6 @@ export function createInitialWorkingState(): WorkingState {
       lyrics: false,
     },
     mode: 'new',
-    checkpoints: [],
-    isRefining: false,
   };
 }
 
@@ -120,8 +117,6 @@ export function workingReducer(state: WorkingState, action: WorkingAction): Work
         },
         dirty: { style: false, lyrics: false },
         mode: 'loaded',
-        checkpoints: [],
-        isRefining: false,
       };
 
     case 'SELECT_THREAD':
@@ -158,8 +153,6 @@ export function workingReducer(state: WorkingState, action: WorkingAction): Work
         },
         dirty: { style: false, lyrics: false },
         mode: 'generated',
-        checkpoints: [],
-        isRefining: false,
       };
 
     case 'EDIT_STYLE_FIELD':
@@ -197,62 +190,6 @@ export function workingReducer(state: WorkingState, action: WorkingAction): Work
         dirty: { ...state.dirty, lyrics: false },
       };
 
-    case 'SET_CHECKPOINTS':
-      return {
-        ...state,
-        checkpoints: action.checkpoints,
-      };
-
-    case 'ADD_CHECKPOINT':
-      return {
-        ...state,
-        checkpoints: [action.checkpoint, ...state.checkpoints],
-      };
-
-    case 'RESTORE_CHECKPOINT':
-      return {
-        ...state,
-        lyricsFields: { ...state.lyricsFields, lyrics_text: action.lyrics_text },
-        dirty: { ...state.dirty, lyrics: true },
-      };
-
-    case 'REFINE_START':
-      return {
-        ...state,
-        isRefining: true,
-      };
-
-    case 'REFINE_END': {
-      const newState = { ...state, isRefining: false };
-
-      // Update IDs if new ones were created (prompt changed)
-      if (action.newPromptId) {
-        newState.stylePromptId = action.newPromptId;
-      }
-      if (action.newThreadId) {
-        newState.lyricsThreadId = action.newThreadId;
-      }
-
-      // Apply updated fields
-      if (action.updatedFields.suno_prompt !== undefined) {
-        newState.styleFields = { ...newState.styleFields, suno_prompt: action.updatedFields.suno_prompt };
-      }
-      if (action.updatedFields.exclude !== undefined) {
-        newState.styleFields = { ...newState.styleFields, exclude: action.updatedFields.exclude };
-      }
-      if (action.updatedFields.title !== undefined) {
-        newState.styleFields = { ...newState.styleFields, title: action.updatedFields.title };
-      }
-      if (action.updatedFields.weirdness !== undefined) {
-        newState.styleFields = { ...newState.styleFields, weirdness: action.updatedFields.weirdness };
-      }
-      if (action.updatedFields.lyrics_text !== undefined) {
-        newState.lyricsFields = { ...newState.lyricsFields, lyrics_text: action.updatedFields.lyrics_text };
-      }
-
-      return newState;
-    }
-
     case 'MARK_CLEAN':
       if (action.which === 'both') {
         return { ...state, dirty: { style: false, lyrics: false } };
@@ -262,8 +199,37 @@ export function workingReducer(state: WorkingState, action: WorkingAction): Work
         dirty: { ...state.dirty, [action.which]: false },
       };
 
+    case 'APPLY_REFINE_SNAPSHOT': {
+      // Apply in-place updates from a refine that didn't change suno_prompt
+      const { snapshot } = action;
+      const newState = { ...state };
+
+      // Update style fields if provided
+      if (snapshot.suno_prompt !== undefined) {
+        newState.styleFields = { ...newState.styleFields, suno_prompt: snapshot.suno_prompt };
+      }
+      if (snapshot.exclude !== undefined) {
+        newState.styleFields = { ...newState.styleFields, exclude: snapshot.exclude };
+      }
+      if (snapshot.weirdness !== undefined) {
+        newState.styleFields = { ...newState.styleFields, weirdness: snapshot.weirdness };
+      }
+
+      // Update lyrics fields if provided
+      if (snapshot.lyrics_text !== undefined) {
+        newState.lyricsFields = { ...newState.lyricsFields, lyrics_text: snapshot.lyrics_text };
+      }
+      if (snapshot.lyrics_title !== undefined) {
+        newState.lyricsFields = { ...newState.lyricsFields, lyrics_title: snapshot.lyrics_title };
+      }
+
+      // Clear dirty flags since server is now source of truth
+      newState.dirty = { style: false, lyrics: false };
+
+      return newState;
+    }
+
     default:
       return state;
   }
 }
-

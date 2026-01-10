@@ -100,11 +100,13 @@ async def unified_refine(
             f"change_request='{request.change_request[:50]}...'"
         )
 
-        # === Auto-save: create new StylePrompt + fork thread if suno_prompt changed ===
+        # === Persist changes to database ===
         saved_prompt_id = None
         saved_thread_id = None
+        updates_persisted = True  # Assume success, set to False on failure
 
         if "suno_prompt" in changed_fields:
+            # Style changed: create NEW StylePrompt + fork LyricsThread
             try:
                 # Resolve user: Spotify session OR device token (create guest if needed)
                 spotify_user_id = get_current_user_id_optional(fastapi_request)
@@ -134,9 +136,9 @@ async def unified_refine(
                 has_refined = any(t.lower() == "refined" for t in auto_tags)
                 if not has_refined:
                     auto_tags.insert(0, "refined")
-                # Derive title from original tags (excluding "refined")
+                # Derive style title from original tags (excluding "refined")
                 title_tags = [t for t in auto_tags if t.lower() != "refined"]
-                title = _derive_title_from_prompt(
+                style_title = _derive_title_from_prompt(
                     updated_snapshot["suno_prompt"], title_tags
                 )
 
@@ -150,7 +152,7 @@ async def unified_refine(
                     exclude=updated_snapshot["exclude"],
                     weirdness=updated_snapshot["weirdness"],
                     style_influence=request.style_influence,
-                    title=title,
+                    title=style_title,
                     is_favorite=False,
                     auto_tags=auto_tags,
                     generation_id=None,  # Refine doesn't have a generation_id
@@ -159,12 +161,25 @@ async def unified_refine(
                 db.flush()  # Get the ID before creating thread
                 saved_prompt_id = prompt.id
 
+                # Use song title for the thread (not style title)
+                # Prefer updated_snapshot["title"] (song title), fall back to previous thread title
+                song_title = updated_snapshot["title"]
+                if not song_title and request.base_thread_id:
+                    # Try to get the previous thread's title
+                    prev_thread = db.query(LyricsThread).filter(
+                        LyricsThread.id == request.base_thread_id
+                    ).first()
+                    if prev_thread:
+                        song_title = prev_thread.title or style_title
+                if not song_title:
+                    song_title = style_title  # Final fallback
+
                 # Fork the LyricsThread if we have a base_thread_id
                 if request.base_thread_id:
                     thread = LyricsThread(
                         style_prompt_id=prompt.id,
                         parent_thread_id=request.base_thread_id,
-                        title=title,  # Same title as the prompt
+                        title=song_title,  # Use song title, not style title
                         lyrics_text=updated_snapshot["lyrics"],
                         source_action="refine_fork",
                     )
@@ -176,7 +191,7 @@ async def unified_refine(
                     thread = LyricsThread(
                         style_prompt_id=prompt.id,
                         parent_thread_id=None,
-                        title=title,
+                        title=song_title,
                         lyrics_text=updated_snapshot["lyrics"],
                         source_action="refine_initial",
                     )
@@ -198,6 +213,58 @@ async def unified_refine(
                 db.rollback()
                 saved_prompt_id = None
                 saved_thread_id = None
+                updates_persisted = False
+
+        else:
+            # Style did NOT change: update existing records in-place
+            try:
+                needs_commit = False
+
+                # Update LyricsThread if lyrics or title changed
+                if request.base_thread_id and (
+                    "lyrics" in changed_fields or "title" in changed_fields
+                ):
+                    thread = db.query(LyricsThread).filter(
+                        LyricsThread.id == request.base_thread_id
+                    ).first()
+                    if thread:
+                        if "lyrics" in changed_fields:
+                            thread.lyrics_text = updated_snapshot["lyrics"]
+                        if "title" in changed_fields:
+                            thread.title = updated_snapshot["title"]
+                        needs_commit = True
+                        logger.info(
+                            "Updated LyricsThread id=%d with changed_fields=%s",
+                            request.base_thread_id,
+                            [f for f in ["lyrics", "title"] if f in changed_fields],
+                        )
+
+                # Update SunoPrompt if exclude or weirdness changed
+                if request.base_prompt_id and (
+                    "exclude" in changed_fields or "weirdness" in changed_fields
+                ):
+                    prompt = db.query(SunoPrompt).filter(
+                        SunoPrompt.id == request.base_prompt_id
+                    ).first()
+                    if prompt:
+                        if "exclude" in changed_fields:
+                            prompt.exclude = updated_snapshot["exclude"]
+                        if "weirdness" in changed_fields:
+                            prompt.weirdness = updated_snapshot["weirdness"]
+                        needs_commit = True
+                        logger.info(
+                            "Updated SunoPrompt id=%d with changed_fields=%s",
+                            request.base_prompt_id,
+                            [f for f in ["exclude", "weirdness"] if f in changed_fields],
+                        )
+
+                if needs_commit:
+                    db.commit()
+
+            except Exception as e:
+                logger.warning("Failed to update existing records: %s", e)
+                db.rollback()
+                updates_persisted = False
 
         return UnifiedRefineResponse(
             suno_prompt=updated_snapshot["suno_prompt"],
@@ -208,6 +275,7 @@ async def unified_refine(
             changed_fields=changed_fields,
             assistant_message=assistant_message,
             debug_info=debug_info,
+            updates_persisted=updates_persisted,
             saved_prompt_id=saved_prompt_id,
             saved_thread_id=saved_thread_id,
         )

@@ -304,6 +304,76 @@ function App() {
     setLibraryRefresh((n) => n + 1);
   };
 
+  // Handle unified refine response (from WorkingPromptPanel)
+  const handleRefineApplied = async (response: api.UnifiedRefineResponse) => {
+    // Check if persistence failed
+    if (!response.updates_persisted) {
+      toast({
+        title: 'Changes not saved',
+        description: 'The refinement was generated but failed to save to the database. Your changes may be lost.',
+        status: 'error',
+        duration: 6000,
+      });
+      // Still update the UI so user can see/copy the generated content
+    }
+
+    if (response.saved_prompt_id && response.saved_thread_id) {
+      // Style changed: navigate to the new style + thread
+      try {
+        const savedPrompt = await api.getSavedPrompt(response.saved_prompt_id);
+        const fullThread = await api.getLyricsThread(response.saved_thread_id);
+
+        dispatch({ type: 'LOAD_STYLE_PROMPT', prompt: savedPrompt });
+        dispatch({ type: 'SELECT_THREAD', thread: fullThread });
+
+        // Refresh sidebar to show new style
+        setLibraryRefresh((n) => n + 1);
+
+        if (response.updates_persisted) {
+          toast({
+            title: 'New style version created',
+            description: 'Your refinement created a new style. The sidebar has been updated.',
+            status: 'info',
+            duration: 4000,
+          });
+        }
+      } catch (err) {
+        console.error('Failed to load refined prompt:', err);
+        toast({
+          title: 'Refinement saved',
+          description: 'Changes were saved but failed to reload. Try refreshing.',
+          status: 'warning',
+          duration: 4000,
+        });
+      }
+    } else {
+      // Style didn't change: update in-place
+      dispatch({
+        type: 'APPLY_REFINE_SNAPSHOT',
+        snapshot: {
+          suno_prompt: response.suno_prompt,
+          lyrics_text: response.lyrics,
+          lyrics_title: response.title,
+          exclude: response.exclude,
+          weirdness: response.weirdness,
+        },
+      });
+
+      if (response.updates_persisted) {
+        const changedStr = response.changed_fields.length > 0
+          ? `Updated: ${response.changed_fields.join(', ')}`
+          : 'No changes detected';
+
+        toast({
+          title: 'Refinement applied',
+          description: response.assistant_message || changedStr,
+          status: response.changed_fields.length > 0 ? 'success' : 'info',
+          duration: 3000,
+        });
+      }
+    }
+  };
+
   return (
     <Box h="100vh" w="100vw" bg="gray.900" display="flex" flexDirection="column" overflow="hidden" position="fixed" top={0} left={0}>
       {/* Floating profile avatar - top right */}
@@ -427,6 +497,7 @@ function App() {
           <WorkingPromptPanel
             state={workingState}
             dispatch={dispatch}
+            onRefineApplied={handleRefineApplied}
           />
         )}
       </Flex>

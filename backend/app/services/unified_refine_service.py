@@ -334,6 +334,21 @@ async def _call_planner(
     model = settings.llm_model
     is_gemini = model in GEMINI_MODELS or model.startswith("gemini-")
 
+    # Build target-aware context
+    target_context = ""
+    if request.refine_target == "style":
+        target_context = """
+IMPORTANT: This is a STYLE-ONLY refinement.
+- You MAY edit: suno_prompt (style), exclude, weirdness
+- You MUST NOT edit: lyrics, title
+- Set edit_lyrics=false, lyrics_change_request=null, title_update=null"""
+    elif request.refine_target == "lyrics":
+        target_context = """
+IMPORTANT: This is a LYRICS-ONLY refinement.
+- You MAY edit: lyrics, title
+- You MUST NOT edit: suno_prompt (style), exclude, weirdness
+- Set edit_style=false, style_change_request=null, exclude_update=null, weirdness_update=null"""
+
     user_message = f"""CURRENT STATE:
 - Title: {request.title}
 - Weirdness: {request.weirdness}
@@ -341,7 +356,7 @@ async def _call_planner(
 - Suno Prompt: {request.suno_prompt}
 - Lyrics:
 {request.lyrics or "(instrumental - no lyrics)"}
-
+{target_context}
 USER REQUEST:
 {request.change_request}"""
 
@@ -362,8 +377,24 @@ USER REQUEST:
 
     # Parse JSON output
     plan = _parse_planner_output(raw_output)
+
+    # Enforce target constraints (in case LLM didn't follow instructions)
+    if request.refine_target == "style":
+        # Force no lyrics/title changes
+        plan.edit_lyrics = False
+        plan.lyrics_change_request = None
+        plan.title_update = None
+    elif request.refine_target == "lyrics":
+        # Force no style/exclude/weirdness changes
+        plan.edit_style = False
+        plan.style_change_request = None
+        plan.exclude_update = None
+        plan.weirdness_update = None
+
     logger.info(
-        f"Planner plan: edit_style={plan.edit_style}, edit_lyrics={plan.edit_lyrics}, exclude_update={plan.exclude_update}, title_update={plan.title_update is not None}, weirdness_update={plan.weirdness_update}"
+        f"Planner plan (target={request.refine_target}): edit_style={plan.edit_style}, "
+        f"edit_lyrics={plan.edit_lyrics}, exclude_update={plan.exclude_update}, "
+        f"title_update={plan.title_update is not None}, weirdness_update={plan.weirdness_update}"
     )
     return plan
 

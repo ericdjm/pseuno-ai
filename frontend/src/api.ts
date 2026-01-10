@@ -246,6 +246,8 @@ export interface UnifiedRefineRequest {
   base_prompt_id?: number;
   base_thread_id?: number;
   change_request: string;
+  // Target for refinement: 'style' creates new StylePrompt, 'lyrics' updates in-place
+  refine_target?: 'style' | 'lyrics';
 }
 
 export interface UnifiedRefineResponse {
@@ -257,6 +259,8 @@ export interface UnifiedRefineResponse {
   changed_fields: string[];
   assistant_message: string | null;
   debug_info: DebugTrace | null;
+  // Whether changes were successfully persisted to the database
+  updates_persisted: boolean;
   // Saved IDs (only present if suno_prompt changed and auto-save succeeded)
   saved_prompt_id?: number;
   saved_thread_id?: number;
