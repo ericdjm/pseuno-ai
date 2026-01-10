@@ -25,11 +25,14 @@ import {
   Button,
   Tooltip,
   Input,
-  Tabs,
-  TabList,
-  Tab,
+  AlertDialog,
+  AlertDialogBody,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogOverlay,
 } from '@chakra-ui/react';
-import { CopyIcon, ChevronRightIcon, ChevronDownIcon, ExternalLinkIcon, EditIcon, AddIcon } from '@chakra-ui/icons';
+import { CopyIcon, ChevronRightIcon, ChevronDownIcon, ExternalLinkIcon, EditIcon, AddIcon, DeleteIcon } from '@chakra-ui/icons';
 import { LuSparkles } from 'react-icons/lu';
 import type { WorkingState, WorkingAction } from '../types/workingState';
 import { 
@@ -37,28 +40,38 @@ import {
   refineAll, 
   UnifiedRefineResponse, 
   getPromptThreads, 
-  createLyricsThread,
   LyricsThreadSummary,
   getLyricsThread,
+  deleteLyricsThread,
+  updateSavedPrompt,
 } from '../api';
 
 interface WorkingPromptPanelProps {
   state: WorkingState;
   dispatch: React.Dispatch<WorkingAction>;
   onRefineApplied?: (response: UnifiedRefineResponse) => Promise<void>;
+  onRequestNewLyricsVariation?: (stylePromptId: number) => void;
+  onThreadUpdated?: () => void;
+  refreshKey?: number;
 }
 
 export default function WorkingPromptPanel({
   state,
   dispatch,
   onRefineApplied,
+  onRequestNewLyricsVariation,
+  onThreadUpdated,
+  refreshKey,
 }: WorkingPromptPanelProps) {
   const toast = useToast();
 
   // All threads for this StylePrompt
   const [threads, setThreads] = useState<LyricsThreadSummary[]>([]);
   const [loadingThreads, setLoadingThreads] = useState(false);
-  const [creatingThread, setCreatingThread] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deletingThread, setDeletingThread] = useState(false);
+  const [threadToDelete, setThreadToDelete] = useState<{ id: number; title: string } | null>(null);
+  const cancelDeleteRef = useRef<HTMLButtonElement>(null);
 
   // Collapsible sections
   const [styleExpanded, setStyleExpanded] = useState(false);
@@ -79,6 +92,16 @@ export default function WorkingPromptPanel({
   // Lyrics save debounce
   const [savingLyrics, setSavingLyrics] = useState(false);
   const lyricsSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Song renaming state
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
+  const renameInputRef = useRef<HTMLInputElement>(null);
+
+  // Style renaming state
+  const [isRenamingStyle, setIsRenamingStyle] = useState(false);
+  const [styleRenameValue, setStyleRenameValue] = useState('');
+  const styleRenameInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch all threads when stylePromptId changes
   useEffect(() => {
@@ -101,7 +124,7 @@ export default function WorkingPromptPanel({
     };
 
     fetchThreads();
-  }, [state.stylePromptId]);
+  }, [state.stylePromptId, state.lyricsThreadId, refreshKey]);
 
   // Reset refine/edit state when navigating to a different prompt
   useEffect(() => {
@@ -125,7 +148,9 @@ export default function WorkingPromptPanel({
   const handleTabChange = async (index: number) => {
     // If clicking "+ New" tab (last tab), create a new thread
     if (index === threads.length) {
-      await handleCreateNewSong();
+      if (state.stylePromptId && onRequestNewLyricsVariation) {
+        onRequestNewLyricsVariation(state.stylePromptId);
+      }
       return;
     }
 
@@ -146,36 +171,134 @@ export default function WorkingPromptPanel({
     }
   };
 
-  // Create a new song variation
-  const handleCreateNewSong = async () => {
-    if (!state.stylePromptId) return;
+  const openDeleteDialog = (threadId: number, title: string) => {
+    setThreadToDelete({ id: threadId, title });
+    setDeleteDialogOpen(true);
+  };
 
-    setCreatingThread(true);
+  const handleConfirmDeleteSong = async () => {
+    if (!threadToDelete) return;
+    const deletingId = threadToDelete.id;
+    const wasSelected = deletingId === state.lyricsThreadId;
+
+    setDeletingThread(true);
     try {
-      const newThread = await createLyricsThread({
-        style_prompt_id: state.stylePromptId,
-        title: 'New Song',
-        seed_from_thread_id: state.lyricsThreadId ?? undefined,
-      });
+      await deleteLyricsThread(deletingId);
 
-      // Add to threads list and select it
-      setThreads(prev => [newThread, ...prev]);
-      dispatch({ type: 'SELECT_THREAD', thread: newThread });
+      const prevThreads = threads;
+      const deletedIndex = prevThreads.findIndex((t) => t.id === deletingId);
+      const nextThreads = prevThreads.filter((t) => t.id !== deletingId);
+      setThreads(nextThreads);
+
+      // If we deleted the selected thread, pick a neighbor; if none, clear selection (style remains).
+      if (wasSelected) {
+        if (nextThreads.length === 0) {
+          dispatch({ type: 'CLEAR_THREAD' });
+          if (state.stylePromptId && onRequestNewLyricsVariation) {
+            onRequestNewLyricsVariation(state.stylePromptId);
+          }
+        } else {
+          const candidateIndex = Math.max(0, Math.min(deletedIndex - 1, nextThreads.length - 1));
+          const candidate = nextThreads[candidateIndex];
+          const fullThread = await getLyricsThread(candidate.id);
+          dispatch({ type: 'SELECT_THREAD', thread: fullThread });
+        }
+      }
 
       toast({
-        title: 'New song created',
+        title: 'Song deleted',
         status: 'success',
         duration: 2000,
       });
     } catch (err) {
-      console.error('Failed to create new song:', err);
+      console.error('Failed to delete song:', err);
       toast({
-        title: 'Failed to create new song',
+        title: 'Failed to delete song',
+        status: 'error',
+        duration: 2500,
+      });
+    } finally {
+      setDeletingThread(false);
+      setDeleteDialogOpen(false);
+      setThreadToDelete(null);
+    }
+  };
+
+  // Start renaming the current song
+  const handleStartRename = () => {
+    setRenameValue(state.lyricsFields.lyrics_title || '');
+    setIsRenaming(true);
+    setTimeout(() => renameInputRef.current?.focus(), 50);
+  };
+
+  // Save renamed song title
+  const handleSaveRename = async () => {
+    if (!state.lyricsThreadId) return;
+    const trimmed = renameValue.trim();
+    if (!trimmed || trimmed === state.lyricsFields.lyrics_title) {
+      setIsRenaming(false);
+      return;
+    }
+
+    try {
+      const updated = await updateLyricsThread(state.lyricsThreadId, { title: trimmed });
+      dispatch({ type: 'SAVE_THREAD_SUCCESS', thread: updated });
+      // Update threads list
+      setThreads((prev) => prev.map((t) => (t.id === updated.id ? { ...t, title: updated.title } : t)));
+      // Notify parent to refresh sidebar
+      onThreadUpdated?.();
+      toast({
+        title: 'Song renamed',
+        status: 'success',
+        duration: 1500,
+      });
+    } catch (err) {
+      console.error('Failed to rename song:', err);
+      toast({
+        title: 'Failed to rename song',
         status: 'error',
         duration: 2000,
       });
     } finally {
-      setCreatingThread(false);
+      setIsRenaming(false);
+    }
+  };
+
+  // Start renaming the style
+  const handleStartStyleRename = () => {
+    setStyleRenameValue(state.styleFields.title || '');
+    setIsRenamingStyle(true);
+    setTimeout(() => styleRenameInputRef.current?.focus(), 50);
+  };
+
+  // Save renamed style title
+  const handleSaveStyleRename = async () => {
+    if (!state.stylePromptId) return;
+    const trimmed = styleRenameValue.trim();
+    if (!trimmed || trimmed === state.styleFields.title) {
+      setIsRenamingStyle(false);
+      return;
+    }
+
+    try {
+      await updateSavedPrompt(state.stylePromptId, { title: trimmed });
+      dispatch({ type: 'EDIT_STYLE_FIELD', field: 'title', value: trimmed });
+      // Notify parent to refresh sidebar
+      onThreadUpdated?.();
+      toast({
+        title: 'Style renamed',
+        status: 'success',
+        duration: 1500,
+      });
+    } catch (err) {
+      console.error('Failed to rename style:', err);
+      toast({
+        title: 'Failed to rename style',
+        status: 'error',
+        duration: 2000,
+      });
+    } finally {
+      setIsRenamingStyle(false);
     }
   };
 
@@ -357,9 +480,6 @@ export default function WorkingPromptPanel({
     });
   };
 
-  // Find current tab index
-  const currentTabIndex = threads.findIndex(t => t.id === state.lyricsThreadId);
-
   // If no prompt loaded, show empty state
   if (!state.stylePromptId && state.mode === 'new') {
     return (
@@ -373,14 +493,49 @@ export default function WorkingPromptPanel({
   }
 
   return (
-    <Box flex={1} overflow="auto" bg="gray.900" py={6} pt={14} px={4} minW={0}>
-      <Box maxW={{ base: '600px', lg: '560px' }} w="100%" mx="auto">
+    <Box flex={1} overflow="auto" bg="gray.900" py={6} pt="10vh" px={4} minW={0} display="flex" alignItems="flex-start" justifyContent="center">
+      <Box maxW="560px" w="100%">
         <VStack spacing={4} align="stretch">
           {/* === STYLE HEADER === */}
           <HStack justify="space-between" align="center">
-            <Text fontWeight="semibold" fontSize="xl">
-              {state.styleFields.title || 'Untitled Style'}
-            </Text>
+            {isRenamingStyle ? (
+              <Input
+                ref={styleRenameInputRef}
+                value={styleRenameValue}
+                onChange={(e) => setStyleRenameValue(e.target.value)}
+                size="md"
+                fontWeight="semibold"
+                fontSize="xl"
+                variant="flushed"
+                borderColor="purple.400"
+                _focus={{ borderColor: 'purple.400', boxShadow: 'none' }}
+                maxW="400px"
+                spellCheck={false}
+                onBlur={handleSaveStyleRename}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleSaveStyleRename();
+                  }
+                  if (e.key === 'Escape') {
+                    setIsRenamingStyle(false);
+                  }
+                }}
+              />
+            ) : (
+              <Tooltip label="Double-click to rename" placement="top" hasArrow>
+                <Text
+                  fontWeight="semibold"
+                  fontSize="xl"
+                  cursor="text"
+                  onDoubleClick={handleStartStyleRename}
+                  _hover={{ color: 'gray.300' }}
+                  transition="color 0.1s"
+                >
+                  {state.styleFields.title || 'Untitled Style'}
+                </Text>
+              </Tooltip>
+            )}
             <Link
               href={buildSunoUrl()}
               isExternal
@@ -592,85 +747,127 @@ export default function WorkingPromptPanel({
                 <Text fontSize="sm" color="gray.500">Loading songs...</Text>
               </HStack>
             ) : threads.length === 0 ? (
-              <Text fontSize="sm" color="gray.500" py={2}>No songs yet</Text>
-            ) : (
-              <Tabs 
-                index={currentTabIndex >= 0 ? currentTabIndex : 0} 
-                onChange={handleTabChange}
-                variant="unstyled"
-                size="sm"
-              >
-                <TabList 
-                  overflowX="auto" 
-                  overflowY="hidden"
-                  borderBottom="1px solid"
-                  borderColor="gray.700"
-                  css={{
-                    '&::-webkit-scrollbar': { height: '4px' },
-                    '&::-webkit-scrollbar-thumb': { background: '#4A5568', borderRadius: '2px' },
+              <VStack align="stretch" spacing={3} py={3}>
+                <Text fontSize="sm" color="gray.500">No lyrics yet for this style.</Text>
+                <Button
+                  size="sm"
+                  bg="gray.800"
+                  color="gray.200"
+                  _hover={{ bg: 'gray.700' }}
+                  alignSelf="flex-start"
+                  leftIcon={<AddIcon />}
+                  onClick={() => {
+                    if (state.stylePromptId && onRequestNewLyricsVariation) {
+                      onRequestNewLyricsVariation(state.stylePromptId);
+                    }
                   }}
                 >
-                  {threads.map((thread, idx) => (
-                    <Tab
+                  New lyrics
+                </Button>
+              </VStack>
+            ) : (
+              <HStack 
+                spacing={0}
+                overflowX="auto" 
+                overflowY="hidden"
+                borderBottom="1px solid"
+                borderColor="gray.700"
+                css={{
+                  '&::-webkit-scrollbar': { height: '4px' },
+                  '&::-webkit-scrollbar-thumb': { background: '#4A5568', borderRadius: '2px' },
+                }}
+              >
+                {threads.map((thread, idx) => {
+                  const isSelected = thread.id === state.lyricsThreadId;
+                  return (
+                    <HStack
                       key={thread.id}
-                      fontSize="xs"
-                      px={4}
+                      px={3}
                       py={2}
+                      spacing={1}
+                      cursor="pointer"
+                      fontSize="sm"
                       whiteSpace="nowrap"
-                      color="gray.500"
-                      bg="transparent"
+                      color={isSelected ? 'white' : 'gray.500'}
+                      bg={isSelected ? 'gray.800' : 'transparent'}
                       borderTopRadius="md"
                       borderBottom="2px solid"
-                      borderColor="transparent"
+                      borderColor={isSelected ? 'purple.500' : 'transparent'}
                       mb="-1px"
-                      _selected={{ 
-                        color: 'white',
-                        bg: 'gray.800',
-                        borderColor: 'purple.500',
-                      }}
                       _hover={{ 
-                        color: 'gray.300',
-                        bg: 'whiteAlpha.50',
+                        color: isSelected ? 'white' : 'gray.300',
+                        bg: isSelected ? 'gray.800' : 'whiteAlpha.50',
                       }}
                       transition="all 0.15s"
+                      onClick={() => handleTabChange(idx)}
                     >
-                      {thread.title || `Song ${idx + 1}`}
-                    </Tab>
-                  ))}
-                  {/* "+ New" button */}
-                  <Tab
-                    fontSize="xs"
+                      <Text>{thread.title || `Song ${idx + 1}`}</Text>
+                    </HStack>
+                  );
+                })}
+                {/* "+ New" button */}
+                <Tooltip label="New lyrics variation" placement="top" hasArrow>
+                  <Box
                     px={2}
                     py={2}
+                    cursor="pointer"
                     color="gray.600"
-                    bg="transparent"
-                    borderBottom="2px solid transparent"
-                    mb="-1px"
                     _hover={{ color: 'gray.400' }}
-                    isDisabled={creatingThread}
+                    transition="all 0.15s"
+                    onClick={() => handleTabChange(threads.length)}
                   >
-                    {creatingThread ? (
-                      <Spinner size="xs" />
-                    ) : (
-                      <Tooltip label="New song variation" placement="top" hasArrow>
-                        <span><AddIcon boxSize={3} /></span>
-                      </Tooltip>
-                    )}
-                  </Tab>
-                </TabList>
-              </Tabs>
+                    <AddIcon boxSize={3} />
+                  </Box>
+                </Tooltip>
+              </HStack>
             )}
           </Box>
 
           {/* === SONG CONTENT === */}
           {state.lyricsThreadId && (
-            <Box>
-              {/* Song Title */}
+            <Box px={3} pt={3}>
+              {/* Song Title Row */}
               <HStack justify="space-between" align="center" mb={3}>
-                <HStack spacing={2}>
-                  <Text fontWeight="medium" fontSize="md">
-                    {state.lyricsFields.lyrics_title || 'Untitled Song'}
-                  </Text>
+                <HStack spacing={2} flex={1}>
+                  {isRenaming ? (
+                    <Input
+                      ref={renameInputRef}
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      size="md"
+                      fontWeight="medium"
+                      fontSize="md"
+                      variant="flushed"
+                      borderColor="purple.400"
+                      _focus={{ borderColor: 'purple.400', boxShadow: 'none' }}
+                      maxW="300px"
+                      spellCheck={false}
+                      onBlur={handleSaveRename}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleSaveRename();
+                        }
+                        if (e.key === 'Escape') {
+                          setIsRenaming(false);
+                        }
+                      }}
+                    />
+                  ) : (
+                    <Tooltip label="Double-click to rename" placement="top" hasArrow>
+                      <Text
+                        fontWeight="medium"
+                        fontSize="md"
+                        cursor="text"
+                        onDoubleClick={handleStartRename}
+                        _hover={{ color: 'gray.300' }}
+                        transition="color 0.1s"
+                      >
+                        {state.lyricsFields.lyrics_title || 'Untitled Song'}
+                      </Text>
+                    </Tooltip>
+                  )}
+                  {/* Copy title button - next to title */}
                   <IconButton
                     aria-label="Copy title"
                     icon={<CopyIcon />}
@@ -693,8 +890,8 @@ export default function WorkingPromptPanel({
                     <Badge colorScheme="yellow" fontSize="2xs">unsaved</Badge>
                   )}
                 </HStack>
-                <HStack spacing={3}>
-                  {/* Edit Lyrics button */}
+                <HStack spacing={2}>
+                  {/* Edit Lyrics button with text */}
                   <Tooltip label="Edit lyrics with AI (updates in-place)" placement="top" hasArrow>
                     <HStack
                       spacing={1}
@@ -718,15 +915,25 @@ export default function WorkingPromptPanel({
                       </Text>
                     </HStack>
                   </Tooltip>
-                  <IconButton
-                    aria-label="Copy lyrics"
-                    icon={<CopyIcon />}
-                    size="xs"
-                    variant="ghost"
-                    color="gray.500"
-                    _hover={{ color: 'white' }}
-                    onClick={() => copyToClipboard(state.lyricsFields.lyrics_text, 'Lyrics')}
-                  />
+                  {/* Delete song button */}
+                  <Tooltip label="Delete this song" placement="top" hasArrow>
+                    <IconButton
+                      aria-label="Delete song"
+                      icon={<DeleteIcon />}
+                      size="xs"
+                      variant="ghost"
+                      color="gray.600"
+                      _hover={{ color: 'red.400', bg: 'whiteAlpha.100' }}
+                      onClick={() => {
+                        if (state.lyricsThreadId) {
+                          openDeleteDialog(
+                            state.lyricsThreadId,
+                            state.lyricsFields.lyrics_title || 'this song'
+                          );
+                        }
+                      }}
+                    />
+                  </Tooltip>
                 </HStack>
               </HStack>
 
@@ -790,19 +997,84 @@ export default function WorkingPromptPanel({
                 </Box>
               </Collapse>
 
-              {/* Lyrics Textarea */}
-              <Textarea
-                value={state.lyricsFields.lyrics_text}
-                onChange={(e) => handleLyricsChange(e.target.value)}
-                bg="gray.800"
-                fontFamily="monospace"
-                fontSize="sm"
-                rows={12}
-                resize="vertical"
-                placeholder="(No lyrics - instrumental or not generated yet)"
-              />
+              {/* Lyrics Textarea with copy button */}
+              <Box position="relative">
+                <Textarea
+                  value={state.lyricsFields.lyrics_text}
+                  onChange={(e) => handleLyricsChange(e.target.value)}
+                  bg="gray.800"
+                  fontFamily="monospace"
+                  fontSize="sm"
+                  minH="calc(60vh - 100px)"
+                  resize="vertical"
+                  placeholder="(No lyrics - instrumental or not generated yet)"
+                  pr={10}
+                />
+                {/* Copy lyrics button - top right of textarea */}
+                <Tooltip label="Copy lyrics" placement="left" hasArrow>
+                  <IconButton
+                    aria-label="Copy lyrics"
+                    icon={<CopyIcon />}
+                    size="xs"
+                    variant="ghost"
+                    color="gray.500"
+                    _hover={{ color: 'white', bg: 'gray.700' }}
+                    position="absolute"
+                    top={2}
+                    right={2}
+                    onClick={() => copyToClipboard(state.lyricsFields.lyrics_text, 'Lyrics')}
+                  />
+                </Tooltip>
+              </Box>
             </Box>
           )}
+
+          {/* Delete song confirmation dialog */}
+          <AlertDialog
+            isOpen={deleteDialogOpen}
+            leastDestructiveRef={cancelDeleteRef}
+            onClose={() => {
+              if (deletingThread) return;
+              setDeleteDialogOpen(false);
+              setThreadToDelete(null);
+            }}
+            isCentered
+          >
+            <AlertDialogOverlay
+              bg="rgba(0,0,0,0.55)"
+              backdropFilter="blur(6px)"
+              display="flex"
+              alignItems="center"
+              justifyContent="center"
+            >
+              <AlertDialogContent bg="gray.800" borderColor="gray.600" margin="0">
+                <AlertDialogHeader fontSize="lg" fontWeight="bold" color="white">
+                  Delete song?
+                </AlertDialogHeader>
+                <AlertDialogBody color="gray.300">
+                  This will permanently delete{' '}
+                  <Text as="span" fontWeight="semibold" color="white">
+                    {threadToDelete?.title || 'this song'}
+                  </Text>
+                  . This can’t be undone.
+                </AlertDialogBody>
+                <AlertDialogFooter>
+                  <Button ref={cancelDeleteRef} onClick={() => setDeleteDialogOpen(false)} variant="ghost" color="gray.300">
+                    Cancel
+                  </Button>
+                  <Button
+                    ml={3}
+                    colorScheme="red"
+                    onClick={handleConfirmDeleteSong}
+                    isLoading={deletingThread}
+                    loadingText="Deleting..."
+                  >
+                    Delete
+                  </Button>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialogOverlay>
+          </AlertDialog>
         </VStack>
       </Box>
     </Box>

@@ -539,7 +539,7 @@ export default function NewSongView({
 
   return (
     <Box flex={1} overflow="auto" bg="gray.900" py={3} pt={14} px={4} minW={0} display="flex" alignItems="center" justifyContent="center">
-      <Box maxW={{ base: '600px', lg: '560px' }} w="100%">
+      <Box maxW="560px" w="100%">
         <VStack spacing={0} align="stretch">
           
           {/* View title */}

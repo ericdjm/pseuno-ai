@@ -70,6 +70,7 @@ function App() {
   const [newLyricsForStyleId, setNewLyricsForStyleId] = useState<number | null>(null);
 
   // Sidebar visibility - auto-hide on small screens
+  // Sidebar is 280px, content needs ~560px min, hide at md (768px) for more breathing room
   const isLargeScreen = useBreakpointValue({ base: false, md: true });
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [userToggledSidebar, setUserToggledSidebar] = useState(false);
@@ -197,13 +198,24 @@ function App() {
         const savedPrompt = await api.getSavedPrompt(result.prompt_id);
         // Get the threads (should have one initial thread)
         const threads = await api.getPromptThreads(result.prompt_id);
-        const thread = threads.length > 0 ? threads[0] : null;
+        const threadSummary = threads.length > 0 ? threads[0] : null;
+
+        // Fetch full thread to get lyrics_text (source of truth)
+        let fullThread: api.LyricsThread | null = null;
+        if (threadSummary) {
+          try {
+            fullThread = await api.getLyricsThread(threadSummary.id);
+          } catch (err) {
+            console.error('Failed to fetch full thread:', err);
+          }
+        }
 
         dispatch({
           type: 'SET_GENERATED',
           prompt: savedPrompt,
-          threadId: thread?.id ?? null,
-          threadTitle: thread?.title,
+          threadId: fullThread?.id ?? threadSummary?.id ?? null,
+          threadTitle: fullThread?.title ?? threadSummary?.title,
+          lyricsText: fullThread?.lyrics_text,
         });
       } catch (err) {
         console.error('Failed to load generated prompt:', err);
@@ -248,10 +260,9 @@ function App() {
     threads: api.LyricsThreadSummary[]
   ) => {
     dispatch({ type: 'LOAD_STYLE_PROMPT', prompt });
-    setRightPaneMode('song_view');
-
     // Auto-select the most recent thread if available
     if (threads.length > 0) {
+      setRightPaneMode('song_view');
       const mostRecent = threads[0]; // Already sorted by updated_at desc
       try {
         const fullThread = await api.getLyricsThread(mostRecent.id);
@@ -259,6 +270,10 @@ function App() {
       } catch (err) {
         console.error('Failed to load thread:', err);
       }
+    } else {
+      // No songs for this style yet → default to New Lyrics for this style
+      setNewLyricsForStyleId(prompt.id);
+      setRightPaneMode('new_lyrics_for_style');
     }
   };
 
@@ -465,6 +480,15 @@ function App() {
             onCloseSidebar={() => handleToggleSidebar(false)}
             authStatus={authStatus}
             onLogin={handleLogin}
+            onThreadRenamed={(threadId, newTitle) => {
+              // If the renamed thread is currently active, update the WorkingState
+              if (workingState.lyricsThreadId === threadId) {
+                dispatch({ type: 'EDIT_LYRICS_TITLE', value: newTitle });
+                dispatch({ type: 'MARK_CLEAN', which: 'lyrics' });
+              }
+              // Trigger refresh of WorkingPromptPanel's threads
+              setLibraryRefresh((n) => n + 1);
+            }}
           />
         )}
 
@@ -498,6 +522,15 @@ function App() {
             state={workingState}
             dispatch={dispatch}
             onRefineApplied={handleRefineApplied}
+            onRequestNewLyricsVariation={(stylePromptId) => {
+              setNewLyricsForStyleId(stylePromptId);
+              setRightPaneMode('new_lyrics_for_style');
+            }}
+            onThreadUpdated={() => {
+              // Refresh sidebar when a thread is renamed/updated from the right pane
+              setLibraryRefresh((n) => n + 1);
+            }}
+            refreshKey={libraryRefresh}
           />
         )}
       </Flex>

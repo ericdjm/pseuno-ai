@@ -31,6 +31,7 @@ import {
   AlertDialogContent,
   AlertDialogOverlay,
   Button,
+  Tooltip,
 } from '@chakra-ui/react';
 import {
   ChevronDownIcon,
@@ -52,6 +53,8 @@ import {
   getPromptThreads,
   updateSavedPrompt,
   deleteSavedPrompt,
+  deleteLyricsThread,
+  updateLyricsThread,
 } from '../api';
 
 interface PromptLibrarySidebarProps {
@@ -65,6 +68,7 @@ interface PromptLibrarySidebarProps {
   onCloseSidebar: () => void;
   authStatus: AuthStatus;
   onLogin: () => void;
+  onThreadRenamed?: (threadId: number, newTitle: string) => void;
 }
 
 export default function PromptLibrarySidebar({
@@ -78,6 +82,7 @@ export default function PromptLibrarySidebar({
   onCloseSidebar,
   authStatus,
   onLogin,
+  onThreadRenamed,
 }: PromptLibrarySidebarProps) {
   const toast = useToast();
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -99,12 +104,19 @@ export default function PromptLibrarySidebar({
   const [togglingFavoriteId, setTogglingFavoriteId] = useState<number | null>(null);
   // Deleting prompt
   const [deletingPromptId, setDeletingPromptId] = useState<number | null>(null);
-  // Delete confirmation
+  // Delete confirmation for prompts
   const [promptToDelete, setPromptToDelete] = useState<SavedSunoPrompt | null>(null);
   const cancelDeleteRef = useRef<HTMLButtonElement>(null);
+  // Delete confirmation for threads (songs)
+  const [threadToDelete, setThreadToDelete] = useState<{ thread: LyricsThreadSummary; promptId: number } | null>(null);
+  const [deletingThreadId, setDeletingThreadId] = useState<number | null>(null);
+  const cancelThreadDeleteRef = useRef<HTMLButtonElement>(null);
   // Renaming prompt - track both ID and section to avoid duplicates
   const [renamingKey, setRenamingKey] = useState<string | null>(null); // "fav-123" or "all-123"
   const [renameValue, setRenameValue] = useState('');
+  // Renaming thread (song)
+  const [renamingThreadId, setRenamingThreadId] = useState<number | null>(null);
+  const [threadRenameValue, setThreadRenameValue] = useState('');
   // Your songs section collapsed state
   const [yourSongsOpen, setYourSongsOpen] = useState(true);
 
@@ -137,9 +149,24 @@ export default function PromptLibrarySidebar({
     }
   }, [toast]);
 
+  // Re-fetch prompts and threads when refresh is triggered
   useEffect(() => {
     fetchPrompts();
   }, [fetchPrompts, refreshTrigger]);
+
+  // Re-fetch threads for expanded prompts when refresh is triggered
+  useEffect(() => {
+    if (refreshTrigger === 0) return; // Skip initial mount
+    expandedPromptIds.forEach(async (promptId) => {
+      try {
+        const threads = await getPromptThreads(promptId);
+        setThreadsCache((prev) => ({ ...prev, [promptId]: threads }));
+      } catch (err) {
+        console.error('Failed to refresh threads:', err);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshTrigger]);
 
   // Focus search input when opened
   useEffect(() => {
@@ -300,6 +327,85 @@ export default function PromptLibrarySidebar({
     }
   };
 
+  // Actually delete thread (song)
+  const handleConfirmThreadDelete = async () => {
+    if (!threadToDelete) return;
+    const { thread, promptId } = threadToDelete;
+    setDeletingThreadId(thread.id);
+    try {
+      await deleteLyricsThread(thread.id);
+      // Remove thread from threadsCache
+      setThreadsCache((prev) => {
+        const currentThreads = prev[promptId] || [];
+        return {
+          ...prev,
+          [promptId]: currentThreads.filter((t) => t.id !== thread.id),
+        };
+      });
+      toast({
+        title: 'Song deleted',
+        status: 'success',
+        duration: 2000,
+      });
+    } catch (err) {
+      console.error('Failed to delete song:', err);
+      toast({
+        title: 'Failed to delete song',
+        status: 'error',
+        duration: 2000,
+      });
+    } finally {
+      setDeletingThreadId(null);
+      setThreadToDelete(null);
+    }
+  };
+
+  // Start renaming a thread (song)
+  const handleStartThreadRename = (e: React.MouseEvent, thread: LyricsThreadSummary) => {
+    e.stopPropagation();
+    setRenamingThreadId(thread.id);
+    setThreadRenameValue(thread.title || '');
+  };
+
+  // Save thread (song) rename
+  const handleSaveThreadRename = async (thread: LyricsThreadSummary, promptId: number) => {
+    const trimmed = threadRenameValue.trim();
+    if (!trimmed || trimmed === thread.title) {
+      setRenamingThreadId(null);
+      return;
+    }
+
+    try {
+      await updateLyricsThread(thread.id, { title: trimmed });
+      // Update threadsCache
+      setThreadsCache((prev) => {
+        const currentThreads = prev[promptId] || [];
+        return {
+          ...prev,
+          [promptId]: currentThreads.map((t) =>
+            t.id === thread.id ? { ...t, title: trimmed } : t
+          ),
+        };
+      });
+      // Notify parent to update WorkingState if this thread is active
+      onThreadRenamed?.(thread.id, trimmed);
+      toast({
+        title: 'Song renamed',
+        status: 'success',
+        duration: 1500,
+      });
+    } catch (err) {
+      console.error('Failed to rename song:', err);
+      toast({
+        title: 'Failed to rename song',
+        status: 'error',
+        duration: 2000,
+      });
+    } finally {
+      setRenamingThreadId(null);
+    }
+  };
+
   // Start renaming
   const handleStartRename = (e: React.MouseEvent, prompt: SavedSunoPrompt, section: 'fav' | 'all') => {
     e.stopPropagation();
@@ -347,37 +453,15 @@ export default function PromptLibrarySidebar({
           py={1.5}
           px={3}
           cursor={isRenaming ? 'default' : 'pointer'}
-          bg={isActive ? 'gray.700' : 'transparent'}
-          _hover={{ bg: 'gray.600' }}
+          bg={isActive ? 'whiteAlpha.100' : 'transparent'}
+          _hover={{ bg: isActive ? 'whiteAlpha.100' : 'whiteAlpha.50' }}
           borderRadius="md"
+          borderLeft="2px solid"
+          borderLeftColor={isActive ? 'purple.400' : 'transparent'}
           onClick={() => !isRenaming && handleSelectPrompt(prompt)}
           spacing={0}
+          transition="all 0.1s"
         >
-          {/* Chevron - appears on hover */}
-          <Box
-            w={0}
-            overflow="visible"
-            _groupHover={{ w: '16px' }}
-            transition="width 0.1s"
-            flexShrink={0}
-            display="flex"
-            alignItems="center"
-          >
-            <Box
-              color="gray.500"
-              cursor="pointer"
-              opacity={0}
-              _groupHover={{ opacity: 1 }}
-              _hover={{ color: 'gray.300' }}
-              transition="opacity 0.1s"
-              onClick={(e: React.MouseEvent) => {
-                e.stopPropagation();
-                if (!isRenaming) handleToggleExpand(prompt);
-              }}
-            >
-              {isExpanded ? <ChevronDownIcon boxSize={3} /> : <ChevronRightIcon boxSize={3} />}
-            </Box>
-          </Box>
           {isRenaming ? (
             <Box flex={1} minW={0} onClick={(e) => e.stopPropagation()}>
               <Input
@@ -398,16 +482,20 @@ export default function PromptLibrarySidebar({
               />
             </Box>
           ) : (
-            <Text
-              fontSize="sm"
-              flex={1}
-              minW={0}
-              overflow="hidden"
-              textOverflow="ellipsis"
-              whiteSpace="nowrap"
-            >
-              {prompt.title || 'Untitled'}
-            </Text>
+            <Tooltip label="Double-click to rename" placement="right" hasArrow openDelay={500}>
+              <Text
+                fontSize="sm"
+                flex={1}
+                minW={0}
+                overflow="hidden"
+                textOverflow="ellipsis"
+                whiteSpace="nowrap"
+                cursor="text"
+                onDoubleClick={(e) => handleStartRename(e, prompt, section)}
+              >
+                {prompt.title || 'Untitled'}
+              </Text>
+            </Tooltip>
           )}
           {/* Right side: Pin icon (visible if pinned) / Menu (on hover) - always rendered for consistent spacing */}
           <Box
@@ -450,6 +538,18 @@ export default function PromptLibrarySidebar({
                     aria-label="Options"
                   />
                   <MenuList bg="gray.700" borderColor="gray.600" minW="150px">
+                    <MenuItem
+                      icon={<ChevronRightIcon boxSize={3} color="gray.400" />}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSelectPrompt(prompt);
+                      }}
+                      bg="gray.700"
+                      _hover={{ bg: 'gray.600' }}
+                      fontSize="sm"
+                    >
+                      Open
+                    </MenuItem>
                     <MenuItem
                       icon={<AddIcon boxSize={3} color="gray.400" />}
                       onClick={(e) => {
@@ -535,23 +635,110 @@ export default function PromptLibrarySidebar({
               <VStack spacing={0} align="stretch">
                 {threads.map((thread) => {
                   const isThreadActive = activeThreadId === thread.id;
+                  const isThreadRenaming = renamingThreadId === thread.id;
                   return (
                     <HStack
                       key={thread.id}
+                      role="group"
                       py={1}
                       px={2}
-                      bg={isThreadActive ? 'gray.600' : 'transparent'}
-                      borderRadius="sm"
+                      bg={isThreadActive ? 'whiteAlpha.100' : 'transparent'}
+                      borderRadius="md"
+                      borderLeft="2px solid"
+                      borderLeftColor={isThreadActive ? 'purple.400' : 'transparent'}
                       cursor="pointer"
-                      _hover={{ bg: isThreadActive ? 'gray.600' : 'gray.700' }}
+                      _hover={{ bg: isThreadActive ? 'whiteAlpha.100' : 'whiteAlpha.50' }}
+                      transition="all 0.1s"
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleSelectThread(prompt, thread);
+                        if (!isThreadRenaming) {
+                          handleSelectThread(prompt, thread);
+                        }
                       }}
                     >
-                      <Text fontSize="xs" flex={1} noOfLines={1} color={isThreadActive ? 'white' : 'gray.400'}>
-                        {thread.title || 'Untitled Song'}
-                      </Text>
+                      {isThreadRenaming ? (
+                        <Input
+                          value={threadRenameValue}
+                          onChange={(e) => setThreadRenameValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveThreadRename(thread, prompt.id);
+                            if (e.key === 'Escape') setRenamingThreadId(null);
+                          }}
+                          onBlur={() => handleSaveThreadRename(thread, prompt.id)}
+                          autoFocus
+                          variant="unstyled"
+                          bg="transparent"
+                          fontSize="xs"
+                          px={0}
+                          flex={1}
+                          color="white"
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      ) : (
+                        <Tooltip label="Double-click to rename" placement="right" hasArrow openDelay={500}>
+                          <Text 
+                            fontSize="xs" 
+                            flex={1} 
+                            noOfLines={1} 
+                            color={isThreadActive ? 'white' : 'gray.400'}
+                            cursor="text"
+                            onDoubleClick={(e) => handleStartThreadRename(e, thread)}
+                          >
+                            {thread.title || 'Untitled Song'}
+                          </Text>
+                        </Tooltip>
+                      )}
+                      {/* Three-dots menu for thread actions */}
+                      <Menu placement="right-start" gutter={4} strategy="fixed">
+                        <MenuButton
+                          as={IconButton}
+                          icon={<BsThreeDots />}
+                          variant="ghost"
+                          size="xs"
+                          color="gray.500"
+                          opacity={0}
+                          _groupHover={{ opacity: 1 }}
+                          _hover={{ color: 'white', bg: 'gray.500' }}
+                          aria-label="Song options"
+                          onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                        />
+                        <MenuList bg="gray.700" borderColor="gray.600" minW="140px">
+                          <MenuItem
+                            icon={<ChevronRightIcon boxSize={3} color="gray.400" />}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSelectThread(prompt, thread);
+                            }}
+                            bg="gray.700"
+                            _hover={{ bg: 'gray.600' }}
+                            fontSize="sm"
+                          >
+                            Open
+                          </MenuItem>
+                          <MenuItem
+                            icon={<EditIcon boxSize={3} color="gray.400" />}
+                            onClick={(e) => handleStartThreadRename(e, thread)}
+                            bg="gray.700"
+                            _hover={{ bg: 'gray.600' }}
+                            fontSize="sm"
+                          >
+                            Rename song
+                          </MenuItem>
+                          <MenuItem
+                            icon={<DeleteIcon boxSize={3} color="red.400" />}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setThreadToDelete({ thread, promptId: prompt.id });
+                            }}
+                            bg="gray.700"
+                            _hover={{ bg: 'gray.600' }}
+                            fontSize="sm"
+                            color="red.400"
+                          >
+                            Delete
+                          </MenuItem>
+                        </MenuList>
+                      </Menu>
                     </HStack>
                   );
                 })}
@@ -811,6 +998,52 @@ export default function PromptLibrarySidebar({
                 onClick={handleConfirmDelete}
                 ml={3}
                 isLoading={deletingPromptId === promptToDelete?.id}
+              >
+                Delete
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
+
+      {/* Delete Thread (Song) Confirmation Dialog */}
+      <AlertDialog
+        isOpen={threadToDelete !== null}
+        leastDestructiveRef={cancelThreadDeleteRef}
+        onClose={() => setThreadToDelete(null)}
+        isCentered
+      >
+        <AlertDialogOverlay
+          bg="rgba(0,0,0,0.55)"
+          backdropFilter="blur(6px)"
+          display="flex"
+          alignItems="center"
+          justifyContent="center"
+          paddingLeft="280px"
+        >
+          <AlertDialogContent bg="gray.800" borderColor="gray.600" margin="0">
+            <AlertDialogHeader fontSize="lg" fontWeight="bold" color="white">
+              Delete song?
+            </AlertDialogHeader>
+
+            <AlertDialogBody color="gray.300">
+              Are you sure you want to delete "{threadToDelete?.thread.title || 'Untitled Song'}"? This action cannot be undone.
+            </AlertDialogBody>
+
+            <AlertDialogFooter>
+              <Button
+                ref={cancelThreadDeleteRef}
+                onClick={() => setThreadToDelete(null)}
+                variant="ghost"
+                color="gray.300"
+              >
+                Cancel
+              </Button>
+              <Button
+                colorScheme="red"
+                onClick={handleConfirmThreadDelete}
+                ml={3}
+                isLoading={deletingThreadId === threadToDelete?.thread.id}
               >
                 Delete
               </Button>

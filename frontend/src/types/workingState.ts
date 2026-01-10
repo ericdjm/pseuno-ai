@@ -59,6 +59,7 @@ export type WorkingAction =
   | { type: 'RESET' }
   | { type: 'LOAD_STYLE_PROMPT'; prompt: SavedSunoPrompt }
   | { type: 'SELECT_THREAD'; thread: LyricsThread }
+  | { type: 'CLEAR_THREAD' }
   | { type: 'SET_GENERATED'; prompt: SavedSunoPrompt; threadId: number | null; threadTitle?: string | null; lyricsText?: string }
   | { type: 'EDIT_STYLE_FIELD'; field: keyof StyleFields; value: string | number | string[] }
   | { type: 'EDIT_LYRICS_TEXT'; value: string }
@@ -128,6 +129,17 @@ export function workingReducer(state: WorkingState, action: WorkingAction): Work
         lyricsFields: {
           lyrics_text: action.thread.lyrics_text,
           lyrics_title: action.thread.title || '',
+        },
+        dirty: { ...state.dirty, lyrics: false },
+      };
+
+    case 'CLEAR_THREAD':
+      return {
+        ...state,
+        lyricsThreadId: null,
+        lyricsFields: {
+          lyrics_text: '',
+          lyrics_title: '',
         },
         dirty: { ...state.dirty, lyrics: false },
       };
