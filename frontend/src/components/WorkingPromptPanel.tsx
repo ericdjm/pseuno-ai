@@ -32,7 +32,7 @@ import {
   AlertDialogHeader,
   AlertDialogOverlay,
 } from '@chakra-ui/react';
-import { CopyIcon, ChevronRightIcon, ChevronDownIcon, ExternalLinkIcon, EditIcon, AddIcon, DeleteIcon } from '@chakra-ui/icons';
+import { CopyIcon, ChevronRightIcon, ChevronDownIcon, ExternalLinkIcon, AddIcon, DeleteIcon } from '@chakra-ui/icons';
 import { LuSparkles } from 'react-icons/lu';
 import type { WorkingState, WorkingAction } from '../types/workingState';
 import { LuDices } from 'react-icons/lu';
@@ -1090,7 +1090,7 @@ export default function WorkingPromptPanel({
                   )}
                 </HStack>
                 <HStack spacing={2}>
-                  {/* Edit Lyrics button with text */}
+                  {/* Edit Lyrics button with sparkle icon (AI indicator) */}
                   <Tooltip label="Edit lyrics with AI (updates in-place)" placement="top" hasArrow>
                     <HStack
                       spacing={1}
@@ -1108,7 +1108,7 @@ export default function WorkingPromptPanel({
                       _hover={{ bg: lyricsEditOpen ? 'blue.700' : 'whiteAlpha.100' }}
                       transition="all 0.15s"
                     >
-                      <EditIcon boxSize={3.5} color={lyricsEditOpen ? 'blue.200' : 'gray.500'} />
+                      <Box as={LuSparkles} boxSize={3.5} color={lyricsEditOpen ? 'blue.200' : 'gray.500'} />
                       <Text fontSize="xs" color={lyricsEditOpen ? 'blue.200' : 'gray.500'}>
                         Edit
                       </Text>
@@ -1136,20 +1136,27 @@ export default function WorkingPromptPanel({
                 </HStack>
               </HStack>
 
-              {/* Lyrics Edit Input */}
+              {/* Lyrics Edit Input - inline accent line style */}
               <Collapse in={lyricsEditOpen} animateOpacity>
-                <Box bg="blue.900" borderRadius="md" p={3} mb={3} border="1px solid" borderColor="blue.700">
-                  <VStack spacing={2} align="stretch">
+                <Box
+                  mb={3}
+                  pl={3}
+                  py={2}
+                  borderLeft="2px solid"
+                  borderColor="blue.500"
+                  bg="linear-gradient(90deg, rgba(66, 153, 225, 0.1) 0%, transparent 100%)"
+                >
+                  <HStack spacing={2}>
                     <Input
                       ref={lyricsEditInputRef}
                       value={lyricsEditText}
                       onChange={(e) => setLyricsEditText(e.target.value)}
-                      placeholder='e.g. "make the chorus more emotional", "add a bridge", "less repetition"'
-                      bg="gray.900"
-                      borderColor="blue.600"
-                      _hover={{ borderColor: 'blue.500' }}
-                      _focus={{ borderColor: 'blue.400', boxShadow: 'none' }}
+                      placeholder="Describe changes…"
+                      variant="unstyled"
                       fontSize="sm"
+                      color="gray.100"
+                      _placeholder={{ color: 'gray.500' }}
+                      flex={1}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && lyricsEditText.trim()) {
                           e.preventDefault();
@@ -1161,38 +1168,29 @@ export default function WorkingPromptPanel({
                         }
                       }}
                     />
-                    <HStack justify="space-between">
-                      <Text fontSize="xs" color="blue.300">
-                        Updates lyrics in-place
-                      </Text>
-                      <HStack spacing={2}>
-                        <Button
-                          size="xs"
-                          variant="ghost"
-                          color="gray.400"
-                          _hover={{ color: 'white' }}
-                          onClick={() => {
-                            setLyricsEditOpen(false);
-                            setLyricsEditText('');
-                          }}
-                        >
-                          Cancel
-                        </Button>
-                        <Button
-                          size="xs"
-                          bg="blue.600"
-                          color="white"
-                          _hover={{ bg: 'blue.500' }}
-                          onClick={handleLyricsEditSubmit}
-                          isLoading={isEditingLyrics}
-                          loadingText="Editing..."
-                          isDisabled={!lyricsEditText.trim()}
-                        >
-                          Edit
-                        </Button>
-                      </HStack>
-                    </HStack>
-                  </VStack>
+                    <Text
+                      fontSize="xs"
+                      color="gray.600"
+                      cursor="pointer"
+                      _hover={{ color: 'gray.400' }}
+                      onClick={() => {
+                        setLyricsEditOpen(false);
+                        setLyricsEditText('');
+                      }}
+                    >
+                      cancel
+                    </Text>
+                    <Text
+                      fontSize="xs"
+                      color={lyricsEditText.trim() ? 'blue.400' : 'gray.600'}
+                      cursor={lyricsEditText.trim() ? 'pointer' : 'default'}
+                      fontWeight="medium"
+                      _hover={lyricsEditText.trim() ? { color: 'blue.300' } : {}}
+                      onClick={() => lyricsEditText.trim() && handleLyricsEditSubmit()}
+                    >
+                      {isEditingLyrics ? 'editing…' : 'edit →'}
+                    </Text>
+                  </HStack>
                 </Box>
               </Collapse>
 

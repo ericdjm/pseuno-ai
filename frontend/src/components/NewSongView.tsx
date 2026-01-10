@@ -165,6 +165,10 @@ export default function NewSongView({
     }
   }, [profile]);
 
+  // Use a ref to track which ranges have been fetched to avoid infinite loops.
+  // The useEffect had spotifyProfilesByRange in deps, which caused a loop when setSpotifyProfilesByRange was called.
+  const fetchedRangesRef = useRef<Set<TimeRange>>(new Set());
+  
   useEffect(() => {
     if (!personalize || !isAuthenticated) return;
 
@@ -173,20 +177,28 @@ export default function NewSongView({
 
     (async () => {
       try {
-        const missing = ranges.filter((r) => !spotifyProfilesByRange[r]);
+        // Check against ref to avoid re-fetching already attempted ranges
+        const missing = ranges.filter((r) => !spotifyProfilesByRange[r] && !fetchedRangesRef.current.has(r));
         if (missing.length === 0) return;
+
+        // Mark as fetched before the call to prevent duplicate requests
+        missing.forEach((r) => fetchedRangesRef.current.add(r));
 
         const results = await Promise.allSettled(missing.map((r) => getProfile(r)));
         if (cancelled) return;
 
         const next: Partial<Record<TimeRange, SpotifyProfileResponse>> = { ...spotifyProfilesByRange };
+        let hasNewData = false;
         results.forEach((res, idx) => {
           if (res.status === 'fulfilled') {
             const r = missing[idx];
             next[r] = res.value;
+            hasNewData = true;
           }
         });
-        setSpotifyProfilesByRange(next);
+        if (hasNewData) {
+          setSpotifyProfilesByRange(next);
+        }
       } catch {
         // Non-fatal: personalization still works with whatever profile we have.
       }
@@ -195,7 +207,9 @@ export default function NewSongView({
     return () => {
       cancelled = true;
     };
-  }, [personalize, isAuthenticated, spotifyProfilesByRange]);
+    // Note: spotifyProfilesByRange intentionally omitted to prevent infinite loop
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [personalize, isAuthenticated]);
   
   // Base genre/concept recommendations (curated list)
   const BASE_RECOMMENDATIONS = [
@@ -277,11 +291,12 @@ export default function NewSongView({
     return shuffleWithSeed(available, seed).slice(0, 32);
   };
 
-  // Recompute recommendations only on reshuffle events (seed changes).
+  // Recompute recommendations when seed changes OR when Spotify profiles are updated.
+  // This ensures artist tags appear once personalization data is fetched.
   useEffect(() => {
     setRecommendedTags(computeRecommendedTags(recommendedTagsSeed));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recommendedTagsSeed]);
+  }, [recommendedTagsSeed, spotifyProfilesByRange, personalize]);
   
   const addTag = (tag: string) => {
     // Preserve casing for display (e.g., Spotify artist names), but dedupe case-insensitively

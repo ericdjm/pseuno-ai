@@ -24,6 +24,19 @@ from app.services.artist_influence import (
 )
 
 
+def _cap_first(s: str) -> str:
+    """
+    Capitalize only the first character, preserving the rest.
+
+    Used for descriptor text (texture, vibe) that we control, NOT for artist/genre
+    names which should preserve their original casing from Spotify (e.g., "TOOL",
+    "deadmau5", "sunkissed", "k.d. lang").
+    """
+    if not s:
+        return s
+    return s[0].upper() + s[1:]
+
+
 @dataclass
 class InputConceptResult:
     """Result of input concept generation."""
@@ -136,6 +149,76 @@ GENRE_DESCRIPTORS: dict[str, dict[str, str]] = {
         "texture": "acoustic instruments and natural warmth",
         "vibe": "earnest and storytelling",
         "energy": "gentle strums with heartfelt delivery",
+    },
+    "folk pop": {
+        "texture": "acoustic warmth with polished melodies",
+        "vibe": "approachable and heartfelt",
+        "energy": "uplifting hooks with organic instrumentation",
+    },
+    "indie pop": {
+        "texture": "bright melodies and quirky production",
+        "vibe": "charming and offbeat",
+        "energy": "catchy hooks with an independent spirit",
+    },
+    "alt-rock": {
+        "texture": "crunchy guitars and dynamic arrangements",
+        "vibe": "raw and authentic",
+        "energy": "tension between quiet verses and explosive choruses",
+    },
+    "alternative rock": {
+        "texture": "crunchy guitars and dynamic arrangements",
+        "vibe": "raw and authentic",
+        "energy": "tension between quiet verses and explosive choruses",
+    },
+    "punk": {
+        "texture": "fast tempos and distorted power chords",
+        "vibe": "rebellious and urgent",
+        "energy": "raw energy with no-frills attitude",
+    },
+    "pop": {
+        "texture": "polished production and memorable hooks",
+        "vibe": "catchy and accessible",
+        "energy": "irresistible melodies built for replay",
+    },
+    "rock": {
+        "texture": "driving guitars and powerful drums",
+        "vibe": "energetic and bold",
+        "energy": "anthemic riffs with raw power",
+    },
+    "metal": {
+        "texture": "heavy riffs and thundering percussion",
+        "vibe": "intense and powerful",
+        "energy": "relentless momentum with crushing weight",
+    },
+    "country": {
+        "texture": "twangy guitars and storytelling lyrics",
+        "vibe": "honest and grounded",
+        "energy": "heartland grooves with authentic character",
+    },
+    "blues": {
+        "texture": "soulful bends and expressive vocals",
+        "vibe": "raw and emotional",
+        "energy": "slow burns with cathartic releases",
+    },
+    "soul": {
+        "texture": "rich vocals and warm instrumentation",
+        "vibe": "passionate and moving",
+        "energy": "deep grooves with emotional intensity",
+    },
+    "reggae": {
+        "texture": "offbeat rhythms and mellow basslines",
+        "vibe": "laid-back and uplifting",
+        "energy": "steady grooves that sway and flow",
+    },
+    "classical": {
+        "texture": "orchestral arrangements and timeless composition",
+        "vibe": "elegant and refined",
+        "energy": "dynamic movements with expressive range",
+    },
+    "jazz": {
+        "texture": "sophisticated harmonies and improvisation",
+        "vibe": "smooth and spontaneous",
+        "energy": "fluid interplay between musicians",
     },
 }
 
@@ -310,48 +393,51 @@ class InputConceptGenerator:
             return random.choice(templates), mood
 
         # Build concept from genre descriptors
+        # Note: Do NOT capitalize genre/artist names - preserve original casing from Spotify
+        # (e.g., "TOOL", "deadmau5", "sunkissed", "k.d. lang")
+        # Only use _cap_first() for descriptor texts (texture, vibe) that we control.
         if len(chosen_genres) == 1:
             genre = chosen_genres[0]
             desc = self._get_genre_descriptor(genre)
             templates = [
                 f"A {genre} track {conn} {desc['texture']}.",
-                f"{genre.capitalize()}. {desc['texture'].capitalize()}.",
-                f"{genre.capitalize()} vibes, {conn} {desc['texture']}.",
+                f"Inspired by {genre}. {_cap_first(desc['texture'])}.",
+                f"Channeling {genre} vibes, {conn} {desc['texture']}.",
             ]
         elif len(chosen_genres) == 2:
             g1, g2 = chosen_genres
             d1 = self._get_genre_descriptor(g1)
             blend = random.choice(BLEND_WORDS)
             templates = [
-                f"A {blend} of {g1} and {g2}. {d1['texture'].capitalize()}.",
-                f"{g1.capitalize()} meets {g2}, {conn} {d1['texture']}.",
-                f"{g1.capitalize()}/{g2} {blend}. {d1['vibe'].capitalize()}.",
+                f"A {blend} of {g1} and {g2}. {_cap_first(d1['texture'])}.",
+                f"Where {g1} meets {g2}, {conn} {d1['texture']}.",
+                f"A {g1}/{g2} {blend}. {_cap_first(d1['vibe'])}.",
             ]
         elif len(chosen_genres) == 3:
             g1, g2, g3 = chosen_genres[:3]
             d1 = self._get_genre_descriptor(g1)
             templates = [
-                f"{g1.capitalize()}, {g2}, and {g3}. {d1['texture'].capitalize()}.",
-                f"A take on {g1}, {g2}, {g3}. {d1['texture'].capitalize()}.",
-                f"Crossing {g1} with {g2} and {g3}. {d1['vibe'].capitalize()}.",
+                f"Drawing from {g1}, {g2}, and {g3}. {_cap_first(d1['texture'])}.",
+                f"A take on {g1}, {g2}, {g3}. {_cap_first(d1['texture'])}.",
+                f"Crossing {g1} with {g2} and {g3}. {_cap_first(d1['vibe'])}.",
             ]
         elif len(chosen_genres) == 4:
             g1, g2, g3, g4 = chosen_genres[:4]
             d1 = self._get_genre_descriptor(g1)
             blend = random.choice(BLEND_WORDS)
             templates = [
-                f"A {blend} of {g1}, {g2}, {g3}, and {g4}. {d1['texture'].capitalize()}.",
-                f"{g1.capitalize()} meets {g2}, {g3}, and {g4}. {d1['vibe'].capitalize()}.",
-                f"Weaving {g1}, {g2}, {g3}, {g4} together. {d1['texture'].capitalize()}.",
+                f"A {blend} of {g1}, {g2}, {g3}, and {g4}. {_cap_first(d1['texture'])}.",
+                f"Where {g1} meets {g2}, {g3}, and {g4}. {_cap_first(d1['vibe'])}.",
+                f"Weaving {g1}, {g2}, {g3}, {g4} together. {_cap_first(d1['texture'])}.",
             ]
         else:  # 5+ genres
             g1, g2, g3, g4, g5 = chosen_genres[:5]
             d1 = self._get_genre_descriptor(g1)
             blend = random.choice(BLEND_WORDS)
             templates = [
-                f"A rich {blend} of {g1}, {g2}, {g3}, {g4}, and {g5}. {d1['texture'].capitalize()}.",
-                f"{g1.capitalize()}, {g2}, {g3}, {g4}, {g5}. {d1['vibe'].capitalize()} and eclectic.",
-                f"Blending {g1}, {g2}, {g3}, {g4}, {g5} into something new. {d1['texture'].capitalize()}.",
+                f"A rich {blend} of {g1}, {g2}, {g3}, {g4}, and {g5}. {_cap_first(d1['texture'])}.",
+                f"Blending {g1}, {g2}, {g3}, {g4}, {g5}. {_cap_first(d1['vibe'])} and eclectic.",
+                f"Weaving {g1}, {g2}, {g3}, {g4}, {g5} into something new. {_cap_first(d1['texture'])}.",
             ]
 
         return random.choice(templates), mood
@@ -361,9 +447,10 @@ class InputConceptGenerator:
         key = genre.lower().strip()
         if key in GENRE_DESCRIPTORS:
             return GENRE_DESCRIPTORS[key]
-        # Fallback for unknown genre
+        # Fallback for unknown genre - avoid repeating the genre name since
+        # templates already include it (e.g., "{genre} vibes, {conn} {desc['texture']}")
         return {
-            "texture": f"elements characteristic of {genre}",
+            "texture": random.choice(DEFAULT_TEXTURES),
             "vibe": random.choice(DEFAULT_VIBES),
             "energy": random.choice(DEFAULT_ENERGIES),
         }
