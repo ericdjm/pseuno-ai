@@ -290,14 +290,8 @@ export default function AdvancedResultsDisplay({
     }
   };
 
-  const copyToClipboard = (text: string, label: string) => {
+  const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    toast({
-      title: `${label} copied!`,
-      status: 'success',
-      duration: 2000,
-      isClosable: true,
-    });
   };
 
   const handleToggleFavorite = async () => {
@@ -354,7 +348,7 @@ export default function AdvancedResultsDisplay({
               <Button
                 size="xs"
                 leftIcon={<CopyIcon />}
-                onClick={() => copyToClipboard(currentTitle, 'Title')}
+                onClick={() => copyToClipboard(currentTitle)}
                 colorScheme="green"
                 variant="ghost"
               >
@@ -459,7 +453,7 @@ export default function AdvancedResultsDisplay({
             <Button
               size="sm"
               leftIcon={<CopyIcon />}
-              onClick={() => copyToClipboard(currentPrompt, 'Prompt')}
+              onClick={() => copyToClipboard(currentPrompt)}
               colorScheme="green"
             >
               Copy
@@ -495,7 +489,7 @@ export default function AdvancedResultsDisplay({
             <Button
               size="xs"
               leftIcon={<CopyIcon />}
-              onClick={() => copyToClipboard(sunoCreateUrl, 'Suno link')}
+              onClick={() => copyToClipboard(sunoCreateUrl)}
               colorScheme="cyan"
               variant="ghost"
             >
@@ -526,7 +520,7 @@ export default function AdvancedResultsDisplay({
               <Button
                 size="sm"
                 leftIcon={<CopyIcon />}
-                onClick={() => copyToClipboard(currentLyrics, 'Lyrics')}
+                onClick={() => copyToClipboard(currentLyrics)}
                 colorScheme="green"
               >
                 Copy
@@ -560,7 +554,7 @@ export default function AdvancedResultsDisplay({
               <Button
                 size="sm"
                 leftIcon={<CopyIcon />}
-                onClick={() => copyToClipboard(currentExclude, 'Exclude')}
+                onClick={() => copyToClipboard(currentExclude)}
                 colorScheme="green"
               >
                 Copy

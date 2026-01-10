@@ -142,6 +142,9 @@ export default function WorkingPromptPanel({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [draftOpen, isCreatingSong, state.stylePromptId, state.styleFields.suno_prompt, draftLyricsAbout]);
 
+  // Track previous state to detect explicit "New song" clicks (same style, thread cleared)
+  const prevStateRef = useRef({ stylePromptId: state.stylePromptId, lyricsThreadId: state.lyricsThreadId });
+
   // Fetch all threads when stylePromptId changes
   useEffect(() => {
     if (!state.stylePromptId) {
@@ -155,7 +158,7 @@ export default function WorkingPromptPanel({
       try {
         const fetchedThreads = await getPromptThreads(state.stylePromptId!);
         setThreads(fetchedThreads);
-        // Auto-open draft when style has no threads
+        // Auto-open draft only when style has NO threads
         if (fetchedThreads.length === 0 && !state.lyricsThreadId) {
           setDraftOpen(true);
         }
@@ -169,6 +172,20 @@ export default function WorkingPromptPanel({
 
     fetchThreads();
   }, [state.stylePromptId, state.lyricsThreadId, refreshKey]);
+
+  // Open draft when user clicks "New song" (same style, thread explicitly cleared)
+  useEffect(() => {
+    const prev = prevStateRef.current;
+    // If same style but thread was cleared → user clicked "New song"
+    if (
+      state.stylePromptId === prev.stylePromptId &&
+      prev.lyricsThreadId !== null &&
+      state.lyricsThreadId === null
+    ) {
+      setDraftOpen(true);
+    }
+    prevStateRef.current = { stylePromptId: state.stylePromptId, lyricsThreadId: state.lyricsThreadId };
+  }, [state.stylePromptId, state.lyricsThreadId]);
 
   // Reset refine/edit/draft state when navigating to a different prompt
   useEffect(() => {
@@ -255,11 +272,8 @@ export default function WorkingPromptPanel({
         }
       }
 
-      toast({
-        title: 'Song deleted',
-        status: 'success',
-        duration: 2000,
-      });
+      // Notify parent to refresh sidebar
+      onThreadUpdated?.();
     } catch (err) {
       console.error('Failed to delete song:', err);
       toast({
@@ -297,11 +311,6 @@ export default function WorkingPromptPanel({
       setThreads((prev) => prev.map((t) => (t.id === updated.id ? { ...t, title: updated.title } : t)));
       // Notify parent to refresh sidebar
       onThreadUpdated?.();
-      toast({
-        title: 'Song renamed',
-        status: 'success',
-        duration: 1500,
-      });
     } catch (err) {
       console.error('Failed to rename song:', err);
       toast({
@@ -335,11 +344,6 @@ export default function WorkingPromptPanel({
       dispatch({ type: 'EDIT_STYLE_FIELD', field: 'title', value: trimmed });
       // Notify parent to refresh sidebar
       onThreadUpdated?.();
-      toast({
-        title: 'Style renamed',
-        status: 'success',
-        duration: 1500,
-      });
     } catch (err) {
       console.error('Failed to rename style:', err);
       toast({
@@ -597,13 +601,8 @@ export default function WorkingPromptPanel({
   };
 
   // Copy to clipboard
-  const copyToClipboard = (text: string, label: string) => {
+  const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    toast({
-      title: `${label} copied!`,
-      status: 'success',
-      duration: 2000,
-    });
   };
 
   // If no prompt loaded, show empty state
@@ -727,7 +726,7 @@ export default function WorkingPromptPanel({
                   variant="ghost"
                   color="gray.500"
                   _hover={{ color: 'white' }}
-                  onClick={() => copyToClipboard(state.styleFields.suno_prompt, 'Style')}
+                  onClick={() => copyToClipboard(state.styleFields.suno_prompt)}
                 />
               </HStack>
             </HStack>
@@ -851,7 +850,7 @@ export default function WorkingPromptPanel({
                   _hover={{ color: 'white' }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    copyToClipboard(state.styleFields.exclude, 'Exclude');
+                    copyToClipboard(state.styleFields.exclude);
                   }}
                 />
               </HStack>
@@ -1077,8 +1076,7 @@ export default function WorkingPromptPanel({
                     color="gray.500"
                     _hover={{ color: 'white' }}
                     onClick={() => copyToClipboard(
-                      state.lyricsFields.lyrics_title || 'Untitled Song',
-                      'Title'
+                      state.lyricsFields.lyrics_title || 'Untitled Song'
                     )}
                   />
                   {savingLyrics && (
@@ -1211,21 +1209,23 @@ export default function WorkingPromptPanel({
                   placeholder="(No lyrics - instrumental or not generated yet)"
                   pr={10}
                 />
-                {/* Copy lyrics button - top right of textarea */}
-                <Tooltip label="Copy lyrics" placement="left" hasArrow>
-                  <IconButton
-                    aria-label="Copy lyrics"
-                    icon={<CopyIcon />}
-                    size="xs"
-                    variant="ghost"
-                    color="gray.500"
-                    _hover={{ color: 'white', bg: 'gray.700' }}
-                    position="absolute"
-                    top={2}
-                    right={2}
-                    onClick={() => copyToClipboard(state.lyricsFields.lyrics_text, 'Lyrics')}
-                  />
-                </Tooltip>
+                {/* Copy lyrics button - top right of textarea (hidden for instrumental) */}
+                {state.lyricsFields.lyrics_text && (
+                  <Tooltip label="Copy lyrics" placement="left" hasArrow>
+                    <IconButton
+                      aria-label="Copy lyrics"
+                      icon={<CopyIcon />}
+                      size="xs"
+                      variant="ghost"
+                      color="gray.500"
+                      _hover={{ color: 'white', bg: 'gray.700' }}
+                      position="absolute"
+                      top={2}
+                      right={2}
+                      onClick={() => copyToClipboard(state.lyricsFields.lyrics_text)}
+                    />
+                  </Tooltip>
+                )}
               </Box>
             </Box>
           )}

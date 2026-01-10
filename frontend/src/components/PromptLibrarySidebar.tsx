@@ -69,6 +69,9 @@ interface PromptLibrarySidebarProps {
   authStatus: AuthStatus;
   onLogin: () => void;
   onThreadRenamed?: (threadId: number, newTitle: string) => void;
+  onThreadDeleted?: (threadId: number) => void;
+  onStyleRenamed?: (promptId: number, newTitle: string) => void;
+  onStyleDeleted?: (promptId: number) => void;
 }
 
 export default function PromptLibrarySidebar({
@@ -83,6 +86,9 @@ export default function PromptLibrarySidebar({
   authStatus,
   onLogin,
   onThreadRenamed,
+  onThreadDeleted,
+  onStyleRenamed,
+  onStyleDeleted,
 }: PromptLibrarySidebarProps) {
   const toast = useToast();
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -168,6 +174,24 @@ export default function PromptLibrarySidebar({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshTrigger]);
 
+  // Auto-expand the active style when it changes (e.g., after generation)
+  useEffect(() => {
+    if (activeStylePromptId && !expandedPromptIds.has(activeStylePromptId)) {
+      setExpandedPromptIds(new Set([activeStylePromptId]));
+      // Fetch threads if not cached
+      if (!threadsCache[activeStylePromptId]) {
+        getPromptThreads(activeStylePromptId)
+          .then((threads) => {
+            setThreadsCache((prev) => ({ ...prev, [activeStylePromptId]: threads }));
+          })
+          .catch((err) => {
+            console.error('Failed to fetch threads for active style:', err);
+          });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStylePromptId]);
+
   // Focus search input when opened
   useEffect(() => {
     if (searchOpen && searchInputRef.current) {
@@ -195,15 +219,20 @@ export default function PromptLibrarySidebar({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onNewPrompt]);
 
-  // Filter prompts by search query
+  // Filter prompts by search query (searches style title, prompt, tags, and song titles)
   const filterBySearch = (prompts: SavedSunoPrompt[]) => {
     if (!searchQuery.trim()) return prompts;
     const q = searchQuery.toLowerCase();
-    return prompts.filter((p) =>
-      (p.title || '').toLowerCase().includes(q) ||
-      p.suno_prompt.toLowerCase().includes(q) ||
-      p.auto_tags.some((t) => t.toLowerCase().includes(q))
-    );
+    return prompts.filter((p) => {
+      // Check style title, prompt text, and tags
+      if ((p.title || '').toLowerCase().includes(q)) return true;
+      if (p.suno_prompt.toLowerCase().includes(q)) return true;
+      if (p.auto_tags.some((t) => t.toLowerCase().includes(q))) return true;
+      // Check song titles in cached threads
+      const threads = threadsCache[p.id] || [];
+      if (threads.some((thread) => (thread.title || '').toLowerCase().includes(q))) return true;
+      return false;
+    });
   };
 
   // Apply search (list is already sorted with pinned at top)
@@ -304,16 +333,14 @@ export default function PromptLibrarySidebar({
   // Actually delete prompt
   const handleConfirmDelete = async () => {
     if (!promptToDelete) return;
-    setDeletingPromptId(promptToDelete.id);
+    const deletingId = promptToDelete.id;
+    setDeletingPromptId(deletingId);
     try {
-      await deleteSavedPrompt(promptToDelete.id);
+      await deleteSavedPrompt(deletingId);
       // Remove from list
-      setAllPrompts((prev) => prev.filter((p) => p.id !== promptToDelete.id));
-      toast({
-        title: 'Style deleted',
-        status: 'success',
-        duration: 2000,
-      });
+      setAllPrompts((prev) => prev.filter((p) => p.id !== deletingId));
+      // Notify parent so it can clear the right pane if this was the active style
+      onStyleDeleted?.(deletingId);
     } catch (err) {
       console.error('Failed to delete prompt:', err);
       toast({
@@ -342,11 +369,8 @@ export default function PromptLibrarySidebar({
           [promptId]: currentThreads.filter((t) => t.id !== thread.id),
         };
       });
-      toast({
-        title: 'Song deleted',
-        status: 'success',
-        duration: 2000,
-      });
+      // Notify parent so it can update the right pane if this was the active thread
+      onThreadDeleted?.(thread.id);
     } catch (err) {
       console.error('Failed to delete song:', err);
       toast({
@@ -389,11 +413,6 @@ export default function PromptLibrarySidebar({
       });
       // Notify parent to update WorkingState if this thread is active
       onThreadRenamed?.(thread.id, trimmed);
-      toast({
-        title: 'Song renamed',
-        status: 'success',
-        duration: 1500,
-      });
     } catch (err) {
       console.error('Failed to rename song:', err);
       toast({
@@ -426,6 +445,8 @@ export default function PromptLibrarySidebar({
       setAllPrompts((prev) =>
         prev.map((p) => (p.id === prompt.id ? { ...p, title: updated.title } : p))
       );
+      // Notify parent so it can update the right pane title if this is the active style
+      onStyleRenamed?.(prompt.id, updated.title);
     } catch (err) {
       console.error('Failed to rename:', err);
       toast({
@@ -448,8 +469,9 @@ export default function PromptLibrarySidebar({
     const isRenaming = renamingKey === itemKey;
 
     return (
-      <Box key={itemKey} role="group">
+      <Box key={itemKey}>
         <HStack
+          role="group"
           py={1.5}
           px={3}
           cursor={isRenaming ? 'default' : 'pointer'}
@@ -554,7 +576,7 @@ export default function PromptLibrarySidebar({
                       icon={<AddIcon boxSize={3} color="gray.400" />}
                       onClick={(e) => {
                         e.stopPropagation();
-                        onNewPrompt();
+                        onNewLyricsVariation(prompt);
                       }}
                       bg="gray.700"
                       _hover={{ bg: 'gray.600' }}
@@ -615,22 +637,9 @@ export default function PromptLibrarySidebar({
             {isLoadingThreads ? (
               <Spinner size="xs" color="gray.500" />
             ) : threads.length === 0 ? (
-              <HStack
-                py={1}
-                px={2}
-                borderRadius="sm"
-                cursor="pointer"
-                color="gray.500"
-                _hover={{ bg: 'gray.700', color: 'gray.300' }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onNewLyricsVariation(prompt);
-                }}
-                fontSize="xs"
-              >
-                <AddIcon boxSize={2} />
-                <Text>New song</Text>
-              </HStack>
+              <Text fontSize="xs" color="gray.500" py={1} px={2}>
+                No songs yet
+              </Text>
             ) : (
               <VStack spacing={0} align="stretch">
                 {threads.map((thread) => {
@@ -742,22 +751,6 @@ export default function PromptLibrarySidebar({
                     </HStack>
                   );
                 })}
-                <HStack
-                  py={1}
-                  px={2}
-                  borderRadius="sm"
-                  cursor="pointer"
-                  color="gray.500"
-                  _hover={{ bg: 'gray.700', color: 'gray.300' }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onNewLyricsVariation(prompt);
-                  }}
-                  fontSize="xs"
-                >
-                  <AddIcon boxSize={2} />
-                  <Text>New song</Text>
-                </HStack>
               </VStack>
             )}
           </Box>
@@ -824,7 +817,7 @@ export default function PromptLibrarySidebar({
           <HStack py={1} px={1}>
             <Input
               ref={searchInputRef}
-              placeholder="Search styles..."
+              placeholder="Search styles and songs..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => {
@@ -980,7 +973,27 @@ export default function PromptLibrarySidebar({
             </AlertDialogHeader>
 
             <AlertDialogBody color="gray.300">
-              Are you sure you want to delete "{promptToDelete?.title || 'Untitled'}"? This action cannot be undone.
+              Are you sure you want to delete "{promptToDelete?.title || 'Untitled'}"?
+              {promptToDelete && threadsCache[promptToDelete.id]?.length > 0 && (
+                <Box mt={3} p={3} bg="gray.700" borderRadius="md" fontSize="sm">
+                  <Text color="gray.400" mb={2}>
+                    This will also delete {threadsCache[promptToDelete.id].length} song{threadsCache[promptToDelete.id].length === 1 ? '' : 's'}:
+                  </Text>
+                  <VStack align="start" spacing={1} pl={2}>
+                    {threadsCache[promptToDelete.id].slice(0, 5).map((thread) => (
+                      <Text key={thread.id} color="gray.300" fontSize="sm">
+                        • {thread.title || 'Untitled'}
+                      </Text>
+                    ))}
+                    {threadsCache[promptToDelete.id].length > 5 && (
+                      <Text color="gray.500" fontSize="xs" fontStyle="italic">
+                        ...and {threadsCache[promptToDelete.id].length - 5} more
+                      </Text>
+                    )}
+                  </VStack>
+                </Box>
+              )}
+              <Text mt={3} fontSize="sm" color="gray.500">This action cannot be undone.</Text>
             </AlertDialogBody>
 
             <AlertDialogFooter>

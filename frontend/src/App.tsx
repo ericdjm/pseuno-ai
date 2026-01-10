@@ -474,6 +474,28 @@ function App() {
               // Trigger refresh of WorkingPromptPanel's threads
               setLibraryRefresh((n) => n + 1);
             }}
+            onThreadDeleted={(threadId) => {
+              // If the deleted thread was the active one, clear the right pane
+              if (workingState.lyricsThreadId === threadId) {
+                dispatch({ type: 'CLEAR_THREAD' });
+              }
+              // Trigger refresh of WorkingPromptPanel's threads
+              setLibraryRefresh((n) => n + 1);
+            }}
+            onStyleRenamed={(promptId, newTitle) => {
+              // If the renamed style is currently active, update the WorkingState
+              if (workingState.stylePromptId === promptId) {
+                dispatch({ type: 'EDIT_STYLE_FIELD', field: 'title', value: newTitle });
+                dispatch({ type: 'MARK_CLEAN', which: 'style' });
+              }
+            }}
+            onStyleDeleted={(promptId) => {
+              // If the deleted style was the active one, go back to new song view
+              if (workingState.stylePromptId === promptId) {
+                dispatch({ type: 'RESET' });
+                setRightPaneMode('new_song');
+              }
+            }}
           />
         )}
 
