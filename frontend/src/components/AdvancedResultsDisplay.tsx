@@ -310,11 +310,6 @@ export default function AdvancedResultsDisplay({
       const newFavoriteState = !isFavorite;
       await updateSavedPrompt(result.prompt_id, { is_favorite: newFavoriteState });
       setIsFavorite(newFavoriteState);
-      toast({
-        title: newFavoriteState ? 'Added to favorites!' : 'Removed from favorites',
-        status: 'success',
-        duration: 2000,
-      });
       onFavoriteToggled?.();
     } catch (e) {
       toast({

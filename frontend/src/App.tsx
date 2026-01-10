@@ -106,11 +106,6 @@ function App() {
       });
       api.clearUrlParams();
     } else if (success) {
-      toast({
-        title: 'Successfully logged in!',
-        status: 'success',
-        duration: 3000,
-      });
       api.clearUrlParams();
     }
   }, [toast]);
@@ -124,11 +119,31 @@ function App() {
         setAuthStatus(status);
       } catch (e) {
         console.error('Auth check failed:', e);
+        // If auth check itself fails with 401, user is not authenticated
+        if (e instanceof api.ApiError && e.status === 401) {
+          setAuthStatus({ authenticated: false });
+        }
       } finally {
         setAuthLoading(false);
       }
     }
     checkAuth();
+  }, []);
+
+  // Register global 401 handler - auto re-authenticate on expired sessions
+  useEffect(() => {
+    api.setOnUnauthorized(() => {
+      console.warn('Session expired - redirecting to Spotify login');
+      setAuthStatus({ authenticated: false });
+      setProfile(null);
+      // Auto-redirect to Spotify login
+      api.login().catch(console.error);
+    });
+    
+    // Cleanup on unmount
+    return () => {
+      api.setOnUnauthorized(null);
+    };
   }, []);
 
   // Load profile when authenticated

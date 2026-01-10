@@ -19,6 +19,7 @@ from app.schemas.unified_refine import (
     UnifiedRefineRequest,
     UnifiedRefineResponse,
 )
+from app.services.debug_trace import DebugTracer
 from app.services.unified_refine_service import refine_all
 
 logger = logging.getLogger(__name__)
@@ -186,11 +187,30 @@ async def unified_refine(
                 has_refined = any(t.lower() == "refined" for t in auto_tags)
                 if not has_refined:
                     auto_tags.insert(0, "refined")
-                # Derive style title from original tags (excluding "refined")
+                # Generate style title using the same LLM-based logic as initial generation
                 title_tags = [t for t in auto_tags if t.lower() != "refined"]
-                style_title = _derive_title_from_prompt(
-                    updated_snapshot["suno_prompt"], title_tags
-                )
+                
+                # Try to generate a creative style name using the agent
+                style_title = ""
+                agent = getattr(fastapi_request.app.state, "song_agent", None)
+                if agent and title_tags:
+                    try:
+                        tracer = DebugTracer(
+                            variant="refine_title",
+                            model=settings.title_generation_model,
+                            architecture="style_name",
+                        )
+                        style_title = await agent._generate_style_name(
+                            title_tags[:5], [], tracer
+                        )
+                    except Exception as e:
+                        logger.warning("Failed to generate style name for refine: %s", e)
+                
+                # Fallback to tag-derived title if LLM generation fails
+                if not style_title:
+                    style_title = _derive_title_from_prompt(
+                        updated_snapshot["suno_prompt"], title_tags
+                    )
 
                 # Create new StylePrompt with parent linking
                 prompt = SunoPrompt(

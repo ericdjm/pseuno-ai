@@ -123,11 +123,6 @@ export default function AdvancedGenerationControls({
     }
     try {
       await updateSavedPrompt(promptId, { title: trimmedTitle });
-      toast({
-        title: 'Title updated',
-        status: 'success',
-        duration: 2000,
-      });
       onPromptUpdated?.();
     } catch (err) {
       toast({
@@ -154,11 +149,6 @@ export default function AdvancedGenerationControls({
     try {
       const newFavoriteState = !prompt.is_favorite;
       await updateSavedPrompt(prompt.id, { is_favorite: newFavoriteState });
-      toast({
-        title: newFavoriteState ? 'Added to favorites' : 'Removed from favorites',
-        status: 'success',
-        duration: 2000,
-      });
       onPromptUpdated?.();
     } catch (err) {
       toast({
@@ -354,13 +344,6 @@ export default function AdvancedGenerationControls({
           };
 
           onGenerate(result);
-
-          toast({
-            title: 'Instrumental prompt ready!',
-            description: 'Saved to history.',
-            status: 'success',
-            duration: 3000,
-          });
         } else {
           // Generate lyrics using the saved prompt as style context
           const lyricsResult = await generateLyricsOnly({
@@ -401,13 +384,6 @@ export default function AdvancedGenerationControls({
           };
 
           onGenerate(result);
-
-          toast({
-            title: 'Lyrics generated!',
-            description: 'Saved to history.',
-            status: 'success',
-            duration: 3000,
-          });
         }
       } else {
         // Standard full generation
@@ -451,13 +427,6 @@ export default function AdvancedGenerationControls({
 
         const result = await generateAdvanced(request);
         onGenerate(result);
-
-        toast({
-          title: 'Generation complete',
-          description: `Created: ${result.concept_title}`,
-          status: 'success',
-          duration: 5000,
-        });
       }
     } catch (error) {
       toast({
@@ -642,25 +611,6 @@ export default function AdvancedGenerationControls({
                     });
                     
                     setSongPrompt(result.concept);
-                    
-                    // Show which genres were chosen
-                    if (result.chosen_genres.length > 0) {
-                      toast({
-                        title: `Picked: ${result.chosen_genres.join(', ')}`,
-                        description: 'Concept generated! Edit as needed.',
-                        status: 'success',
-                        duration: 3000,
-                        isClosable: true,
-                      });
-                    } else {
-                      toast({
-                        title: 'Concept generated',
-                        description: 'Using random style seed. Edit as needed.',
-                        status: 'success',
-                        duration: 3000,
-                        isClosable: true,
-                      });
-                    }
                   } catch (error) {
                     toast({
                       title: 'Failed to generate concept',
@@ -895,25 +845,6 @@ export default function AdvancedGenerationControls({
                     });
                     
                     setLyricsAbout(result.topic);
-                    
-                    // Show which moods influenced the topic
-                    if (result.chosen_moods.length > 0) {
-                      toast({
-                        title: `Mood: ${result.chosen_moods.join(', ')}`,
-                        description: 'Topic generated! Edit as needed.',
-                        status: 'success',
-                        duration: 3000,
-                        isClosable: true,
-                      });
-                    } else {
-                      toast({
-                        title: 'Topic generated',
-                        description: 'Using random mood seed. Edit as needed.',
-                        status: 'success',
-                        duration: 3000,
-                        isClosable: true,
-                      });
-                    }
                   } catch (error) {
                     toast({
                       title: 'Failed to generate topic',

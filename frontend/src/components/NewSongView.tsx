@@ -181,7 +181,7 @@ export default function NewSongView({
         const missing = ranges.filter((r) => !spotifyProfilesByRange[r] && !fetchedRangesRef.current.has(r));
         if (missing.length === 0) return;
 
-        // Mark as fetched before the call to prevent duplicate requests
+        // Mark as in-flight to prevent duplicate concurrent requests
         missing.forEach((r) => fetchedRangesRef.current.add(r));
 
         const results = await Promise.allSettled(missing.map((r) => getProfile(r)));
@@ -190,10 +190,14 @@ export default function NewSongView({
         const next: Partial<Record<TimeRange, SpotifyProfileResponse>> = { ...spotifyProfilesByRange };
         let hasNewData = false;
         results.forEach((res, idx) => {
+          const r = missing[idx];
           if (res.status === 'fulfilled') {
-            const r = missing[idx];
             next[r] = res.value;
             hasNewData = true;
+            // Range stays marked - successfully fetched
+          } else {
+            // Failed: remove from ref so it can be retried on next effect run
+            fetchedRangesRef.current.delete(r);
           }
         });
         if (hasNewData) {
@@ -513,13 +517,6 @@ export default function NewSongView({
 
       const result = await generateAdvanced(request);
       onGenerate(result);
-
-      toast({
-        title: 'Song generated!',
-        description: result.concept_title,
-        status: 'success',
-        duration: 3000,
-      });
     } catch (error) {
       toast({
         title: 'Generation failed',

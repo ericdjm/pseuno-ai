@@ -5,6 +5,20 @@
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:8000';
 
+// === Global 401 Handler ===
+// When a 401 is received, this callback is invoked to sign out the user
+let onUnauthorized: (() => void) | null = null;
+let lastUnauthorizedTime = 0;
+const UNAUTHORIZED_DEBOUNCE_MS = 2000; // Prevent multiple callbacks within 2 seconds
+
+/**
+ * Register a callback to be invoked when any API call receives a 401.
+ * This allows the app to automatically sign out users with expired sessions.
+ */
+export function setOnUnauthorized(callback: (() => void) | null): void {
+  onUnauthorized = callback;
+}
+
 // === Types ===
 
 export interface SpotifyArtist {
@@ -379,6 +393,17 @@ export class ApiError extends Error {
 
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
+    // Handle 401 Unauthorized - session expired or invalid
+    // Debounce to prevent multiple callbacks when many API calls fail at once
+    if (response.status === 401 && onUnauthorized) {
+      const now = Date.now();
+      if (now - lastUnauthorizedTime > UNAUTHORIZED_DEBOUNCE_MS) {
+        lastUnauthorizedTime = now;
+        console.warn('Session expired or invalid - signing out');
+        onUnauthorized();
+      }
+    }
+    
     let detail = '';
     try {
       const data = await response.json();

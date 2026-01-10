@@ -83,12 +83,14 @@ export default function WorkingPromptPanel({
   const [styleRefineOpen, setStyleRefineOpen] = useState(false);
   const [styleRefineText, setStyleRefineText] = useState('');
   const [isRefiningStyle, setIsRefiningStyle] = useState(false);
+  const [showRefineWaitMessage, setShowRefineWaitMessage] = useState(false);
   const styleRefineInputRef = useRef<HTMLInputElement>(null);
 
   // Lyrics Edit composer state (updates in-place)
   const [lyricsEditOpen, setLyricsEditOpen] = useState(false);
   const [lyricsEditText, setLyricsEditText] = useState('');
   const [isEditingLyrics, setIsEditingLyrics] = useState(false);
+  const [showEditWaitMessage, setShowEditWaitMessage] = useState(false);
   const lyricsEditInputRef = useRef<HTMLInputElement>(null);
 
   // Lyrics save debounce
@@ -161,6 +163,9 @@ export default function WorkingPromptPanel({
         // Auto-open draft only when style has NO threads
         if (fetchedThreads.length === 0 && !state.lyricsThreadId) {
           setDraftOpen(true);
+        } else if (state.lyricsThreadId) {
+          // Close draft when navigating to a style with a selected thread (e.g., after refine)
+          setDraftOpen(false);
         }
       } catch (err) {
         console.error('Failed to fetch threads:', err);
@@ -194,8 +199,35 @@ export default function WorkingPromptPanel({
     setLyricsEditOpen(false);
     setLyricsEditText('');
     setDraftLyricsAbout('');
-    // Don't reset draftOpen here - the fetch effect handles that
-  }, [state.stylePromptId]);
+    // Close draft when a thread is selected (e.g., after refine creates new style + thread)
+    if (state.lyricsThreadId) {
+      setDraftOpen(false);
+    }
+  }, [state.stylePromptId, state.lyricsThreadId]);
+
+  // Show "can take up to a minute" message after 5 seconds of refining
+  useEffect(() => {
+    if (!isRefiningStyle) {
+      setShowRefineWaitMessage(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setShowRefineWaitMessage(true);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [isRefiningStyle]);
+
+  // Show "can take up to a minute" message after 5 seconds of editing
+  useEffect(() => {
+    if (!isEditingLyrics) {
+      setShowEditWaitMessage(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setShowEditWaitMessage(true);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [isEditingLyrics]);
 
   // Build Suno URL with style as query param
   const buildSunoUrl = () => {
@@ -468,13 +500,6 @@ export default function WorkingPromptPanel({
 
       // Notify parent to refresh sidebar
       onThreadUpdated?.();
-
-      toast({
-        title: lyricsText ? 'Song created!' : 'Instrumental created!',
-        description: songTitle,
-        status: 'success',
-        duration: 3000,
-      });
     } catch (error) {
       console.error('Failed to create song:', error);
       toast({
@@ -622,51 +647,57 @@ export default function WorkingPromptPanel({
       <Box maxW="560px" w="100%">
         <VStack spacing={4} align="stretch">
           {/* === STYLE HEADER === */}
-          <HStack justify="space-between" align="center">
-            {isRenamingStyle ? (
-              <Input
-                ref={styleRenameInputRef}
-                value={styleRenameValue}
-                onChange={(e) => setStyleRenameValue(e.target.value)}
-                size="md"
-                fontWeight="semibold"
-                fontSize="xl"
-                variant="flushed"
-                borderColor="purple.400"
-                _focus={{ borderColor: 'purple.400', boxShadow: 'none' }}
-                maxW="400px"
-                spellCheck={false}
-                onBlur={handleSaveStyleRename}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleSaveStyleRename();
-                  }
-                  if (e.key === 'Escape') {
-                    setIsRenamingStyle(false);
-                  }
-                }}
-              />
-            ) : (
-              <Tooltip label="Double-click to rename" placement="top" hasArrow>
-                <Text
+          <HStack justify="space-between" align="flex-start" spacing={4}>
+            <Box flex="1" minW={0}>
+              {isRenamingStyle ? (
+                <Input
+                  ref={styleRenameInputRef}
+                  value={styleRenameValue}
+                  onChange={(e) => setStyleRenameValue(e.target.value)}
+                  size="md"
                   fontWeight="semibold"
                   fontSize="xl"
-                  cursor="text"
-                  onDoubleClick={handleStartStyleRename}
-                  _hover={{ color: 'gray.300' }}
-                  transition="color 0.1s"
-                >
-                  {state.styleFields.title || 'Untitled Style'}
-                </Text>
-              </Tooltip>
-            )}
+                  variant="flushed"
+                  borderColor="purple.400"
+                  _focus={{ borderColor: 'purple.400', boxShadow: 'none' }}
+                  w="100%"
+                  spellCheck={false}
+                  onBlur={handleSaveStyleRename}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleSaveStyleRename();
+                    }
+                    if (e.key === 'Escape') {
+                      setIsRenamingStyle(false);
+                    }
+                  }}
+                />
+              ) : (
+                <Tooltip label="Double-click to rename" placement="top" hasArrow>
+                  <Text
+                    fontWeight="semibold"
+                    fontSize="xl"
+                    cursor="text"
+                    onDoubleClick={handleStartStyleRename}
+                    _hover={{ color: 'gray.300' }}
+                    transition="color 0.1s"
+                    noOfLines={2}
+                  >
+                    {state.styleFields.title || 'Untitled Style'}
+                  </Text>
+                </Tooltip>
+              )}
+            </Box>
             <Link
               href={buildSunoUrl()}
               isExternal
               color="gray.400"
               fontSize="sm"
               _hover={{ color: 'purple.300' }}
+              whiteSpace="nowrap"
+              flexShrink={0}
+              pt={1}
             >
               Open in Suno <ExternalLinkIcon mx="2px" />
             </Link>
@@ -687,11 +718,9 @@ export default function WorkingPromptPanel({
                   <ChevronRightIcon color="gray.500" />
                 )}
                 <Text fontWeight="bold" fontSize="sm">Style</Text>
-                {!styleExpanded && (
-                  <Text fontSize="xs" color="gray.500">
-                    Weird {state.styleFields.weirdness}% · Influence {state.styleFields.style_influence}%
-                  </Text>
-                )}
+                <Text fontSize="xs" color="gray.500">
+                  Weird {state.styleFields.weirdness}% · Influence {state.styleFields.style_influence}%
+                </Text>
               </HStack>
               <HStack spacing={3} onClick={(e) => e.stopPropagation()}>
                 {/* Refine Style button */}
@@ -731,78 +760,8 @@ export default function WorkingPromptPanel({
               </HStack>
             </HStack>
 
-            {/* Style Refine Input */}
-            <Collapse in={styleRefineOpen} animateOpacity>
-              <Box bg="purple.900" borderRadius="md" p={3} mt={2} border="1px solid" borderColor="purple.700">
-                <VStack spacing={2} align="stretch">
-                  <Input
-                    ref={styleRefineInputRef}
-                    value={styleRefineText}
-                    onChange={(e) => setStyleRefineText(e.target.value)}
-                    placeholder='e.g. "add more synths", "make it darker", "less electronic"'
-                    bg="gray.900"
-                    borderColor="purple.600"
-                    _hover={{ borderColor: 'purple.500' }}
-                    _focus={{ borderColor: 'purple.400', boxShadow: 'none' }}
-                    fontSize="sm"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && styleRefineText.trim()) {
-                        e.preventDefault();
-                        handleStyleRefineSubmit();
-                      }
-                      if (e.key === 'Escape') {
-                        setStyleRefineOpen(false);
-                        setStyleRefineText('');
-                      }
-                    }}
-                  />
-                  <HStack justify="space-between">
-                    <Text fontSize="xs" color="purple.300">
-                      Creates a new style version
-                    </Text>
-                    <HStack spacing={2}>
-                      <Button
-                        size="xs"
-                        variant="ghost"
-                        color="gray.400"
-                        _hover={{ color: 'white' }}
-                        onClick={() => {
-                          setStyleRefineOpen(false);
-                          setStyleRefineText('');
-                        }}
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        size="xs"
-                        bg="purple.600"
-                        color="white"
-                        _hover={{ bg: 'purple.500' }}
-                        onClick={handleStyleRefineSubmit}
-                        isLoading={isRefiningStyle}
-                        loadingText="Refining..."
-                        isDisabled={!styleRefineText.trim()}
-                      >
-                        Refine
-                      </Button>
-                    </HStack>
-                  </HStack>
-                </VStack>
-              </Box>
-            </Collapse>
-
             <Collapse in={styleExpanded} animateOpacity>
               <VStack spacing={3} align="stretch" mt={2}>
-                {/* Weirdness/Influence when expanded */}
-                <HStack spacing={4}>
-                  <Text fontSize="xs" color="gray.400">
-                    Weirdness: {state.styleFields.weirdness}%
-                  </Text>
-                  <Text fontSize="xs" color="gray.400">
-                    Style Influence: {state.styleFields.style_influence}%
-                  </Text>
-                </HStack>
-
                 {/* Style prompt content */}
                 <Box
                   bg="gray.800"
@@ -835,11 +794,9 @@ export default function WorkingPromptPanel({
                     <ChevronRightIcon color="gray.500" />
                   )}
                   <Text fontWeight="bold" fontSize="sm">Exclude</Text>
-                  {!excludeExpanded && (
-                    <Text fontSize="xs" color="gray.500">
-                      {state.styleFields.exclude.split(',').length} items
-                    </Text>
-                  )}
+                  <Text fontSize="xs" color="gray.500">
+                    {state.styleFields.exclude.split(',').length} items
+                  </Text>
                 </HStack>
                 <IconButton
                   aria-label="Copy exclude"
@@ -861,6 +818,74 @@ export default function WorkingPromptPanel({
               </Collapse>
             </Box>
           )}
+
+          {/* Style Refine Input - accent line style, positioned after Exclude */}
+          <Collapse in={styleRefineOpen} animateOpacity>
+            <Box
+              mt={2}
+              mb={2}
+              pl={3}
+              py={2}
+              borderLeft="2px solid"
+              borderColor="purple.500"
+              bg="linear-gradient(90deg, rgba(128, 90, 213, 0.1) 0%, transparent 100%)"
+            >
+              <VStack spacing={1} align="stretch">
+                <HStack spacing={2}>
+                  <Input
+                    ref={styleRefineInputRef}
+                    value={styleRefineText}
+                    onChange={(e) => setStyleRefineText(e.target.value)}
+                    placeholder='e.g. "add more synths", "make it darker", "less electronic"'
+                    variant="unstyled"
+                    fontSize="sm"
+                    color="gray.100"
+                    _placeholder={{ color: 'gray.500' }}
+                    flex={1}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && styleRefineText.trim()) {
+                        e.preventDefault();
+                        handleStyleRefineSubmit();
+                      }
+                      if (e.key === 'Escape') {
+                        setStyleRefineOpen(false);
+                        setStyleRefineText('');
+                      }
+                    }}
+                  />
+                  <Text
+                    fontSize="xs"
+                    color="gray.600"
+                    cursor="pointer"
+                    _hover={{ color: 'gray.400' }}
+                    onClick={() => {
+                      setStyleRefineOpen(false);
+                      setStyleRefineText('');
+                    }}
+                  >
+                    cancel
+                  </Text>
+                  <Text
+                    fontSize="xs"
+                    color={styleRefineText.trim() ? 'purple.400' : 'gray.600'}
+                    cursor={styleRefineText.trim() ? 'pointer' : 'default'}
+                    fontWeight="medium"
+                    _hover={styleRefineText.trim() ? { color: 'purple.300' } : {}}
+                    onClick={() => styleRefineText.trim() && handleStyleRefineSubmit()}
+                  >
+                    {isRefiningStyle ? 'refining…' : 'refine →'}
+                  </Text>
+                </HStack>
+                {/* Reserve space for wait message - always visible but transparent when not active */}
+                <Text 
+                  fontSize="xs" 
+                  color={showRefineWaitMessage && isRefiningStyle ? 'gray.500' : 'transparent'}
+                >
+                  Generations can take up to a minute...
+                </Text>
+              </VStack>
+            </Box>
+          </Collapse>
 
           <Divider borderColor="gray.700" />
 
@@ -1146,51 +1171,58 @@ export default function WorkingPromptPanel({
                   borderColor="blue.500"
                   bg="linear-gradient(90deg, rgba(66, 153, 225, 0.1) 0%, transparent 100%)"
                 >
-                  <HStack spacing={2}>
-                    <Input
-                      ref={lyricsEditInputRef}
-                      value={lyricsEditText}
-                      onChange={(e) => setLyricsEditText(e.target.value)}
-                      placeholder="Describe changes…"
-                      variant="unstyled"
-                      fontSize="sm"
-                      color="gray.100"
-                      _placeholder={{ color: 'gray.500' }}
-                      flex={1}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && lyricsEditText.trim()) {
-                          e.preventDefault();
-                          handleLyricsEditSubmit();
-                        }
-                        if (e.key === 'Escape') {
+                  <VStack spacing={1} align="stretch">
+                    <HStack spacing={2}>
+                      <Input
+                        ref={lyricsEditInputRef}
+                        value={lyricsEditText}
+                        onChange={(e) => setLyricsEditText(e.target.value)}
+                        placeholder='e.g. "make it sadder", "add a bridge", "shorter verses"'
+                        variant="unstyled"
+                        fontSize="sm"
+                        color="gray.100"
+                        _placeholder={{ color: 'gray.500' }}
+                        flex={1}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && lyricsEditText.trim()) {
+                            e.preventDefault();
+                            handleLyricsEditSubmit();
+                          }
+                          if (e.key === 'Escape') {
+                            setLyricsEditOpen(false);
+                            setLyricsEditText('');
+                          }
+                        }}
+                      />
+                      <Text
+                        fontSize="xs"
+                        color="gray.600"
+                        cursor="pointer"
+                        _hover={{ color: 'gray.400' }}
+                        onClick={() => {
                           setLyricsEditOpen(false);
                           setLyricsEditText('');
-                        }
-                      }}
-                    />
-                    <Text
-                      fontSize="xs"
-                      color="gray.600"
-                      cursor="pointer"
-                      _hover={{ color: 'gray.400' }}
-                      onClick={() => {
-                        setLyricsEditOpen(false);
-                        setLyricsEditText('');
-                      }}
-                    >
-                      cancel
-                    </Text>
-                    <Text
-                      fontSize="xs"
-                      color={lyricsEditText.trim() ? 'blue.400' : 'gray.600'}
-                      cursor={lyricsEditText.trim() ? 'pointer' : 'default'}
-                      fontWeight="medium"
-                      _hover={lyricsEditText.trim() ? { color: 'blue.300' } : {}}
-                      onClick={() => lyricsEditText.trim() && handleLyricsEditSubmit()}
-                    >
-                      {isEditingLyrics ? 'editing…' : 'edit →'}
-                    </Text>
-                  </HStack>
+                        }}
+                      >
+                        cancel
+                      </Text>
+                      <Text
+                        fontSize="xs"
+                        color={lyricsEditText.trim() ? 'blue.400' : 'gray.600'}
+                        cursor={lyricsEditText.trim() ? 'pointer' : 'default'}
+                        fontWeight="medium"
+                        _hover={lyricsEditText.trim() ? { color: 'blue.300' } : {}}
+                        onClick={() => lyricsEditText.trim() && handleLyricsEditSubmit()}
+                      >
+                        {isEditingLyrics ? 'editing…' : 'edit →'}
+                      </Text>
+                    </HStack>
+                    {showEditWaitMessage && isEditingLyrics && (
+                      <Text fontSize="xs" color="gray.500">
+                        Generations can take up to a minute...
+                      </Text>
+                    )}
+                  </VStack>
                 </Box>
               </Collapse>
 
