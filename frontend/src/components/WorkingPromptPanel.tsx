@@ -993,8 +993,15 @@ export default function WorkingPromptPanel({
                 borderBottom="1px solid"
                 borderColor="gray.700"
                 css={{
-                  '&::-webkit-scrollbar': { height: '4px' },
-                  '&::-webkit-scrollbar-thumb': { background: '#4A5568', borderRadius: '2px' },
+                  '&::-webkit-scrollbar': { 
+                    height: '0px',
+                    transition: 'height 0.2s ease',
+                  },
+                  '&::-webkit-scrollbar-thumb': { 
+                    background: '#4A5568', 
+                    borderRadius: '2px',
+                  },
+                  '&:hover::-webkit-scrollbar': { height: '4px' },
                 }}
               >
                 {threads.map((thread, idx) => {
