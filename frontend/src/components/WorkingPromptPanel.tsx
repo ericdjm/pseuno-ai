@@ -689,6 +689,9 @@ export default function WorkingPromptPanel({
       if (onRefineApplied) {
         await onRefineApplied(response);
       }
+      
+      // Refresh sidebar to show updated song title
+      onThreadUpdated?.();
     } catch (err) {
       console.error('Lyrics edit failed:', err);
       toast({

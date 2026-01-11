@@ -358,18 +358,7 @@ function App() {
         },
       });
 
-      if (response.updates_persisted) {
-        const changedStr = response.changed_fields.length > 0
-          ? `Updated: ${response.changed_fields.join(', ')}`
-          : 'No changes detected';
-
-        toast({
-          title: 'Refinement applied',
-          description: response.assistant_message || changedStr,
-          status: response.changed_fields.length > 0 ? 'success' : 'info',
-          duration: 3000,
-        });
-      }
+      // Toast removed per user preference - silent edit
     }
   };
 
