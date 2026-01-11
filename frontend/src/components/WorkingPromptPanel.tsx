@@ -203,13 +203,25 @@ export default function WorkingPromptPanel({
     prevStateRef.current = { stylePromptId: state.stylePromptId, lyricsThreadId: state.lyricsThreadId };
   }, [state.stylePromptId, state.lyricsThreadId]);
 
+  // Track if we should preserve edit state on next navigation (set when refine starts)
+  const preserveEditOnNavigationRef = useRef(false);
+
   // Reset refine/edit/draft state when navigating to a different prompt
+  // But preserve edit state if we just completed a refine (user may want to continue editing)
   useEffect(() => {
     setStyleRefineOpen(false);
     setStyleRefineText('');
-    setLyricsEditOpen(false);
-    setLyricsEditText('');
     setDraftLyricsAbout('');
+    
+    // Only clear edit state if this wasn't from a refine navigation
+    // This lets the user keep their edit text when refine creates a new style
+    if (!preserveEditOnNavigationRef.current) {
+      setLyricsEditOpen(false);
+      setLyricsEditText('');
+    }
+    // Clear the flag after using it
+    preserveEditOnNavigationRef.current = false;
+    
     // Close draft when a thread is selected (e.g., after refine creates new style + thread)
     if (state.lyricsThreadId) {
       setDraftOpen(false);
@@ -592,6 +604,11 @@ export default function WorkingPromptPanel({
       return;
     }
 
+    // If edit popup is open, preserve it when navigating to the new style
+    if (lyricsEditOpen) {
+      preserveEditOnNavigationRef.current = true;
+    }
+
     setIsRefiningStyle(true);
 
     try {
@@ -904,7 +921,7 @@ export default function WorkingPromptPanel({
                     _placeholder={{ color: 'gray.500' }}
                     flex={1}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter' && styleRefineText.trim()) {
+                      if (e.key === 'Enter' && styleRefineText.trim() && !isEditingLyrics) {
                         e.preventDefault();
                         handleStyleRefineSubmit();
                       }
@@ -926,16 +943,24 @@ export default function WorkingPromptPanel({
                   >
                     cancel
                   </Text>
-                  <Text
-                    fontSize="xs"
-                    color={styleRefineText.trim() ? 'purple.400' : 'gray.600'}
-                    cursor={styleRefineText.trim() ? 'pointer' : 'default'}
-                    fontWeight="medium"
-                    _hover={styleRefineText.trim() ? { color: 'purple.300' } : {}}
-                    onClick={() => styleRefineText.trim() && handleStyleRefineSubmit()}
+                  <Tooltip 
+                    label="Wait for edit to finish" 
+                    isDisabled={!isEditingLyrics}
+                    placement="top"
+                    hasArrow
                   >
-                    {isRefiningStyle ? 'refining…' : 'refine →'}
-                  </Text>
+                    <Text
+                      fontSize="xs"
+                      color={isEditingLyrics ? 'gray.600' : (styleRefineText.trim() ? 'purple.400' : 'gray.600')}
+                      cursor={isEditingLyrics ? 'not-allowed' : (styleRefineText.trim() ? 'pointer' : 'default')}
+                      fontWeight="medium"
+                      opacity={isEditingLyrics ? 0.5 : 1}
+                      _hover={isEditingLyrics ? {} : (styleRefineText.trim() ? { color: 'purple.300' } : {})}
+                      onClick={() => !isEditingLyrics && styleRefineText.trim() && handleStyleRefineSubmit()}
+                    >
+                      {isRefiningStyle ? 'refining…' : 'refine →'}
+                    </Text>
+                  </Tooltip>
                 </HStack>
                 {/* Second line: wait message (reserve space) */}
                 <Text 
@@ -1257,7 +1282,7 @@ export default function WorkingPromptPanel({
                         _placeholder={{ color: 'gray.500' }}
                         flex={1}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter' && lyricsEditText.trim()) {
+                          if (e.key === 'Enter' && lyricsEditText.trim() && !isRefiningStyle) {
                             e.preventDefault();
                             handleLyricsEditSubmit();
                           }
@@ -1279,16 +1304,24 @@ export default function WorkingPromptPanel({
                       >
                         cancel
                       </Text>
-                      <Text
-                        fontSize="xs"
-                        color={lyricsEditText.trim() ? 'blue.400' : 'gray.600'}
-                        cursor={lyricsEditText.trim() ? 'pointer' : 'default'}
-                        fontWeight="medium"
-                        _hover={lyricsEditText.trim() ? { color: 'blue.300' } : {}}
-                        onClick={() => lyricsEditText.trim() && handleLyricsEditSubmit()}
+                      <Tooltip 
+                        label="Wait for refine to finish" 
+                        isDisabled={!isRefiningStyle}
+                        placement="top"
+                        hasArrow
                       >
-                        {isEditingLyrics ? 'editing…' : 'edit →'}
-                      </Text>
+                        <Text
+                          fontSize="xs"
+                          color={isRefiningStyle ? 'gray.600' : (lyricsEditText.trim() ? 'blue.400' : 'gray.600')}
+                          cursor={isRefiningStyle ? 'not-allowed' : (lyricsEditText.trim() ? 'pointer' : 'default')}
+                          fontWeight="medium"
+                          opacity={isRefiningStyle ? 0.5 : 1}
+                          _hover={isRefiningStyle ? {} : (lyricsEditText.trim() ? { color: 'blue.300' } : {})}
+                          onClick={() => !isRefiningStyle && lyricsEditText.trim() && handleLyricsEditSubmit()}
+                        >
+                          {isEditingLyrics ? 'editing…' : 'edit →'}
+                        </Text>
+                      </Tooltip>
                     </HStack>
                     {showEditWaitMessage && isEditingLyrics && (
                       <Text fontSize="xs" color="gray.500">
