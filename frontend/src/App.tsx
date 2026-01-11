@@ -3,10 +3,11 @@
  * Two-panel layout: PromptLibrarySidebar + WorkingPromptPanel
  */
 
-import { useState, useEffect, useReducer } from 'react';
+import { useState, useEffect, useReducer, useRef } from 'react';
 import {
   Box,
   VStack,
+  HStack,
   Text,
   Button,
   Flex,
@@ -23,6 +24,7 @@ import {
   PopoverBody,
   Spinner,
   useBreakpointValue,
+  CloseButton,
 } from '@chakra-ui/react';
 import { HamburgerIcon } from '@chakra-ui/icons';
 import { FaSpotify } from 'react-icons/fa';
@@ -47,6 +49,12 @@ function App() {
   // Auth state
   const [authStatus, setAuthStatus] = useState<api.AuthStatus>({ authenticated: false });
   const [authLoading, setAuthLoading] = useState(true);
+  // Track if user was ever authenticated this session (to distinguish session expiry from guest usage)
+  const [wasEverAuthenticated, setWasEverAuthenticated] = useState(false);
+  const wasEverAuthenticatedRef = useRef(wasEverAuthenticated);
+  wasEverAuthenticatedRef.current = wasEverAuthenticated;
+  // Show re-auth banner when session expires (user was authenticated but got 401)
+  const [showReauthBanner, setShowReauthBanner] = useState(false);
 
   // Profile state
   const [profile, setProfile] = useState<api.SpotifyProfileResponse | null>(null);
@@ -117,6 +125,10 @@ function App() {
       try {
         const status = await api.checkAuthStatus();
         setAuthStatus(status);
+        // Track that user was authenticated (for session expiry detection)
+        if (status.authenticated) {
+          setWasEverAuthenticated(true);
+        }
       } catch (e) {
         console.error('Auth check failed:', e);
         // If auth check itself fails with 401, user is not authenticated
@@ -130,14 +142,39 @@ function App() {
     checkAuth();
   }, []);
 
-  // Register global 401 handler - auto re-authenticate on expired sessions
+  // Register global 401 handler - verify session before showing re-auth banner
+  // A 401 might just be a Spotify token issue, not a session issue
   useEffect(() => {
-    api.setOnUnauthorized(() => {
-      console.warn('Session expired - redirecting to Spotify login');
+    api.setOnUnauthorized(async () => {
+      // Don't immediately log out - verify the session is actually invalid
+      // by checking auth status. If session is still valid, it's just a Spotify token issue.
+      try {
+        const status = await api.checkAuthStatus();
+        if (status.authenticated) {
+          // Session is still valid - this was just a Spotify token issue
+          console.log('401 received but session still valid - Spotify token may need refresh');
+          // Show banner to prompt user to reconnect Spotify
+          if (wasEverAuthenticatedRef.current) {
+            setShowReauthBanner(true);
+          }
+          return;
+        }
+      } catch {
+        // Auth check failed - session is definitely invalid
+      }
+      
+      // Session is truly invalid
       setAuthStatus({ authenticated: false });
       setProfile(null);
-      // Auto-redirect to Spotify login
-      api.login().catch(console.error);
+      
+      // Show re-auth banner only if user was previously authenticated (session expired)
+      // Guest users just stay as guests without any prompt
+      if (wasEverAuthenticatedRef.current) {
+        console.warn('Session expired - showing re-auth banner');
+        setShowReauthBanner(true);
+      } else {
+        console.log('401 received for guest user - staying as guest');
+      }
     });
     
     // Cleanup on unmount
@@ -164,9 +201,7 @@ function App() {
       } catch (e) {
         const error = e as api.ApiError;
         setProfileError(error.detail || 'Failed to load profile');
-        if (error.status === 401) {
-          setAuthStatus({ authenticated: false });
-        }
+        // Note: 401 handling is done by the global handler which verifies session validity
       } finally {
         setProfileLoading(false);
       }
@@ -176,6 +211,8 @@ function App() {
 
   // Handlers
   const handleLogin = async () => {
+    // Dismiss re-auth banner since user is taking action
+    setShowReauthBanner(false);
     try {
       await api.login();
     } catch (e) {
@@ -522,6 +559,51 @@ function App() {
           />
         )}
       </Flex>
+
+      {/* Re-authentication banner - shown when session expires */}
+      {showReauthBanner && (
+        <Box
+          position="fixed"
+          bottom={0}
+          left={sidebarOpen ? '280px' : 0}
+          right={0}
+          bg="rgba(60, 28, 28, 0.7)"
+          backdropFilter="blur(8px)"
+          borderTop="1px solid"
+          borderColor="rgba(100, 40, 40, 0.4)"
+          px={4}
+          py={2}
+          zIndex={50}
+        >
+          <HStack justify="center" spacing={4}>
+            <HStack spacing={2}>
+              <Box color="red.400">
+                <FaSpotify size={14} />
+              </Box>
+              <Text fontSize="sm" color="red.300">
+                Reconnect to access your songs & personalized features
+              </Text>
+            </HStack>
+            <Button
+              leftIcon={<FaSpotify />}
+              size="xs"
+              bg="rgba(130, 45, 45, 0.7)"
+              color="gray.100"
+              _hover={{ bg: 'rgba(150, 55, 55, 0.85)' }}
+              onClick={handleLogin}
+            >
+              Reconnect
+            </Button>
+            <CloseButton
+              size="sm"
+              color="red.400"
+              onClick={() => setShowReauthBanner(false)}
+              aria-label="Dismiss"
+              _hover={{ color: 'gray.200', bg: 'rgba(80, 35, 35, 0.5)' }}
+            />
+          </HStack>
+        </Box>
+      )}
     </Box>
   );
 }

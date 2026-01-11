@@ -128,6 +128,12 @@ export default function PromptLibrarySidebar({
 
   // Fetch all prompts (works for both Spotify-authenticated and guest users via device token)
   const fetchPrompts = useCallback(async () => {
+    // Skip fetch for unauthenticated users - they have no saved prompts
+    if (!authStatus.authenticated) {
+      setAllPrompts([]);
+      return;
+    }
+    
     setLoading(true);
     try {
       const response = await listSavedPrompts({ limit: 100, favoritesOnly: false });
@@ -153,12 +159,12 @@ export default function PromptLibrarySidebar({
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [toast, authStatus.authenticated]);
 
-  // Re-fetch prompts and threads when refresh is triggered
+  // Re-fetch prompts and threads when refresh is triggered or auth changes
   useEffect(() => {
     fetchPrompts();
-  }, [fetchPrompts, refreshTrigger]);
+  }, [fetchPrompts, refreshTrigger, authStatus.authenticated]);
 
   // Track previous refresh trigger to detect changes
   const prevRefreshTriggerRef = useRef(refreshTrigger);
