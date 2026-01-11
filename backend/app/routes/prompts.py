@@ -8,7 +8,10 @@ Supports two auth modes:
 The create endpoint will auto-create a guest user if needed and set the device_token cookie.
 """
 
+from typing import List
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
@@ -233,10 +236,62 @@ def get_prompt_threads(
     query = (
         select(LyricsThread)
         .where(LyricsThread.style_prompt_id == prompt_id)
-        .order_by(LyricsThread.updated_at.desc())
+        .order_by(LyricsThread.display_order, LyricsThread.id)
     )
     threads = list(db.scalars(query).all())
     return threads
+
+
+class ReorderThreadsRequest(BaseModel):
+    """Request body for reordering threads within a style."""
+
+    thread_ids: List[int]  # Ordered list of thread IDs in desired display order
+
+
+@router.put("/{prompt_id}/threads/reorder")
+def reorder_threads(
+    prompt_id: int,
+    body: ReorderThreadsRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    device_user: User | None = Depends(get_device_user),
+):
+    """Reorder LyricsThreads (songs) within a StylePrompt.
+
+    Pass an ordered list of thread IDs in the desired display order.
+    All threads must belong to the specified prompt.
+    """
+    spotify_user_id = get_current_user_id_optional(request)
+    user_id = _get_user_id_or_raise(spotify_user_id, device_user)
+
+    prompt = db.get(SunoPrompt, prompt_id)
+    if not prompt:
+        raise HTTPException(status_code=404, detail="Prompt not found")
+    if prompt.owner_user_id != user_id:
+        raise HTTPException(
+            status_code=403, detail="Not authorized to access this prompt"
+        )
+
+    # Get all threads for this prompt
+    threads = (
+        db.query(LyricsThread).filter(LyricsThread.style_prompt_id == prompt_id).all()
+    )
+    thread_map = {t.id: t for t in threads}
+
+    # Validate all provided IDs belong to this prompt
+    for tid in body.thread_ids:
+        if tid not in thread_map:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Thread {tid} does not belong to prompt {prompt_id}",
+            )
+
+    # Update display_order based on position in the list
+    for order, tid in enumerate(body.thread_ids):
+        thread_map[tid].display_order = order
+
+    db.commit()
+    return {"status": "ok", "reordered": len(body.thread_ids)}
 
 
 @router.patch("/{prompt_id}", response_model=SunoPromptResponse)

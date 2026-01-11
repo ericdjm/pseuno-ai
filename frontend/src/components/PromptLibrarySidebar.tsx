@@ -160,19 +160,33 @@ export default function PromptLibrarySidebar({
     fetchPrompts();
   }, [fetchPrompts, refreshTrigger]);
 
-  // Re-fetch threads for expanded prompts when refresh is triggered
+  // Track previous refresh trigger to detect changes
+  const prevRefreshTriggerRef = useRef(refreshTrigger);
+
+  // Re-fetch threads for expanded/active prompts when refresh is triggered
   useEffect(() => {
-    if (refreshTrigger === 0) return; // Skip initial mount
-    expandedPromptIds.forEach(async (promptId) => {
-      try {
-        const threads = await getPromptThreads(promptId);
-        setThreadsCache((prev) => ({ ...prev, [promptId]: threads }));
-      } catch (err) {
-        console.error('Failed to refresh threads:', err);
-      }
+    // Only run when refreshTrigger actually changes (not on initial mount or other dep changes)
+    if (refreshTrigger === prevRefreshTriggerRef.current) return;
+    prevRefreshTriggerRef.current = refreshTrigger;
+    if (refreshTrigger === 0) return; // Skip if this is initial mount
+    
+    // Get all prompt IDs that need refreshing (expanded ones + active one)
+    const promptIdsToRefresh = new Set(expandedPromptIds);
+    if (activeStylePromptId) {
+      promptIdsToRefresh.add(activeStylePromptId);
+    }
+    
+    // Refetch threads for each
+    promptIdsToRefresh.forEach((promptId) => {
+      getPromptThreads(promptId)
+        .then((threads) => {
+          setThreadsCache((prev) => ({ ...prev, [promptId]: threads }));
+        })
+        .catch((err) => {
+          console.error('Failed to refresh threads:', err);
+        });
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshTrigger]);
+  }, [refreshTrigger, expandedPromptIds, activeStylePromptId]);
 
   // Auto-expand the active style when it changes (e.g., after generation)
   useEffect(() => {
@@ -446,7 +460,9 @@ export default function PromptLibrarySidebar({
         prev.map((p) => (p.id === prompt.id ? { ...p, title: updated.title } : p))
       );
       // Notify parent so it can update the right pane title if this is the active style
-      onStyleRenamed?.(prompt.id, updated.title);
+      if (updated.title) {
+        onStyleRenamed?.(prompt.id, updated.title);
+      }
     } catch (err) {
       console.error('Failed to rename:', err);
       toast({

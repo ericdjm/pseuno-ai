@@ -336,15 +336,6 @@ function App() {
 
         // Refresh sidebar to show new style
         setLibraryRefresh((n) => n + 1);
-
-        if (response.updates_persisted) {
-          toast({
-            title: 'New style version created',
-            description: 'Your refinement created a new style. The sidebar has been updated.',
-            status: 'info',
-            duration: 4000,
-          });
-        }
       } catch (err) {
         console.error('Failed to load refined prompt:', err);
         toast({

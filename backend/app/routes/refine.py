@@ -167,7 +167,7 @@ async def unified_refine(
         updates_persisted = True  # Assume success, set to False on failure
 
         if "suno_prompt" in changed_fields:
-            # Style changed: create NEW StylePrompt + fork LyricsThread
+            # Style changed: create NEW StylePrompt + copy ALL threads from original
             try:
                 # Set device_token cookie for newly created guest users
                 if device_user_created and device_user is not None:
@@ -189,7 +189,7 @@ async def unified_refine(
                     auto_tags.insert(0, "refined")
                 # Generate style title using the same LLM-based logic as initial generation
                 title_tags = [t for t in auto_tags if t.lower() != "refined"]
-                
+
                 # Try to generate a creative style name using the agent
                 style_title = ""
                 agent = getattr(fastapi_request.app.state, "song_agent", None)
@@ -204,8 +204,10 @@ async def unified_refine(
                             title_tags[:5], [], tracer
                         )
                     except Exception as e:
-                        logger.warning("Failed to generate style name for refine: %s", e)
-                
+                        logger.warning(
+                            "Failed to generate style name for refine: %s", e
+                        )
+
                 # Fallback to tag-derived title if LLM generation fails
                 if not style_title:
                     style_title = _derive_title_from_prompt(
@@ -231,35 +233,57 @@ async def unified_refine(
                 db.flush()  # Get the ID before creating thread
                 saved_prompt_id = prompt.id
 
-                # Use song title for the thread (not style title)
-                # Prefer updated_snapshot["title"] (song title), fall back to previous thread title
-                song_title = updated_snapshot["title"]
-                if not song_title and request.base_thread_id:
-                    # Try to get the previous thread's title
-                    prev_thread = (
+                # Copy ALL threads from the original style to the new style
+                # This preserves all songs when forking a style
+                if request.base_prompt_id:
+                    all_threads = (
                         db.query(LyricsThread)
-                        .filter(LyricsThread.id == request.base_thread_id)
-                        .first()
+                        .filter(LyricsThread.style_prompt_id == request.base_prompt_id)
+                        .order_by(LyricsThread.id)  # Preserve original creation order
+                        .all()
                     )
-                    if prev_thread:
-                        song_title = prev_thread.title or style_title
-                if not song_title:
-                    song_title = style_title  # Final fallback
 
-                # Fork the LyricsThread if we have a base_thread_id
-                if request.base_thread_id:
-                    thread = LyricsThread(
-                        style_prompt_id=prompt.id,
-                        parent_thread_id=request.base_thread_id,
-                        title=song_title,  # Use song title, not style title
-                        lyrics_text=updated_snapshot["lyrics"],
-                        source_action="refine_fork",
-                    )
-                    db.add(thread)
-                    db.flush()
-                    saved_thread_id = thread.id
+                    for orig_thread in all_threads:
+                        # For the currently viewed thread, use updated lyrics
+                        if orig_thread.id == request.base_thread_id:
+                            new_lyrics = updated_snapshot["lyrics"]
+                            new_title = updated_snapshot["title"] or orig_thread.title
+                        else:
+                            # For other threads, copy as-is
+                            new_lyrics = orig_thread.lyrics_text
+                            new_title = orig_thread.title
+
+                        new_thread = LyricsThread(
+                            style_prompt_id=prompt.id,
+                            parent_thread_id=orig_thread.id,
+                            title=new_title or style_title,
+                            lyrics_text=new_lyrics,
+                            source_action="refine_fork",
+                            display_order=orig_thread.display_order,  # Preserve order
+                        )
+                        db.add(new_thread)
+                        db.flush()
+
+                        # Track the thread that corresponds to the originally viewed one
+                        if orig_thread.id == request.base_thread_id:
+                            saved_thread_id = new_thread.id
+
+                    # If no threads existed or no base_thread_id, create one with the new lyrics
+                    if saved_thread_id is None:
+                        song_title = updated_snapshot["title"] or style_title
+                        thread = LyricsThread(
+                            style_prompt_id=prompt.id,
+                            parent_thread_id=request.base_thread_id,
+                            title=song_title,
+                            lyrics_text=updated_snapshot["lyrics"],
+                            source_action="refine_initial",
+                        )
+                        db.add(thread)
+                        db.flush()
+                        saved_thread_id = thread.id
                 else:
-                    # No base thread - create a new thread with the lyrics
+                    # No base prompt - create a new thread with the lyrics
+                    song_title = updated_snapshot["title"] or style_title
                     thread = LyricsThread(
                         style_prompt_id=prompt.id,
                         parent_thread_id=None,
@@ -360,6 +384,9 @@ async def unified_refine(
             saved_thread_id=saved_thread_id,
         )
 
+    except HTTPException:
+        # Re-raise HTTP exceptions (403, 404, etc.) without wrapping
+        raise
     except RuntimeError as e:
         error_msg = str(e)
         if "timed out" in error_msg.lower():

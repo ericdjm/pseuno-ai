@@ -707,6 +707,24 @@ export async function getPromptThreads(promptId: number): Promise<LyricsThreadSu
   return handleResponse<LyricsThreadSummary[]>(response);
 }
 
+/**
+ * Reorder LyricsThreads (songs) within a StylePrompt
+ */
+export async function reorderThreads(
+  promptId: number,
+  threadIds: number[]
+): Promise<{ status: string; reordered: number }> {
+  const response = await fetch(`${API_BASE}/prompts/${promptId}/threads/reorder`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ thread_ids: threadIds }),
+  });
+  return handleResponse<{ status: string; reordered: number }>(response);
+}
+
 // === LyricsThread Functions ===
 
 export interface CreateLyricsThreadRequest {

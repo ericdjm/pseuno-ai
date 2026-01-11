@@ -232,6 +232,11 @@ class LyricsThread(Base):
         String(32), nullable=False, default="unknown", index=True
     )
 
+    # Display order within the style (for user-defined sorting)
+    display_order: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, index=True
+    )
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

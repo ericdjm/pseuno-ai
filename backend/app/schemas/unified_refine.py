@@ -130,7 +130,9 @@ class PlannerOutput(BaseModel):
     """Structured output from the planner LLM."""
 
     # Style prompt
-    edit_style: bool = Field(default=False, description="Whether to edit the style prompt")
+    edit_style: bool = Field(
+        default=False, description="Whether to edit the style prompt"
+    )
     style_change_request: Optional[str] = Field(
         default=None, description="What to change in the style prompt"
     )
@@ -160,4 +162,3 @@ class PlannerOutput(BaseModel):
     assistant_message: Optional[str] = Field(
         default=None, description="Optional message to show user"
     )
-

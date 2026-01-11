@@ -48,6 +48,7 @@ import {
   generateLyricsOnly,
   generateLyricsTopic,
   createLyricsThread,
+  reorderThreads,
 } from '../api';
 
 interface WorkingPromptPanelProps {
@@ -79,7 +80,7 @@ export default function WorkingPromptPanel({
   const [styleExpanded, setStyleExpanded] = useState(false);
   const [excludeExpanded, setExcludeExpanded] = useState(false);
 
-  // Style Refine composer state (creates new StylePrompt)
+  // Style Refine composer state (always creates new StylePrompt with all songs copied)
   const [styleRefineOpen, setStyleRefineOpen] = useState(false);
   const [styleRefineText, setStyleRefineText] = useState('');
   const [isRefiningStyle, setIsRefiningStyle] = useState(false);
@@ -114,6 +115,10 @@ export default function WorkingPromptPanel({
   const [isGeneratingTopic, setIsGeneratingTopic] = useState(false);
   const [showLongWaitMessage, setShowLongWaitMessage] = useState(false);
 
+  // Drag-and-drop state for reordering tabs
+  const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+
   // Show "can take up to a minute" message after 10 seconds of loading
   useEffect(() => {
     if (!isCreatingSong) {
@@ -147,7 +152,7 @@ export default function WorkingPromptPanel({
   // Track previous state to detect explicit "New song" clicks (same style, thread cleared)
   const prevStateRef = useRef({ stylePromptId: state.stylePromptId, lyricsThreadId: state.lyricsThreadId });
 
-  // Fetch all threads when stylePromptId changes
+  // Fetch all threads when stylePromptId or refreshKey changes
   useEffect(() => {
     if (!state.stylePromptId) {
       setThreads([]);
@@ -160,12 +165,9 @@ export default function WorkingPromptPanel({
       try {
         const fetchedThreads = await getPromptThreads(state.stylePromptId!);
         setThreads(fetchedThreads);
-        // Auto-open draft only when style has NO threads
+        // Auto-open draft only when style has NO threads and no thread is selected
         if (fetchedThreads.length === 0 && !state.lyricsThreadId) {
           setDraftOpen(true);
-        } else if (state.lyricsThreadId) {
-          // Close draft when navigating to a style with a selected thread (e.g., after refine)
-          setDraftOpen(false);
         }
       } catch (err) {
         console.error('Failed to fetch threads:', err);
@@ -176,7 +178,16 @@ export default function WorkingPromptPanel({
     };
 
     fetchThreads();
-  }, [state.stylePromptId, state.lyricsThreadId, refreshKey]);
+    // Note: state.lyricsThreadId intentionally excluded to prevent refetch when switching tabs
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.stylePromptId, refreshKey]);
+
+  // Close draft when a thread is selected (e.g., after refine or clicking a tab)
+  useEffect(() => {
+    if (state.lyricsThreadId) {
+      setDraftOpen(false);
+    }
+  }, [state.lyricsThreadId]);
 
   // Open draft when user clicks "New song" (same style, thread explicitly cleared)
   useEffect(() => {
@@ -270,6 +281,54 @@ export default function WorkingPromptPanel({
         duration: 2000,
       });
     }
+  };
+
+  // Drag-and-drop handlers for reordering tabs
+  const handleDragStart = (e: React.DragEvent, idx: number) => {
+    setDraggedIdx(idx);
+    setDragOverIdx(null);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent, idx: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (draggedIdx !== null && idx !== draggedIdx) {
+      setDragOverIdx(idx);
+    }
+  };
+
+  const handleDragLeave = () => {
+    // Don't clear immediately - let dragOver on next tab set the new target
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetIdx: number) => {
+    e.preventDefault();
+    if (draggedIdx !== null && draggedIdx !== targetIdx) {
+      const newThreads = [...threads];
+      const [draggedThread] = newThreads.splice(draggedIdx, 1);
+      // When dragging forward, indices shift down after removal, so subtract 1
+      const insertIdx = targetIdx > draggedIdx ? targetIdx - 1 : targetIdx;
+      newThreads.splice(insertIdx, 0, draggedThread);
+      setThreads(newThreads);
+
+      // Persist to backend
+      if (state.stylePromptId) {
+        try {
+          await reorderThreads(state.stylePromptId, newThreads.map(t => t.id));
+          onThreadUpdated?.();
+        } catch (err) {
+          console.error('Failed to reorder threads:', err);
+        }
+      }
+    }
+    setDraggedIdx(null);
+    setDragOverIdx(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIdx(null);
+    setDragOverIdx(null);
   };
 
   const openDeleteDialog = (threadId: number, title: string) => {
@@ -553,6 +612,7 @@ export default function WorkingPromptPanel({
       setStyleRefineOpen(false);
       setStyleRefineText('');
 
+      // Always fork: navigate to new style with same song selected
       if (onRefineApplied) {
         await onRefineApplied(response);
       }
@@ -730,8 +790,9 @@ export default function WorkingPromptPanel({
                     cursor="pointer"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setStyleRefineOpen(!styleRefineOpen);
-                      if (!styleRefineOpen) {
+                      const opening = !styleRefineOpen;
+                      setStyleRefineOpen(opening);
+                      if (opening) {
                         setTimeout(() => styleRefineInputRef.current?.focus(), 100);
                       }
                     }}
@@ -876,7 +937,7 @@ export default function WorkingPromptPanel({
                     {isRefiningStyle ? 'refining…' : 'refine →'}
                   </Text>
                 </HStack>
-                {/* Reserve space for wait message - always visible but transparent when not active */}
+                {/* Second line: wait message (reserve space) */}
                 <Text 
                   fontSize="xs" 
                   color={showRefineWaitMessage && isRefiningStyle ? 'gray.500' : 'transparent'}
@@ -910,13 +971,15 @@ export default function WorkingPromptPanel({
               >
                 {threads.map((thread, idx) => {
                   const isSelected = thread.id === state.lyricsThreadId && !draftOpen;
+                  const isDragging = draggedIdx === idx;
+                  const isDropTarget = dragOverIdx === idx && draggedIdx !== null && draggedIdx !== idx;
                   return (
                     <HStack
                       key={thread.id}
                       px={3}
                       py={2}
                       spacing={1}
-                      cursor="pointer"
+                      cursor="grab"
                       fontSize="sm"
                       whiteSpace="nowrap"
                       color={isSelected ? 'white' : 'gray.500'}
@@ -925,12 +988,22 @@ export default function WorkingPromptPanel({
                       borderBottom="2px solid"
                       borderColor={isSelected ? 'purple.500' : 'transparent'}
                       mb="-1px"
+                      opacity={isDragging ? 0.4 : 1}
+                      borderLeft={isDropTarget ? '3px solid' : 'none'}
+                      borderLeftColor="purple.400"
+                      ml={isDropTarget ? '-3px' : 0}
                       _hover={{ 
                         color: isSelected ? 'white' : 'gray.300',
                         bg: isSelected ? 'gray.800' : 'whiteAlpha.50',
                       }}
-                      transition="all 0.15s"
+                      transition="opacity 0.1s"
                       onClick={() => handleTabChange(idx)}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, idx)}
+                      onDragOver={(e) => handleDragOver(e, idx)}
+                      onDrop={(e) => handleDrop(e, idx)}
+                      onDragEnd={handleDragEnd}
+                      onDragLeave={handleDragLeave}
                     >
                       <Text>{thread.title || `Song ${idx + 1}`}</Text>
                     </HStack>
