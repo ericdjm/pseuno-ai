@@ -520,20 +520,18 @@ export default function PromptLibrarySidebar({
               />
             </Box>
           ) : (
-            <Tooltip label="Double-click to rename" placement="right" hasArrow openDelay={500}>
-              <Text
-                fontSize="sm"
-                flex={1}
-                minW={0}
-                overflow="hidden"
-                textOverflow="ellipsis"
-                whiteSpace="nowrap"
-                cursor="text"
-                onDoubleClick={(e) => handleStartRename(e, prompt, section)}
-              >
-                {prompt.title || 'Untitled'}
-              </Text>
-            </Tooltip>
+            <Text
+              fontSize="sm"
+              flex={1}
+              minW={0}
+              overflow="hidden"
+              textOverflow="ellipsis"
+              whiteSpace="nowrap"
+              cursor="text"
+              onDoubleClick={(e) => handleStartRename(e, prompt, section)}
+            >
+              {prompt.title || 'Untitled'}
+            </Text>
           )}
           {/* Right side: Pin icon (visible if pinned) / Menu (on hover) - always rendered for consistent spacing */}
           <Box
@@ -700,18 +698,16 @@ export default function PromptLibrarySidebar({
                           onClick={(e) => e.stopPropagation()}
                         />
                       ) : (
-                        <Tooltip label="Double-click to rename" placement="right" hasArrow openDelay={500}>
-                          <Text 
-                            fontSize="xs" 
-                            flex={1} 
-                            noOfLines={1} 
-                            color={isThreadActive ? 'white' : 'gray.400'}
-                            cursor="text"
-                            onDoubleClick={(e) => handleStartThreadRename(e, thread)}
-                          >
-                            {thread.title || 'Untitled Song'}
-                          </Text>
-                        </Tooltip>
+                        <Text 
+                          fontSize="xs" 
+                          flex={1} 
+                          noOfLines={1} 
+                          color={isThreadActive ? 'white' : 'gray.400'}
+                          cursor="text"
+                          onDoubleClick={(e) => handleStartThreadRename(e, thread)}
+                        >
+                          {thread.title || 'Untitled Song'}
+                        </Text>
                       )}
                       {/* Three-dots menu for thread actions */}
                       <Menu placement="right-start" gutter={4} strategy="fixed">

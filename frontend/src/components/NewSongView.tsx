@@ -95,14 +95,6 @@ export default function NewSongView({
   const [songPrompt, setSongPrompt] = useSessionStorageState('draft:songPrompt', '');
   const [lyricsAbout, setLyricsAbout] = useSessionStorageState('draft:lyricsAbout', '');
 
-  // Reset inputs when resetKey changes (e.g., user clicks "New Song")
-  useEffect(() => {
-    if (resetKey !== undefined && resetKey > 0) {
-      setSongPrompt('');
-      setLyricsAbout('');
-    }
-  }, [resetKey, setSongPrompt, setLyricsAbout]);
-
   // UI state
   const [isLoading, setIsLoading] = useState(false);
   const [showLongWaitMessage, setShowLongWaitMessage] = useState(false);
@@ -125,17 +117,34 @@ export default function NewSongView({
   const [stylesExpanded, setStylesExpanded] = useState(true);
   const [lyricsExpanded, setLyricsExpanded] = useState(false);
   
-  // Style tags (selected tags stored as array)
-  const [selectedTags, setSelectedTags] = useSessionStorageState<string[]>('draft:selectedTags', []);
+  // Style tags (not persisted - clears on refresh)
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   
   // Auto-picked tags from last "Surprise me" (shown as subtle chips)
   const [lastAutoPickedTags, setLastAutoPickedTags] = useState<string[]>([]);
+
+  // Reset inputs when resetKey changes (e.g., user clicks "New Song")
+  useEffect(() => {
+    if (resetKey !== undefined && resetKey > 0) {
+      setSongPrompt('');
+      setLyricsAbout('');
+      setSelectedTags([]);
+      setLastAutoPickedTags([]);
+    }
+  }, [resetKey, setSongPrompt, setLyricsAbout]);
   
   // Max tags constant
   const MAX_TAGS = 5;
   
-  // Personalize toggle for tag recommendations
-  const [personalize, setPersonalize] = useState(false);
+  // Personalize toggle for tag recommendations (defaults to ON when authenticated)
+  const [personalize, setPersonalize] = useState(isAuthenticated);
+
+  // Auto-enable personalization when user logs in
+  useEffect(() => {
+    if (isAuthenticated) {
+      setPersonalize(true);
+    }
+  }, [isAuthenticated]);
 
   // When personalized, we merge multiple Spotify time ranges to build a larger, more robust tag pool.
   const [spotifyProfilesByRange, setSpotifyProfilesByRange] = useState<Partial<Record<TimeRange, SpotifyProfileResponse>>>({});

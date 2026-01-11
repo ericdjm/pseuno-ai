@@ -6,7 +6,7 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -116,21 +116,22 @@ def create_lyrics_thread(
         lyrics_text = seed_thread.lyrics_text
         parent_thread_id = seed_thread.id
 
-    # Get the max display_order for threads in this prompt
-    max_order = (
-        db.query(func.max(LyricsThread.display_order))
+    # Get the max display_order and append new thread at the end
+    existing_threads = (
+        db.query(LyricsThread)
         .filter(LyricsThread.style_prompt_id == body.style_prompt_id)
-        .scalar()
+        .all()
     )
-    next_order = (max_order or 0) + 1
+    max_order = max((t.display_order for t in existing_threads), default=-1)
 
+    # New thread goes at the end
     thread = LyricsThread(
         style_prompt_id=body.style_prompt_id,
         parent_thread_id=parent_thread_id,
         title=body.title or "Untitled Song",
         lyrics_text=lyrics_text,
         source_action="new_lyrics_variation",
-        display_order=next_order,
+        display_order=max_order + 1,
     )
     db.add(thread)
     db.commit()
