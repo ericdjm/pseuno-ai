@@ -31,7 +31,6 @@ import {
   AlertDialogContent,
   AlertDialogOverlay,
   Button,
-  Tooltip,
 } from '@chakra-ui/react';
 import {
   ChevronDownIcon,
@@ -56,6 +55,15 @@ import {
   deleteLyricsThread,
   updateLyricsThread,
 } from '../api';
+import {
+  trackFavoriteToggled,
+  trackNewLyricsVariationClicked,
+  trackSongDeleted,
+  trackStyleDeleted,
+  trackSongDeleteFailed,
+  trackStyleDeleteFailed,
+  trackSongTitleChangeFailed,
+} from '../analytics';
 
 interface PromptLibrarySidebarProps {
   refreshTrigger: number;
@@ -313,8 +321,14 @@ export default function PromptLibrarySidebar({
     e.stopPropagation();
     setTogglingFavoriteId(prompt.id);
     try {
+      const newFavoriteState = !prompt.is_favorite;
       const updated = await updateSavedPrompt(prompt.id, {
-        is_favorite: !prompt.is_favorite,
+        is_favorite: newFavoriteState,
+      });
+      
+      trackFavoriteToggled({
+        auth_state: authStatus.authenticated ? 'spotify' : 'guest',
+        is_favorite: newFavoriteState,
       });
       
       // Update list and reorder
@@ -361,7 +375,13 @@ export default function PromptLibrarySidebar({
       setAllPrompts((prev) => prev.filter((p) => p.id !== deletingId));
       // Notify parent so it can clear the right pane if this was the active style
       onStyleDeleted?.(deletingId);
+      trackStyleDeleted({ auth_state: authStatus.authenticated ? 'spotify' : 'guest', source: 'sidebar' });
     } catch (err) {
+      trackStyleDeleteFailed({
+        auth_state: authStatus.authenticated ? 'spotify' : 'guest',
+        source: 'sidebar',
+        error_type: err instanceof Error ? err.name : 'unknown',
+      });
       console.error('Failed to delete prompt:', err);
       toast({
         title: 'Failed to delete style',
@@ -391,7 +411,20 @@ export default function PromptLibrarySidebar({
       });
       // Notify parent so it can update the right pane if this was the active thread
       onThreadDeleted?.(thread.id);
+      const nextCount = (threadsCache[promptId] || []).filter((t) => t.id !== thread.id).length;
+      const remaining_songs_bucket: '0' | '1-2' | '3-5' | '6+' =
+        nextCount === 0 ? '0' : nextCount <= 2 ? '1-2' : nextCount <= 5 ? '3-5' : '6+';
+      trackSongDeleted({
+        auth_state: authStatus.authenticated ? 'spotify' : 'guest',
+        source: 'sidebar',
+        remaining_songs_bucket,
+      });
     } catch (err) {
+      trackSongDeleteFailed({
+        auth_state: authStatus.authenticated ? 'spotify' : 'guest',
+        source: 'sidebar',
+        error_type: err instanceof Error ? err.name : 'unknown',
+      });
       console.error('Failed to delete song:', err);
       toast({
         title: 'Failed to delete song',
@@ -434,6 +467,10 @@ export default function PromptLibrarySidebar({
       // Notify parent to update WorkingState if this thread is active
       onThreadRenamed?.(thread.id, trimmed);
     } catch (err) {
+      trackSongTitleChangeFailed({
+        auth_state: authStatus.authenticated ? 'spotify' : 'guest',
+        error_type: err instanceof Error ? err.name : 'unknown',
+      });
       console.error('Failed to rename song:', err);
       toast({
         title: 'Failed to rename song',
@@ -596,6 +633,9 @@ export default function PromptLibrarySidebar({
                       icon={<AddIcon boxSize={3} color="gray.400" />}
                       onClick={(e) => {
                         e.stopPropagation();
+                        trackNewLyricsVariationClicked({
+                          auth_state: authStatus.authenticated ? 'spotify' : 'guest',
+                        });
                         onNewLyricsVariation(prompt);
                       }}
                       bg="gray.700"

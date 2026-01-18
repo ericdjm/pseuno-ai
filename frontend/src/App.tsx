@@ -38,6 +38,19 @@ import {
   workingReducer,
   createInitialWorkingState,
 } from './types/workingState';
+import {
+  trackAuthLoginClicked,
+  trackAuthLoginSucceeded,
+  trackAuthLoginFailed,
+  trackAuthStatusLoaded,
+  trackAuthLogout,
+  trackStyleSelected,
+  trackThreadSelected,
+  trackStyleTitleChanged,
+  trackSongTitleChanged,
+  identifyUser,
+  resetIdentity,
+} from './analytics';
 
 // Right pane view modes
 type RightPaneMode = 'new_song' | 'song_view';
@@ -106,6 +119,7 @@ function App() {
     const success = api.checkUrlSuccess();
 
     if (error) {
+      trackAuthLoginFailed(error);
       toast({
         title: 'Login failed',
         description: error,
@@ -114,6 +128,7 @@ function App() {
       });
       api.clearUrlParams();
     } else if (success) {
+      trackAuthLoginSucceeded();
       api.clearUrlParams();
     }
   }, [toast]);
@@ -125,15 +140,22 @@ function App() {
       try {
         const status = await api.checkAuthStatus();
         setAuthStatus(status);
+        // Track auth status for analytics
+        trackAuthStatusLoaded(status.authenticated);
         // Track that user was authenticated (for session expiry detection)
         if (status.authenticated) {
           setWasEverAuthenticated(true);
+          // Identify user in PostHog for session stitching (use user_name as identifier)
+          if (status.user_name) {
+            identifyUser(status.user_name);
+          }
         }
       } catch (e) {
         console.error('Auth check failed:', e);
         // If auth check itself fails with 401, user is not authenticated
         if (e instanceof api.ApiError && e.status === 401) {
           setAuthStatus({ authenticated: false });
+          trackAuthStatusLoaded(false);
         }
       } finally {
         setAuthLoading(false);
@@ -213,9 +235,11 @@ function App() {
   const handleLogin = async () => {
     // Dismiss re-auth banner since user is taking action
     setShowReauthBanner(false);
+    trackAuthLoginClicked();
     try {
       await api.login();
     } catch (e) {
+      trackAuthLoginFailed('redirect_failed');
       toast({
         title: 'Login failed',
         description: 'Could not connect to Spotify',
@@ -225,6 +249,8 @@ function App() {
   };
 
   const handleLogout = async () => {
+    trackAuthLogout();
+    resetIdentity();
     await api.logout();
     setAuthStatus({ authenticated: false });
     setProfile(null);
@@ -237,7 +263,10 @@ function App() {
   };
 
   // Handle generation complete
-  const handleAdvancedGenerate = async (result: api.AdvancedGenerateResponse) => {
+  const handleAdvancedGenerate = async (
+    result: api.AdvancedGenerateResponse,
+    meta?: { flow_id: string }
+  ) => {
     // Fetch the saved prompt to get full details, then switch to song_view.
     // We must dispatch BEFORE setRightPaneMode('song_view') because there's a useEffect
     // that resets to 'new_song' if song_view is active but no prompt is loaded yet.
@@ -264,7 +293,18 @@ function App() {
           threadId: fullThread?.id ?? threadSummary?.id ?? null,
           threadTitle: fullThread?.title ?? threadSummary?.title,
           lyricsText: fullThread?.lyrics_text,
+          generatedFlowId: meta?.flow_id,
         });
+
+        // Track AI-set titles (generate flow) so we can distinguish from manual renames.
+        const auth_state = authStatus.authenticated ? 'spotify' : 'guest';
+        if (savedPrompt.title && savedPrompt.title.trim()) {
+          trackStyleTitleChanged({ auth_state, source: 'ai_generate' });
+        }
+        const generatedThreadTitle = fullThread?.title ?? threadSummary?.title;
+        if (generatedThreadTitle && generatedThreadTitle.trim()) {
+          trackSongTitleChanged({ auth_state, source: 'ai_generate' });
+        }
       } catch (err) {
         console.error('Failed to load generated prompt:', err);
         // Fallback: just use the result data
@@ -291,6 +331,7 @@ function App() {
             updated_at: new Date().toISOString(),
           } as api.SavedSunoPrompt,
           threadId: null,
+          generatedFlowId: meta?.flow_id,
         });
       }
     }
@@ -307,6 +348,7 @@ function App() {
     prompt: api.SavedSunoPrompt,
     threads: api.LyricsThreadSummary[]
   ) => {
+    trackStyleSelected({ auth_state: authStatus.authenticated ? 'spotify' : 'guest' });
     dispatch({ type: 'LOAD_STYLE_PROMPT', prompt });
     setRightPaneMode('song_view');
     
@@ -330,6 +372,7 @@ function App() {
     prompt: api.SavedSunoPrompt,
     threadSummary: api.LyricsThreadSummary
   ) => {
+    trackThreadSelected({ auth_state: authStatus.authenticated ? 'spotify' : 'guest' });
     // If different prompt, load it first
     if (workingState.stylePromptId !== prompt.id) {
       dispatch({ type: 'LOAD_STYLE_PROMPT', prompt });
@@ -351,6 +394,9 @@ function App() {
 
   // Handle unified refine response (from WorkingPromptPanel)
   const handleRefineApplied = async (response: api.UnifiedRefineResponse) => {
+    const auth_state = authStatus.authenticated ? 'spotify' : 'guest';
+    const prevStyleTitle = workingState.styleFields.title || '';
+    const prevSongTitle = workingState.lyricsFields.lyrics_title || '';
     // Check if persistence failed
     if (!response.updates_persisted) {
       toast({
@@ -370,6 +416,14 @@ function App() {
 
         dispatch({ type: 'LOAD_STYLE_PROMPT', prompt: savedPrompt });
         dispatch({ type: 'SELECT_THREAD', thread: fullThread });
+
+        // Track AI-set titles during refine (new style/thread created).
+        if (savedPrompt.title && savedPrompt.title.trim() && savedPrompt.title !== prevStyleTitle) {
+          trackStyleTitleChanged({ auth_state, source: 'ai_refine' });
+        }
+        if (fullThread.title && fullThread.title.trim() && fullThread.title !== prevSongTitle) {
+          trackSongTitleChanged({ auth_state, source: 'ai_refine' });
+        }
 
         // Refresh sidebar to show new style
         setLibraryRefresh((n) => n + 1);
@@ -394,6 +448,11 @@ function App() {
           weirdness: response.weirdness,
         },
       });
+
+      // Track AI-updated song title (lyrics refine in-place).
+      if (response.title && response.title.trim() && response.title !== prevSongTitle) {
+        trackSongTitleChanged({ auth_state, source: 'ai_refine' });
+      }
 
       // Toast removed per user preference - silent edit
     }
@@ -556,6 +615,7 @@ function App() {
               setLibraryRefresh((n) => n + 1);
             }}
             refreshKey={libraryRefresh}
+            isAuthenticated={authStatus.authenticated}
           />
         )}
       </Flex>

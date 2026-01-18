@@ -50,6 +50,41 @@ import {
   createLyricsThread,
   reorderThreads,
 } from '../api';
+import {
+  trackStyleRefineStarted,
+  trackStyleRefineSucceeded,
+  trackStyleRefineFailed,
+  trackLyricsAiEditStarted,
+  trackLyricsAiEditSucceeded,
+  trackLyricsAiEditFailed,
+  trackCopiedToClipboard,
+  trackSunoLinkClicked,
+  trackDraftLyricsGenerated,
+  trackNewLyricsInStyleStarted,
+  trackNewLyricsInStyleSucceeded,
+  trackNewLyricsInStyleFailed,
+  trackRandomizeLyricsClicked,
+  trackRandomizeLyricsSucceeded,
+  trackRandomizeLyricsFailed,
+  trackNewLyricsVariationClicked,
+  trackSongTitleChanged,
+  trackStyleTitleChanged,
+  trackLyricsManualEditSaved,
+  trackSongDeleted,
+  trackSongsReordered,
+  trackCopiedToClipboardFailed,
+  trackDraftLyricsFailed,
+  trackLyricsManualEditSaveFailed,
+  trackSongDeleteFailed,
+  trackSongsReorderFailed,
+  trackSongTitleChangeFailed,
+  trackStyleTitleChangeFailed,
+  trackOutputUsed,
+  changedFieldsToProps,
+  createFlowId,
+} from '../analytics';
+import type { CopyContentType, CopyContext, OutputUsedMethod } from '../analytics';
+import type { OriginAction } from '../analytics';
 
 interface WorkingPromptPanelProps {
   state: WorkingState;
@@ -57,6 +92,7 @@ interface WorkingPromptPanelProps {
   onRefineApplied?: (response: UnifiedRefineResponse) => Promise<void>;
   onThreadUpdated?: () => void;
   refreshKey?: number;
+  isAuthenticated?: boolean;
 }
 
 export default function WorkingPromptPanel({
@@ -65,8 +101,13 @@ export default function WorkingPromptPanel({
   onRefineApplied,
   onThreadUpdated,
   refreshKey,
+  isAuthenticated = false,
 }: WorkingPromptPanelProps) {
   const toast = useToast();
+  const authState = isAuthenticated ? 'spotify' : 'guest';
+
+  // Track the most recent “origin action” for this view so output_used can be attributed.
+  const lastOriginRef = useRef<{ flow_id: string; origin_action: OriginAction; at_ms: number } | null>(null);
 
   // All threads for this StylePrompt
   const [threads, setThreads] = useState<LyricsThreadSummary[]>([]);
@@ -97,6 +138,9 @@ export default function WorkingPromptPanel({
   // Lyrics save debounce
   const [savingLyrics, setSavingLyrics] = useState(false);
   const lyricsSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSavedLyricsLenRef = useRef<number>(0);
+  const baselineLyricsThreadIdRef = useRef<number | null>(null);
+  const baselineInitializedRef = useRef(false);
 
   // Song renaming state
   const [isRenaming, setIsRenaming] = useState(false);
@@ -107,6 +151,19 @@ export default function WorkingPromptPanel({
   const [isRenamingStyle, setIsRenamingStyle] = useState(false);
   const [styleRenameValue, setStyleRenameValue] = useState('');
   const styleRenameInputRef = useRef<HTMLInputElement>(null);
+
+  // Establish a baseline for "manual edit size" per selected thread.
+  useEffect(() => {
+    if (state.lyricsThreadId !== baselineLyricsThreadIdRef.current) {
+      baselineLyricsThreadIdRef.current = state.lyricsThreadId;
+      baselineInitializedRef.current = false;
+    }
+    if (!baselineInitializedRef.current) {
+      lastSavedLyricsLenRef.current = (state.lyricsFields.lyrics_text || '').length;
+      // Mark initialized immediately; empty lyrics is a valid baseline (instrumental / not generated yet).
+      baselineInitializedRef.current = true;
+    }
+  }, [state.lyricsThreadId, state.lyricsFields.lyrics_text]);
 
   // Draft tab state (inline new song composer)
   const [draftOpen, setDraftOpen] = useState(false);
@@ -267,6 +324,7 @@ export default function WorkingPromptPanel({
     // If clicking "+" button, open the draft tab
     if (index === threads.length) {
       setDraftOpen(true);
+      trackNewLyricsVariationClicked({ auth_state: authState });
       return;
     }
 
@@ -329,7 +387,15 @@ export default function WorkingPromptPanel({
         try {
           await reorderThreads(state.stylePromptId, newThreads.map(t => t.id));
           onThreadUpdated?.();
+          const songs_count_bucket: '1-2' | '3-5' | '6+' =
+            newThreads.length <= 2 ? '1-2' : newThreads.length <= 5 ? '3-5' : '6+';
+          trackSongsReordered({
+            auth_state: authState,
+            songs_count_bucket,
+            move_direction: insertIdx < draggedIdx ? 'up' : 'down',
+          });
         } catch (err) {
+          trackSongsReorderFailed({ auth_state: authState, error_type: err instanceof Error ? err.name : 'unknown' });
           console.error('Failed to reorder threads:', err);
         }
       }
@@ -362,6 +428,20 @@ export default function WorkingPromptPanel({
       const nextThreads = prevThreads.filter((t) => t.id !== deletingId);
       setThreads(nextThreads);
 
+      const remaining_songs_bucket: '0' | '1-2' | '3-5' | '6+' =
+        nextThreads.length === 0
+          ? '0'
+          : nextThreads.length <= 2
+            ? '1-2'
+            : nextThreads.length <= 5
+              ? '3-5'
+              : '6+';
+      trackSongDeleted({
+        auth_state: authState,
+        source: 'song_view',
+        remaining_songs_bucket,
+      });
+
       // If we deleted the selected thread, pick a neighbor; if none, open the draft tab.
       if (wasSelected) {
         if (nextThreads.length === 0) {
@@ -378,6 +458,11 @@ export default function WorkingPromptPanel({
       // Notify parent to refresh sidebar
       onThreadUpdated?.();
     } catch (err) {
+      trackSongDeleteFailed({
+        auth_state: authState,
+        source: 'song_view',
+        error_type: err instanceof Error ? err.name : 'unknown',
+      });
       console.error('Failed to delete song:', err);
       toast({
         title: 'Failed to delete song',
@@ -414,7 +499,9 @@ export default function WorkingPromptPanel({
       setThreads((prev) => prev.map((t) => (t.id === updated.id ? { ...t, title: updated.title } : t)));
       // Notify parent to refresh sidebar
       onThreadUpdated?.();
+      trackSongTitleChanged({ auth_state: authState, source: 'manual' });
     } catch (err) {
+      trackSongTitleChangeFailed({ auth_state: authState, error_type: err instanceof Error ? err.name : 'unknown' });
       console.error('Failed to rename song:', err);
       toast({
         title: 'Failed to rename song',
@@ -447,7 +534,9 @@ export default function WorkingPromptPanel({
       dispatch({ type: 'EDIT_STYLE_FIELD', field: 'title', value: trimmed });
       // Notify parent to refresh sidebar
       onThreadUpdated?.();
+      trackStyleTitleChanged({ auth_state: authState, source: 'manual' });
     } catch (err) {
+      trackStyleTitleChangeFailed({ auth_state: authState, error_type: err instanceof Error ? err.name : 'unknown' });
       console.error('Failed to rename style:', err);
       toast({
         title: 'Failed to rename style',
@@ -476,6 +565,8 @@ export default function WorkingPromptPanel({
     if (!state.lyricsThreadId) return;
     setSavingLyrics(true);
     try {
+      const prevLen = lastSavedLyricsLenRef.current;
+      const newLen = (lyrics_text || '').length;
       const updated = await updateLyricsThread(state.lyricsThreadId, { lyrics_text });
       dispatch({ type: 'SAVE_THREAD_SUCCESS', thread: updated });
       
@@ -483,7 +574,22 @@ export default function WorkingPromptPanel({
       setThreads(prev => prev.map(t => 
         t.id === updated.id ? { ...t, title: updated.title } : t
       ));
+
+      // Track manual lyric edits (vs AI refine). Keep properties low-cardinality.
+      const delta = newLen - prevLen;
+      if (delta !== 0) {
+        const abs = Math.abs(delta);
+        const edit_size: 'small' | 'medium' | 'large' =
+          abs <= 20 ? 'small' : abs <= 200 ? 'medium' : 'large';
+        trackLyricsManualEditSaved({
+          auth_state: authState,
+          edit_size,
+          was_empty_before: prevLen === 0,
+        });
+        lastSavedLyricsLenRef.current = newLen;
+      }
     } catch (err) {
+      trackLyricsManualEditSaveFailed({ auth_state: authState, error_type: err instanceof Error ? err.name : 'unknown' });
       console.error('Failed to save lyrics:', err);
       toast({
         title: 'Failed to save lyrics',
@@ -500,13 +606,34 @@ export default function WorkingPromptPanel({
     if (!state.styleFields.suno_prompt) return;
     
     setIsGeneratingTopic(true);
+    const startTime = Date.now();
+    trackRandomizeLyricsClicked({
+      auth_state: authState,
+      has_style_input: true,
+      page: 'song_view',
+      randomize_context: 'draft_composer',
+    });
     try {
       const result = await generateLyricsTopic({
         style_prompt: state.styleFields.suno_prompt,
       });
       setDraftLyricsAbout(result.topic);
+      trackRandomizeLyricsSucceeded({
+        auth_state: authState,
+        duration_ms: Date.now() - startTime,
+        has_style_input: true,
+        page: 'song_view',
+        randomize_context: 'draft_composer',
+      });
       // No toast - the topic appearing in the box is enough feedback
     } catch (error) {
+      trackRandomizeLyricsFailed({
+        auth_state: authState,
+        duration_ms: Date.now() - startTime,
+        error_type: error instanceof Error ? error.name : 'unknown',
+        page: 'song_view',
+        randomize_context: 'draft_composer',
+      });
       toast({
         title: 'Failed to generate topic',
         description: error instanceof Error ? error.message : 'Unknown error',
@@ -530,11 +657,23 @@ export default function WorkingPromptPanel({
     }
 
     setIsCreatingSong(true);
+    const startTime = Date.now();
+    const hasLyricsAboutInput = draftLyricsAbout.trim().length > 0;
+    trackNewLyricsInStyleStarted({
+      auth_state: authState,
+      has_lyrics_about_input: hasLyricsAboutInput,
+    });
     try {
       // Generate lyrics + title (or just title for instrumental)
       const lyricsResult = await generateLyricsOnly({
         suno_prompt: state.styleFields.suno_prompt,
         lyrics_about: draftLyricsAbout.trim(),
+      });
+      
+      trackDraftLyricsGenerated({
+        auth_state: authState,
+        duration_ms: Date.now() - startTime,
+        has_lyrics_about_input: hasLyricsAboutInput,
       });
 
       const songTitle = lyricsResult.song_title || 'New Song';
@@ -571,7 +710,25 @@ export default function WorkingPromptPanel({
 
       // Notify parent to refresh sidebar
       onThreadUpdated?.();
+
+      trackNewLyricsInStyleSucceeded({
+        auth_state: authState,
+        duration_ms: Date.now() - startTime,
+        has_lyrics_about_input: hasLyricsAboutInput,
+      });
     } catch (error) {
+      trackDraftLyricsFailed({
+        auth_state: authState,
+        duration_ms: Date.now() - startTime,
+        error_type: error instanceof Error ? error.name : 'unknown',
+        has_lyrics_about_input: hasLyricsAboutInput,
+      });
+      trackNewLyricsInStyleFailed({
+        auth_state: authState,
+        duration_ms: Date.now() - startTime,
+        error_type: error instanceof Error ? error.name : 'unknown',
+        has_lyrics_about_input: hasLyricsAboutInput,
+      });
       console.error('Failed to create song:', error);
       toast({
         title: 'Failed to create song',
@@ -609,6 +766,11 @@ export default function WorkingPromptPanel({
       preserveEditOnNavigationRef.current = true;
     }
 
+    const flowId = createFlowId();
+    lastOriginRef.current = { flow_id: flowId, origin_action: 'style_refine', at_ms: Date.now() };
+    trackStyleRefineStarted({ auth_state: authState });
+    const startTime = Date.now();
+
     setIsRefiningStyle(true);
 
     try {
@@ -626,6 +788,31 @@ export default function WorkingPromptPanel({
         refine_target: 'style',
       });
 
+      if (!response.updates_persisted) {
+        trackStyleRefineFailed({
+          auth_state: authState,
+          duration_ms: Date.now() - startTime,
+          error_type: 'updates_not_persisted',
+          flow_id: flowId,
+        });
+        toast({
+          title: 'Style refinement failed',
+          description: 'The server generated an update but could not save it. Please try again.',
+          status: 'error',
+          duration: 4000,
+        });
+        return;
+      }
+
+      trackStyleRefineSucceeded({
+        auth_state: authState,
+        duration_ms: Date.now() - startTime,
+        created_new_style: !!response.saved_prompt_id,
+        updates_persisted: response.updates_persisted,
+        ...changedFieldsToProps(response.changed_fields),
+        flow_id: flowId,
+      });
+
       setStyleRefineOpen(false);
       setStyleRefineText('');
 
@@ -634,6 +821,13 @@ export default function WorkingPromptPanel({
         await onRefineApplied(response);
       }
     } catch (err) {
+      trackStyleRefineFailed({
+        auth_state: authState,
+        duration_ms: Date.now() - startTime,
+        error_type: err instanceof Error ? err.name : 'unknown',
+        flow_id: flowId,
+      });
+
       console.error('Style refine failed:', err);
       toast({
         title: 'Style refinement failed',
@@ -666,6 +860,11 @@ export default function WorkingPromptPanel({
       return;
     }
 
+    const flowId = createFlowId();
+    lastOriginRef.current = { flow_id: flowId, origin_action: 'lyrics_ai_edit', at_ms: Date.now() };
+    trackLyricsAiEditStarted({ auth_state: authState });
+    const startTime = Date.now();
+
     setIsEditingLyrics(true);
 
     try {
@@ -683,6 +882,30 @@ export default function WorkingPromptPanel({
         refine_target: 'lyrics',
       });
 
+      if (!response.updates_persisted) {
+        trackLyricsAiEditFailed({
+          auth_state: authState,
+          duration_ms: Date.now() - startTime,
+          error_type: 'updates_not_persisted',
+          flow_id: flowId,
+        });
+        toast({
+          title: 'Lyrics edit failed',
+          description: 'The server generated an update but could not save it. Please try again.',
+          status: 'error',
+          duration: 4000,
+        });
+        return;
+      }
+
+      trackLyricsAiEditSucceeded({
+        auth_state: authState,
+        duration_ms: Date.now() - startTime,
+        updates_persisted: response.updates_persisted,
+        ...changedFieldsToProps(response.changed_fields),
+        flow_id: flowId,
+      });
+
       setLyricsEditOpen(false);
       setLyricsEditText('');
 
@@ -693,6 +916,13 @@ export default function WorkingPromptPanel({
       // Refresh sidebar to show updated song title
       onThreadUpdated?.();
     } catch (err) {
+      trackLyricsAiEditFailed({
+        auth_state: authState,
+        duration_ms: Date.now() - startTime,
+        error_type: err instanceof Error ? err.name : 'unknown',
+        flow_id: flowId,
+      });
+
       console.error('Lyrics edit failed:', err);
       toast({
         title: 'Lyrics edit failed',
@@ -706,8 +936,72 @@ export default function WorkingPromptPanel({
   };
 
   // Copy to clipboard
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
+  const copyToClipboard = async (
+    text: string,
+    contentType: CopyContentType,
+    copyContext: CopyContext
+  ) => {
+    const excludeText = state.styleFields.exclude || '';
+    const excludePresent = excludeText.trim().length > 0;
+    const excludeCount = excludePresent ? excludeText.split(',').filter(Boolean).length : 0;
+    const exclude_count_bucket: '0' | '1-2' | '3-5' | '6+' =
+      excludeCount === 0 ? '0' : excludeCount <= 2 ? '1-2' : excludeCount <= 5 ? '3-5' : '6+';
+    try {
+      await navigator.clipboard.writeText(text);
+
+      const origin_action: OriginAction =
+        state.mode === 'generated' && state.generatedFlowId
+          ? 'generate'
+          : (lastOriginRef.current?.origin_action ?? 'unknown');
+      const flow_id: string | undefined =
+        state.mode === 'generated' && state.generatedFlowId
+          ? state.generatedFlowId
+          : lastOriginRef.current?.flow_id;
+
+      trackCopiedToClipboard({
+        auth_state: authState,
+        content_type: contentType,
+        copy_context: copyContext,
+        exclude_present: excludePresent,
+        exclude_count_bucket,
+        origin_action,
+        flow_id,
+        prompt_generation_id: state.promptGenerationId,
+      });
+
+      const methodByType: Record<CopyContentType, OutputUsedMethod> = {
+        style_prompt: 'copy_style_prompt',
+        exclude: 'copy_exclude',
+        lyrics: 'copy_lyrics',
+        title: 'copy_title',
+        suno_link: 'copy_suno_link',
+      };
+      trackOutputUsed({
+        auth_state: authState,
+        method: methodByType[contentType],
+        style_prompt_id: state.stylePromptId,
+        lyrics_thread_id: state.lyricsThreadId,
+        copy_context: copyContext,
+        exclude_present: excludePresent,
+        exclude_count_bucket,
+        origin_mode: state.mode,
+        origin_action,
+        flow_id,
+        prompt_generation_id: state.promptGenerationId,
+      });
+    } catch (err) {
+      trackCopiedToClipboardFailed({
+        auth_state: authState,
+        content_type: contentType,
+        copy_context: copyContext,
+        exclude_present: excludePresent,
+        exclude_count_bucket,
+        error_type: err instanceof Error ? err.name : 'unknown',
+        origin_action: lastOriginRef.current?.origin_action ?? 'unknown',
+        flow_id: lastOriginRef.current?.flow_id,
+        prompt_generation_id: state.promptGenerationId,
+      });
+    }
   };
 
   // If no prompt loaded, show empty state
@@ -778,6 +1072,42 @@ export default function WorkingPromptPanel({
               whiteSpace="nowrap"
               flexShrink={0}
               pt={1}
+              onClick={() => {
+                const excludeText = state.styleFields.exclude || '';
+                const excludePresent = excludeText.trim().length > 0;
+                const excludeCount = excludePresent ? excludeText.split(',').filter(Boolean).length : 0;
+                const exclude_count_bucket: '0' | '1-2' | '3-5' | '6+' =
+                  excludeCount === 0 ? '0' : excludeCount <= 2 ? '1-2' : excludeCount <= 5 ? '3-5' : '6+';
+                const origin_action: OriginAction =
+                  state.mode === 'generated' && state.generatedFlowId
+                    ? 'generate'
+                    : (lastOriginRef.current?.origin_action ?? 'unknown');
+                const flow_id: string | undefined =
+                  state.mode === 'generated' && state.generatedFlowId
+                    ? state.generatedFlowId
+                    : lastOriginRef.current?.flow_id;
+                trackSunoLinkClicked({
+                  auth_state: authState,
+                  exclude_present: excludePresent,
+                  exclude_count_bucket,
+                  origin_mode: state.mode,
+                  origin_action,
+                  flow_id,
+                  prompt_generation_id: state.promptGenerationId,
+                });
+                trackOutputUsed({
+                  auth_state: authState,
+                  method: 'open_suno',
+                  style_prompt_id: state.stylePromptId,
+                  lyrics_thread_id: state.lyricsThreadId,
+                  exclude_present: excludePresent,
+                  exclude_count_bucket,
+                  origin_mode: state.mode,
+                  origin_action,
+                  flow_id,
+                  prompt_generation_id: state.promptGenerationId,
+                });
+              }}
             >
               Open in Suno <ExternalLinkIcon mx="2px" />
             </Link>
@@ -836,7 +1166,9 @@ export default function WorkingPromptPanel({
                   variant="ghost"
                   color="gray.500"
                   _hover={{ color: 'white' }}
-                  onClick={() => copyToClipboard(state.styleFields.suno_prompt)}
+                  onClick={() =>
+                    copyToClipboard(state.styleFields.suno_prompt, 'style_prompt', 'song_view_style_prompt')
+                  }
                 />
               </HStack>
             </HStack>
@@ -888,7 +1220,7 @@ export default function WorkingPromptPanel({
                   _hover={{ color: 'white' }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    copyToClipboard(state.styleFields.exclude);
+                    copyToClipboard(state.styleFields.exclude, 'exclude', 'song_view_exclude');
                   }}
                 />
               </HStack>
@@ -1060,7 +1392,10 @@ export default function WorkingPromptPanel({
                     borderColor="purple.500"
                     mb="-1px"
                     transition="all 0.15s"
-                    onClick={() => setDraftOpen(true)}
+                    onClick={() => {
+                      setDraftOpen(true);
+                      trackNewLyricsVariationClicked({ auth_state: authState });
+                    }}
                   >
                     <Text>New Song</Text>
                   </HStack>
@@ -1208,9 +1543,13 @@ export default function WorkingPromptPanel({
                     variant="ghost"
                     color="gray.500"
                     _hover={{ color: 'white' }}
-                    onClick={() => copyToClipboard(
-                      state.lyricsFields.lyrics_title || 'Untitled Song'
-                    )}
+                    onClick={() =>
+                      copyToClipboard(
+                        state.lyricsFields.lyrics_title || 'Untitled Song',
+                        'title',
+                        'song_view_title'
+                      )
+                    }
                   />
                   {savingLyrics && (
                     <>
@@ -1368,7 +1707,9 @@ export default function WorkingPromptPanel({
                       position="absolute"
                       top={2}
                       right={2}
-                      onClick={() => copyToClipboard(state.lyricsFields.lyrics_text)}
+                      onClick={() =>
+                        copyToClipboard(state.lyricsFields.lyrics_text, 'lyrics', 'song_view_lyrics')
+                      }
                     />
                   </Tooltip>
                 )}

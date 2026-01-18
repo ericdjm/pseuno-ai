@@ -43,6 +43,10 @@ export interface WorkingState {
 
   // Current mode
   mode: WorkingMode;
+
+  // Optional correlation metadata (lets us tie downstream output usage to a generate flow)
+  generatedFlowId: string | null;
+  promptGenerationId: string | null;
 }
 
 // Refine snapshot for in-place updates (when style didn't change)
@@ -60,7 +64,7 @@ export type WorkingAction =
   | { type: 'LOAD_STYLE_PROMPT'; prompt: SavedSunoPrompt }
   | { type: 'SELECT_THREAD'; thread: LyricsThread }
   | { type: 'CLEAR_THREAD' }
-  | { type: 'SET_GENERATED'; prompt: SavedSunoPrompt; threadId: number | null; threadTitle?: string | null; lyricsText?: string }
+  | { type: 'SET_GENERATED'; prompt: SavedSunoPrompt; threadId: number | null; threadTitle?: string | null; lyricsText?: string; generatedFlowId?: string }
   | { type: 'EDIT_STYLE_FIELD'; field: keyof StyleFields; value: string | number | string[] }
   | { type: 'EDIT_LYRICS_TEXT'; value: string }
   | { type: 'EDIT_LYRICS_TITLE'; value: string }
@@ -90,6 +94,8 @@ export function createInitialWorkingState(): WorkingState {
       lyrics: false,
     },
     mode: 'new',
+    generatedFlowId: null,
+    promptGenerationId: null,
   };
 }
 
@@ -118,6 +124,8 @@ export function workingReducer(state: WorkingState, action: WorkingAction): Work
         },
         dirty: { style: false, lyrics: false },
         mode: 'loaded',
+        generatedFlowId: null,
+        promptGenerationId: action.prompt.generation_id ?? null,
       };
 
     case 'SELECT_THREAD':
@@ -131,6 +139,8 @@ export function workingReducer(state: WorkingState, action: WorkingAction): Work
           lyrics_title: action.thread.title || '',
         },
         dirty: { ...state.dirty, lyrics: false },
+        // Selecting an existing thread breaks “generated flow” correlation
+        generatedFlowId: null,
       };
 
     case 'CLEAR_THREAD':
@@ -165,6 +175,8 @@ export function workingReducer(state: WorkingState, action: WorkingAction): Work
         },
         dirty: { style: false, lyrics: false },
         mode: 'generated',
+        generatedFlowId: action.generatedFlowId ?? null,
+        promptGenerationId: action.prompt.generation_id ?? null,
       };
 
     case 'EDIT_STYLE_FIELD':

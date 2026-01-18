@@ -691,7 +691,9 @@ class AgentPromptGraph:
 
             # Run style and title generation in parallel
             style_task = self._run_style_branch(context_pack, tracer, ctx)
-            title_task = self._generate_instrumental_title(request.user_prompt, tracer)
+            title_task = self._generate_instrumental_title(
+                request.user_prompt, tracer, variant_id=ctx.variant_id
+            )
 
             style_result, concept_title = await asyncio.gather(
                 style_task, title_task, return_exceptions=True
@@ -826,7 +828,12 @@ class AgentPromptGraph:
         ) as span:
             try:
                 raw_output = await self._call_llm(
-                    ctx.genre_disambiguation_prompt, user_msg, model=genre_model
+                    ctx.genre_disambiguation_prompt,
+                    user_msg,
+                    model=genre_model,
+                    operation="style.genre_disambiguate",
+                    variant_id=ctx.variant_id,
+                    architecture="two_step",
                 )
                 span.set_meta(
                     "prompt_chars", len(ctx.genre_disambiguation_prompt) + len(user_msg)
@@ -1446,7 +1453,12 @@ class AgentPromptGraph:
         # Generate style with span
         with tracer.span("style.generate", "llm_call", model=style_model) as span:
             raw_output = await self._call_llm(
-                style_prompt, style_context, model=style_model
+                style_prompt,
+                style_context,
+                model=style_model,
+                operation="style.generate",
+                variant_id=ctx.variant_id,
+                architecture="two_step",
             )
             span.set_meta("prompt_chars", len(style_prompt) + len(style_context))
             span.set_meta("response_chars", len(raw_output))
@@ -1488,8 +1500,30 @@ class AgentPromptGraph:
                     attempt=attempt + 1,
                     model=style_model,
                 ) as repair_span:
+                    from app.services.posthog_capture import capture_background
+                    capture_background(
+                        "repair_agent_invoked",
+                        distinct_id="backend",
+                        properties={
+                            "repair_kind": "style",
+                            "attempt": attempt + 1,
+                            "issues_count": len(issues),
+                            "issue_category": self._classify_repair_issues(issues),
+                            "variant_id": ctx.variant_id,
+                            "architecture": "two_step",
+                            "model": style_model,
+                        },
+                    )
                     repair_output = await self._call_llm(
-                        repair_prompt, repair_context, model=style_model
+                        repair_prompt,
+                        repair_context,
+                        model=style_model,
+                        operation="style.repair",
+                        variant_id=ctx.variant_id,
+                        architecture="two_step",
+                        is_repair=True,
+                        repair_kind="style",
+                        attempt=attempt + 1,
                     )
                     repair_span.set_meta("issues", issues)
                     repair_span.set_meta(
@@ -1533,7 +1567,7 @@ class AgentPromptGraph:
 
         try:
             style_name = await self._generate_style_name(
-                genres_for_name, artists_for_name, tracer
+                genres_for_name, artists_for_name, tracer, variant_id=ctx.variant_id
             )
         except Exception as e:
             logger.warning("Style name generation failed: %s", e)
@@ -1631,7 +1665,12 @@ class AgentPromptGraph:
         lyrics_prompt = ctx.lyrics_prompt
         with tracer.span("lyrics.generate", "llm_call", model=lyrics_model) as span:
             raw_output = await self._call_llm(
-                lyrics_prompt, lyrics_context, model=lyrics_model
+                lyrics_prompt,
+                lyrics_context,
+                model=lyrics_model,
+                operation="lyrics.generate",
+                variant_id=ctx.variant_id,
+                architecture="two_step",
             )
             span.set_meta("prompt_chars", len(lyrics_prompt) + len(lyrics_context))
             span.set_meta("response_chars", len(raw_output))
@@ -1671,8 +1710,30 @@ class AgentPromptGraph:
                     attempt=attempt + 1,
                     model=lyrics_model,
                 ) as repair_span:
+                    from app.services.posthog_capture import capture_background
+                    capture_background(
+                        "repair_agent_invoked",
+                        distinct_id="backend",
+                        properties={
+                            "repair_kind": "lyrics",
+                            "attempt": attempt + 1,
+                            "issues_count": len(issues),
+                            "issue_category": self._classify_repair_issues(issues),
+                            "variant_id": ctx.variant_id,
+                            "architecture": "two_step",
+                            "model": lyrics_model,
+                        },
+                    )
                     repair_output = await self._call_llm(
-                        repair_prompt, repair_context, model=lyrics_model
+                        repair_prompt,
+                        repair_context,
+                        model=lyrics_model,
+                        operation="lyrics.repair",
+                        variant_id=ctx.variant_id,
+                        architecture="two_step",
+                        is_repair=True,
+                        repair_kind="lyrics",
+                        attempt=attempt + 1,
                     )
                     repair_span.set_meta("issues", issues)
                     repair_span.set_meta(
@@ -1738,7 +1799,35 @@ class AgentPromptGraph:
             {"role": "system", "content": profile_prompt},
             {"role": "user", "content": context},
         ]
-        response = await fast_llm.ainvoke(messages)
+        from app.services.posthog_capture import capture_background
+
+        start = time.time()
+        status = "succeeded"
+        error_type: Optional[str] = None
+        try:
+            response = await fast_llm.ainvoke(messages)
+        except Exception as e:
+            status = "failed"
+            error_type = e.__class__.__name__
+            raise
+        finally:
+            capture_background(
+                "llm_call",
+                distinct_id="backend",
+                properties={
+                    "operation": "lyrics.profile_infer",
+                    "provider": "gemini"
+                    if fast_llm.__class__.__name__.lower().startswith("gemini")
+                    else "openai",
+                    "model": self.settings.profile_inference_model,
+                    "duration_ms": int((time.time() - start) * 1000),
+                    "status": status,
+                    "error_type": error_type,
+                    "variant_id": ctx.variant_id,
+                    "architecture": "two_step",
+                    "is_repair": False,
+                },
+            )
         raw = response.content if hasattr(response, "content") else str(response)
         debug["raw_response"] = raw
 
@@ -2383,7 +2472,14 @@ class AgentPromptGraph:
 
         # Generate with span
         with tracer.span("song.generate", "llm_call", model=model) as span:
-            raw = await self._call_llm(system_prompt, context_text, model=model)
+            raw = await self._call_llm(
+                system_prompt,
+                context_text,
+                model=model,
+                operation="song.generate",
+                variant_id=ctx.variant_id if ctx else None,
+                architecture="single_step",
+            )
             span.set_meta("prompt_chars", len(system_prompt) + len(context_text))
             span.set_meta("response_chars", len(raw))
             span.set_artifact("system_prompt", system_prompt)
@@ -2394,6 +2490,8 @@ class AgentPromptGraph:
 
     async def _node_parse_validate(self, state: _AgentState) -> _AgentState:
         """Parse and validate the single-step output."""
+        from app.services.posthog_capture import capture_background
+
         tracer: DebugTracer = state.get("tracer")
         raw = state.get("raw_output", "")
 
@@ -2409,6 +2507,24 @@ class AgentPromptGraph:
             issues = self._validate_output(parsed, state["context_pack"])
             span.set_meta("issues", issues)
             span.set_meta("valid", len(issues) == 0)
+
+        # If we just ran a repair attempt, emit whether it fixed validation.
+        if state.get("repaired"):
+            capture_background(
+                "repair_agent_validated",
+                distinct_id="backend",
+                properties={
+                    "repair_kind": "song",
+                    "attempt": state.get("repair_attempt"),
+                    "fixed": len(issues) == 0,
+                    "post_issues_count": len(issues),
+                    "post_issue_category": self._classify_repair_issues(issues),
+                    "pre_issues_count": state.get("repair_issues_count"),
+                    "pre_issue_category": state.get("repair_issue_category"),
+                    "variant_id": (state.get("ctx").variant_id if state.get("ctx") else None),
+                    "architecture": "single_step",
+                },
+            )
 
         if issues:
             logger.info("agent.parse_validate found issues: %s", issues)
@@ -2430,6 +2546,8 @@ class AgentPromptGraph:
 
     async def _node_repair(self, state: _AgentState) -> _AgentState:
         """Attempt to repair invalid output."""
+        from app.services.posthog_capture import capture_background
+
         ctx: GenerationContext = state.get("ctx")
         tracer: DebugTracer = state.get("tracer")
         repairs_left = state.get("repairs_left", 0)
@@ -2445,6 +2563,7 @@ class AgentPromptGraph:
         issues = state.get("issues", [])
         raw_output = state.get("raw_output", "")
         context_text = state["context_text"]
+        issue_category = self._classify_repair_issues(issues)
 
         # Build repair prompt
         repair_prompt = ctx.repair_prompt if ctx else self.settings.repair_agent_prompt
@@ -2470,7 +2589,31 @@ Please fix the issues and regenerate the complete output with all 6 sections.
             attempt=attempt,
             model=model,
         ) as span:
-            raw = await self._call_llm(repair_prompt, user_message, model=model)
+            capture_background(
+                "repair_agent_invoked",
+                distinct_id="backend",
+                properties={
+                    "repair_kind": "song",
+                    "attempt": attempt,
+                    "issues_count": len(issues),
+                    "issue_category": issue_category,
+                    "variant_id": ctx.variant_id if ctx else None,
+                    "architecture": "single_step",
+                    "model": model,
+                },
+            )
+
+            raw = await self._call_llm(
+                repair_prompt,
+                user_message,
+                model=model,
+                operation="song.repair",
+                variant_id=ctx.variant_id if ctx else None,
+                architecture="single_step",
+                is_repair=True,
+                repair_kind="song",
+                attempt=attempt,
+            )
             span.set_meta("issues", issues)
             span.set_meta("prompt_chars", len(repair_prompt) + len(user_message))
             span.set_meta("response_chars", len(raw))
@@ -2483,6 +2626,9 @@ Please fix the issues and regenerate the complete output with all 6 sections.
             "raw_output": raw,
             "repairs_left": repairs_left - 1,
             "repaired": True,
+            "repair_attempt": attempt,
+            "repair_issues_count": len(issues),
+            "repair_issue_category": issue_category,
         }
 
     def _node_finalize_single(self, state: _AgentState) -> _AgentState:
@@ -2542,7 +2688,15 @@ Please fix the issues and regenerate the complete output with all 6 sections.
         user_prompt: str,
         temperature: Optional[float] = None,
         model: Optional[str] = None,
+        operation: str = "llm_call",
+        variant_id: Optional[str] = None,
+        architecture: Optional[str] = None,
+        is_repair: bool = False,
+        repair_kind: Optional[str] = None,
+        attempt: Optional[int] = None,
     ) -> str:
+        from app.services.posthog_capture import capture_background
+
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -2554,11 +2708,41 @@ Please fix the issues and regenerate the complete output with all 6 sections.
         else:
             llm = getattr(self, "_active_llm", self.llm)
 
+        provider = "gemini" if llm.__class__.__name__.lower().startswith("gemini") else "openai"
+        model_name = model or getattr(llm, "model", None) or getattr(self.settings, "llm_model", "unknown")
+        start = time.time()
+        status = "succeeded"
+        error_type: Optional[str] = None
+
         try:
-            response = await llm.ainvoke(messages, temperature=temperature)
-        except TypeError:
-            # Compatibility with stubs or older clients without temperature kwarg.
-            response = await llm.ainvoke(messages)
+            try:
+                response = await llm.ainvoke(messages, temperature=temperature)
+            except TypeError:
+                # Compatibility with stubs or older clients without temperature kwarg.
+                response = await llm.ainvoke(messages)
+        except Exception as e:
+            status = "failed"
+            error_type = e.__class__.__name__
+            raise
+        finally:
+            duration_ms = int((time.time() - start) * 1000)
+            capture_background(
+                "llm_call",
+                distinct_id="backend",
+                properties={
+                    "operation": operation,
+                    "provider": provider,
+                    "model": model_name,
+                    "duration_ms": duration_ms,
+                    "status": status,
+                    "error_type": error_type,
+                    "variant_id": variant_id,
+                    "architecture": architecture,
+                    "is_repair": is_repair,
+                    "repair_kind": repair_kind,
+                    "attempt": attempt,
+                },
+            )
 
         return response.content or ""
 
@@ -2720,6 +2904,29 @@ Please fix the issues and regenerate the complete output with all 6 sections.
 
         return issues
 
+    @staticmethod
+    def _classify_repair_issues(issues: List[str]) -> str:
+        """
+        Map verbose validation issue strings to a low-cardinality category.
+        Used for repair-agent metrics in PostHog.
+        """
+        joined = " | ".join(issues).lower()
+        if not issues:
+            return "none"
+        if "sections must be exactly" in joined or "missing required section" in joined:
+            return "sections_format"
+        if "suno prompt exceeds" in joined or "exceeds 500" in joined:
+            return "suno_prompt_too_long"
+        if "exclude" in joined and ("comma" in joined or "one line" in joined or "values" in joined):
+            return "exclude_format"
+        if "weirdness" in joined or "style influence" in joined or "percent" in joined:
+            return "percent_invalid"
+        if "echoes input" in joined or "transform into style descriptors" in joined:
+            return "lazy_echo"
+        if "invalid" in joined or "must" in joined:
+            return "other_validation"
+        return "other"
+
     def _validate_percent_section(self, raw: str, label: str) -> List[str]:
         text = (raw or "").strip()
         match = re.fullmatch(r"\s*(\d{1,3})\s*%?\s*", text)
@@ -2823,7 +3030,7 @@ Please fix the issues and regenerate the complete output with all 6 sections.
         return self._trim_text(title, 50)
 
     async def _generate_instrumental_title(
-        self, user_prompt: str, tracer: "DebugTracer"
+        self, user_prompt: str, tracer: "DebugTracer", variant_id: Optional[str] = None
     ) -> str:
         """
         Generate a creative title for an instrumental track using the fast LLM.
@@ -2860,14 +3067,13 @@ Output ONLY the title, nothing else."""
             span.set_meta("model", title_model)
 
             try:
-                llm = self._get_or_create_llm(title_model)
-                messages = [
-                    {"role": "system", "content": system_content},
-                    {"role": "user", "content": title_prompt},
-                ]
-                response = await llm.ainvoke(messages)
-                raw = (
-                    response.content if hasattr(response, "content") else str(response)
+                raw = await self._call_llm(
+                    system_content,
+                    title_prompt,
+                    model=title_model,
+                    operation="title.generate",
+                    variant_id=variant_id,
+                    architecture="two_step",
                 )
 
                 # Add raw response to debug trace
@@ -2893,6 +3099,7 @@ Output ONLY the title, nothing else."""
         genres: List[str],
         artists: List[str],
         tracer: "DebugTracer",
+        variant_id: Optional[str] = None,
     ) -> str:
         """
         Generate a creative fusion genre name from genre disambiguation data.
@@ -2944,14 +3151,13 @@ Output ONLY the style name, nothing else."""
             span.set_meta("artists_count", len(artists))
 
             try:
-                llm = self._get_or_create_llm(name_model)
-                messages = [
-                    {"role": "system", "content": system_content},
-                    {"role": "user", "content": name_prompt},
-                ]
-                response = await llm.ainvoke(messages)
-                raw = (
-                    response.content if hasattr(response, "content") else str(response)
+                raw = await self._call_llm(
+                    system_content,
+                    name_prompt,
+                    model=name_model,
+                    operation="style.name_generate",
+                    variant_id=variant_id,
+                    architecture="two_step",
                 )
 
                 span.set_artifact("raw_response", raw)

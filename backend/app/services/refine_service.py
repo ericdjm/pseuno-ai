@@ -199,6 +199,9 @@ async def _call_gemini(
     temperature: float,
 ) -> str:
     """Call Gemini API with timeout. No max_output_tokens to match main pipeline."""
+    from app.services.posthog_capture import capture_background
+    import time
+
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY is required for Gemini models")
 
@@ -241,6 +244,9 @@ async def _call_gemini(
             logger.warning(f"Gemini API error: {e}")
             raise RuntimeError(f"AI service error: {e}")
 
+    start = time.time()
+    status = "succeeded"
+    error_type: Optional[str] = None
     try:
         # Also wrap with asyncio timeout as a safety net
         result = await asyncio.wait_for(
@@ -249,8 +255,28 @@ async def _call_gemini(
         )
         return result.strip()
     except asyncio.TimeoutError:
+        status = "failed"
+        error_type = "TimeoutError"
         logger.warning(f"Gemini call timed out after {LLM_TIMEOUT_SECONDS}s")
         raise RuntimeError("AI service timed out. Please try again.")
+    except Exception as e:
+        status = "failed"
+        error_type = e.__class__.__name__
+        raise
+    finally:
+        capture_background(
+            "llm_call",
+            distinct_id="backend",
+            properties={
+                "operation": "refine.call",
+                "provider": "gemini",
+                "model": model,
+                "duration_ms": int((time.time() - start) * 1000),
+                "status": status,
+                "error_type": error_type,
+                "architecture": "refine_service",
+            },
+        )
 
 
 async def _call_openai(
@@ -263,6 +289,8 @@ async def _call_openai(
 ) -> str:
     """Call OpenAI API using httpx."""
     import httpx
+    from app.services.posthog_capture import capture_background
+    import time
 
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is required for OpenAI models")
@@ -282,15 +310,37 @@ async def _call_openai(
         "Content-Type": "application/json",
     }
 
-    async with httpx.AsyncClient(timeout=httpx.Timeout(LLM_TIMEOUT_SECONDS)) as client:
-        response = await client.post(
-            "https://api.openai.com/v1/chat/completions",
-            json=payload,
-            headers=headers,
+    start = time.time()
+    status = "succeeded"
+    error_type: Optional[str] = None
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(LLM_TIMEOUT_SECONDS)) as client:
+            response = await client.post(
+                "https://api.openai.com/v1/chat/completions",
+                json=payload,
+                headers=headers,
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        status = "failed"
+        error_type = e.__class__.__name__
+        raise
+    finally:
+        capture_background(
+            "llm_call",
+            distinct_id="backend",
+            properties={
+                "operation": "refine.call",
+                "provider": "openai",
+                "model": model,
+                "duration_ms": int((time.time() - start) * 1000),
+                "status": status,
+                "error_type": error_type,
+                "architecture": "refine_service",
+            },
         )
-        response.raise_for_status()
-        data = response.json()
-        return data["choices"][0]["message"]["content"].strip()
 
 
 # =============================================================================

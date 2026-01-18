@@ -56,6 +56,9 @@ async def lifespan(app: FastAPI):
     logger.info("Pseuno AI shutting down...")
     session_store.stop_cleanup_task()
     session_store.clear_all()
+    # Close PostHog telemetry client
+    from app.services import posthog_capture
+    await posthog_capture.close()
     http_client = getattr(app.state, "http_client", None)
     if http_client is not None:
         await http_client.aclose()

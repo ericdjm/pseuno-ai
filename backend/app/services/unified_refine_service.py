@@ -516,6 +516,9 @@ async def _call_gemini_planner(
     api_key: Optional[str],
 ) -> str:
     """Call Gemini for planner."""
+    from app.services.posthog_capture import capture_background
+    import time
+
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY is required for Gemini models")
 
@@ -553,6 +556,9 @@ async def _call_gemini_planner(
             logger.warning(f"Gemini API error: {e}")
             raise RuntimeError(f"AI service error: {e}")
 
+    start = time.time()
+    status = "succeeded"
+    error_type: Optional[str] = None
     try:
         result = await asyncio.wait_for(
             asyncio.to_thread(_sync_generate),
@@ -560,10 +566,30 @@ async def _call_gemini_planner(
         )
         return result.strip()
     except asyncio.TimeoutError:
+        status = "failed"
+        error_type = "TimeoutError"
         logger.warning(
             f"Gemini planner call timed out after {PLANNER_TIMEOUT_SECONDS}s"
         )
         raise RuntimeError("AI service timed out. Please try again.")
+    except Exception as e:
+        status = "failed"
+        error_type = e.__class__.__name__
+        raise
+    finally:
+        capture_background(
+            "llm_call",
+            distinct_id="backend",
+            properties={
+                "operation": "refine.planner",
+                "provider": "gemini",
+                "model": model,
+                "duration_ms": int((time.time() - start) * 1000),
+                "status": status,
+                "error_type": error_type,
+                "architecture": "unified_refine",
+            },
+        )
 
 
 async def _call_openai_planner(
@@ -574,6 +600,8 @@ async def _call_openai_planner(
 ) -> str:
     """Call OpenAI for planner."""
     import httpx
+    from app.services.posthog_capture import capture_background
+    import time
 
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is required for OpenAI models")
@@ -593,14 +621,36 @@ async def _call_openai_planner(
         "Content-Type": "application/json",
     }
 
-    async with httpx.AsyncClient(
-        timeout=httpx.Timeout(PLANNER_TIMEOUT_SECONDS)
-    ) as client:
-        response = await client.post(
-            "https://api.openai.com/v1/chat/completions",
-            json=payload,
-            headers=headers,
+    start = time.time()
+    status = "succeeded"
+    error_type: Optional[str] = None
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(PLANNER_TIMEOUT_SECONDS)
+        ) as client:
+            response = await client.post(
+                "https://api.openai.com/v1/chat/completions",
+                json=payload,
+                headers=headers,
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        status = "failed"
+        error_type = e.__class__.__name__
+        raise
+    finally:
+        capture_background(
+            "llm_call",
+            distinct_id="backend",
+            properties={
+                "operation": "refine.planner",
+                "provider": "openai",
+                "model": model,
+                "duration_ms": int((time.time() - start) * 1000),
+                "status": status,
+                "error_type": error_type,
+                "architecture": "unified_refine",
+            },
         )
-        response.raise_for_status()
-        data = response.json()
-        return data["choices"][0]["message"]["content"].strip()

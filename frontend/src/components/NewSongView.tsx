@@ -51,6 +51,24 @@ import {
   TimeRange,
 } from '../api';
 import { useSessionStorageState } from '../hooks';
+import {
+  trackGenerateClicked,
+  trackGenerateSucceeded,
+  trackGenerateFailed,
+  trackGenerateWaitNoticeShown,
+  trackRandomizeStyleClicked,
+  trackRandomizeStyleSucceeded,
+  trackRandomizeLyricsClicked,
+  trackRandomizeLyricsSucceeded,
+  trackPersonalizeToggled,
+  trackTagAdded,
+  trackTagRemoved,
+  trackRandomizeStyleFailed,
+  trackRandomizeLyricsFailed,
+  createFlowId,
+  primaryTagBucket,
+  tagsToBuckets,
+} from '../analytics';
 
 // Two-step variants that support instrumental mode
 const TWO_STEP_VARIANTS: PromptVariant[] = [
@@ -67,7 +85,7 @@ const TWO_STEP_VARIANTS: PromptVariant[] = [
 // Lyric power-user controls are expressed as quick chips + an optional "More…" panel.
 
 interface NewSongViewProps {
-  onGenerate: (result: AdvancedGenerateResponse) => void;
+  onGenerate: (result: AdvancedGenerateResponse, meta?: { flow_id: string }) => void;
   onCancel: () => void;
   profile: SpotifyProfileResponse | null;
   profileLoading: boolean;
@@ -95,6 +113,17 @@ export default function NewSongView({
   const [songPrompt, setSongPrompt] = useSessionStorageState('draft:songPrompt', '');
   const [lyricsAbout, setLyricsAbout] = useSessionStorageState('draft:lyricsAbout', '');
 
+  // Correlation: one flow_id per draft cycle (randomize → generate → output_used).
+  const draftFlowIdRef = useRef<string>(createFlowId());
+  const draftUsedRandomizeStyleRef = useRef<boolean>(false);
+  const draftUsedRandomizeLyricsRef = useRef<boolean>(false);
+  useEffect(() => {
+    // Reset correlation id when the parent requests a reset.
+    draftFlowIdRef.current = createFlowId();
+    draftUsedRandomizeStyleRef.current = false;
+    draftUsedRandomizeLyricsRef.current = false;
+  }, [resetKey]);
+
   // UI state
   const [isLoading, setIsLoading] = useState(false);
   const [showLongWaitMessage, setShowLongWaitMessage] = useState(false);
@@ -109,9 +138,13 @@ export default function NewSongView({
     }
     const timer = setTimeout(() => {
       setShowLongWaitMessage(true);
+      trackGenerateWaitNoticeShown({
+        auth_state: isAuthenticated ? 'spotify' : 'guest',
+        wait_seconds: 10,
+      });
     }, 10000);
     return () => clearTimeout(timer);
-  }, [isLoading]);
+  }, [isLoading, isAuthenticated]);
   
   // Suno-like collapsible sections
   const [stylesExpanded, setStylesExpanded] = useState(true);
@@ -311,13 +344,17 @@ export default function NewSongView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recommendedTagsSeed, spotifyProfilesByRange, personalize]);
   
-  const addTag = (tag: string) => {
+  const addTag = (tag: string, source: 'recommended' | 'auto_picked' = 'recommended') => {
     // Preserve casing for display (e.g., Spotify artist names), but dedupe case-insensitively
     const trimmed = tag.trim();
     if (!trimmed) return;
     const exists = selectedTags.some((t) => t.toLowerCase() === trimmed.toLowerCase());
     if (!exists) {
       setSelectedTags([...selectedTags, trimmed]);
+      trackTagAdded({
+        auth_state: isAuthenticated ? 'spotify' : 'guest',
+        source,
+      });
     }
     // Remove from suggestions without reshuffling
     setRecommendedTags((prev) => prev.filter((t) => t.toLowerCase() !== trimmed.toLowerCase()));
@@ -325,12 +362,15 @@ export default function NewSongView({
   
   const removeTag = (tagToRemove: string) => {
     setSelectedTags(selectedTags.filter((t) => t.toLowerCase() !== tagToRemove.toLowerCase()));
+    trackTagRemoved({
+      auth_state: isAuthenticated ? 'spotify' : 'guest',
+    });
   };
   
   // Promote an auto-picked tag to selected
   const promoteAutoTag = (tag: string) => {
     if (selectedTags.length >= MAX_TAGS) return; // Already at max
-    addTag(tag);
+    addTag(tag, 'auto_picked');
     setLastAutoPickedTags(lastAutoPickedTags.filter((t) => t.toLowerCase() !== tag.toLowerCase()));
   };
   
@@ -398,8 +438,28 @@ export default function NewSongView({
 
   // Instrumental is implied when lyrics is empty
   const isInstrumental = !lyricsAbout.trim();
+  const getInstrumentalIntent = () => {
+    const text = (lyricsAbout || '').trim().toLowerCase();
+    if (!text) return { instrumental_intended: true as const, instrumental_intent_signal: 'empty' as const };
+    const phrases = ['instrumental', 'no lyrics', 'no vocal', 'no vocals', 'without lyrics', 'without vocals'];
+    if (phrases.some((p) => text.includes(p))) {
+      return { instrumental_intended: true as const, instrumental_intent_signal: 'keyword' as const };
+    }
+    return { instrumental_intended: false as const, instrumental_intent_signal: 'unknown' as const };
+  };
 
   const handleGenerateConcept = async () => {
+    const flowId = draftFlowIdRef.current;
+    const tag_buckets = tagsToBuckets(selectedTags);
+    trackRandomizeStyleClicked({
+      auth_state: isAuthenticated ? 'spotify' : 'guest',
+      personalize_enabled: personalize,
+      manual_tags_count: selectedTags.length,
+      flow_id: flowId,
+      primary_tag_bucket: primaryTagBucket(selectedTags),
+      tag_buckets,
+    });
+    const startTime = Date.now();
     setIsGeneratingConcept(true);
     try {
       // Send only user-selected tags; backend will decide how many extras to add (weighted toward fewer).
@@ -455,7 +515,25 @@ export default function NewSongView({
         g => !selectedLower.includes(g.toLowerCase())
       );
       setLastAutoPickedTags(autoPicked);
+      draftUsedRandomizeStyleRef.current = true;
+      trackRandomizeStyleSucceeded({
+        auth_state: isAuthenticated ? 'spotify' : 'guest',
+        duration_ms: Date.now() - startTime,
+        personalize_enabled: personalize,
+        manual_tags_count: selectedTags.length,
+        auto_picked_count: autoPicked.length,
+        flow_id: flowId,
+        primary_tag_bucket: primaryTagBucket(selectedTags),
+        tag_buckets,
+      });
     } catch (error) {
+      trackRandomizeStyleFailed({
+        auth_state: isAuthenticated ? 'spotify' : 'guest',
+        error_type: error instanceof Error ? error.name : 'unknown',
+        flow_id: flowId,
+        primary_tag_bucket: primaryTagBucket(selectedTags),
+        tag_buckets,
+      });
       toast({
         title: 'Failed to generate concept',
         description: error instanceof Error ? error.message : 'Unknown error',
@@ -468,6 +546,16 @@ export default function NewSongView({
   };
 
   const handleGenerateLyricsTopic = async () => {
+    const flowId = draftFlowIdRef.current;
+    const tag_buckets = tagsToBuckets(selectedTags);
+    trackRandomizeLyricsClicked({
+      auth_state: isAuthenticated ? 'spotify' : 'guest',
+      has_style_input: songPrompt.trim().length > 0,
+      flow_id: flowId,
+      primary_tag_bucket: primaryTagBucket(selectedTags),
+      tag_buckets,
+    });
+    const startTime = Date.now();
     setIsGeneratingLyricsTopic(true);
     try {
       const result = await generateLyricsTopic({
@@ -475,7 +563,23 @@ export default function NewSongView({
         style_prompt: songPrompt.trim() || undefined,
       });
       setLyricsAbout(result.topic);
+      draftUsedRandomizeLyricsRef.current = true;
+      trackRandomizeLyricsSucceeded({
+        auth_state: isAuthenticated ? 'spotify' : 'guest',
+        duration_ms: Date.now() - startTime,
+        has_style_input: songPrompt.trim().length > 0,
+        flow_id: flowId,
+        primary_tag_bucket: primaryTagBucket(selectedTags),
+        tag_buckets,
+      });
     } catch (error) {
+      trackRandomizeLyricsFailed({
+        auth_state: isAuthenticated ? 'spotify' : 'guest',
+        error_type: error instanceof Error ? error.name : 'unknown',
+        flow_id: flowId,
+        primary_tag_bucket: primaryTagBucket(selectedTags),
+        tag_buckets,
+      });
       toast({
         title: 'Failed to generate topic',
         description: error instanceof Error ? error.message : 'Unknown error',
@@ -497,6 +601,30 @@ export default function NewSongView({
       });
       return;
     }
+
+    const flowId = draftFlowIdRef.current;
+    const tag_buckets = tagsToBuckets(selectedTags);
+    const authState = isAuthenticated ? 'spotify' : 'guest';
+    const hasLyricsInput = lyricsAbout.trim().length > 0;
+    const hasStyleInput = songPrompt.trim().length > 0;
+    const { instrumental_intended, instrumental_intent_signal } = getInstrumentalIntent();
+
+    // Track generate clicked
+    trackGenerateClicked({
+      auth_state: authState,
+      has_lyrics_input: hasLyricsInput,
+      has_style_input: hasStyleInput,
+      personalize_enabled: personalize,
+      instrumental_intended,
+      instrumental_intent_signal,
+      flow_id: flowId,
+      used_randomize_style: draftUsedRandomizeStyleRef.current,
+      used_randomize_lyrics: draftUsedRandomizeLyricsRef.current,
+      primary_tag_bucket: primaryTagBucket(selectedTags),
+      tag_buckets,
+    });
+
+    const startTime = Date.now();
 
     // Lyrics are optional - empty means instrumental
     setIsLoading(true);
@@ -525,8 +653,33 @@ export default function NewSongView({
       };
 
       const result = await generateAdvanced(request);
-      onGenerate(result);
+
+      // Track success
+      trackGenerateSucceeded({
+        auth_state: authState,
+        duration_ms: Date.now() - startTime,
+        has_lyrics: !!result.lyrics,
+        instrumental_intended,
+        instrumental_intent_signal,
+        flow_id: flowId,
+        used_randomize_style: draftUsedRandomizeStyleRef.current,
+        used_randomize_lyrics: draftUsedRandomizeLyricsRef.current,
+        primary_tag_bucket: primaryTagBucket(selectedTags),
+        tag_buckets,
+      });
+
+      onGenerate(result, { flow_id: flowId });
+      // Next draft should start a new flow id.
+      draftFlowIdRef.current = createFlowId();
     } catch (error) {
+      // Track failure
+      trackGenerateFailed({
+        auth_state: authState,
+        duration_ms: Date.now() - startTime,
+        error_type: error instanceof Error ? error.name : 'unknown',
+        flow_id: flowId,
+      });
+
       toast({
         title: 'Generation failed',
         description: error instanceof Error ? error.message : 'Unknown error',
@@ -610,7 +763,12 @@ export default function NewSongView({
                       variant="ghost"
                       onClick={(e) => {
                         e.stopPropagation();
-                        setPersonalize(!personalize);
+                        const newValue = !personalize;
+                        setPersonalize(newValue);
+                        trackPersonalizeToggled({
+                          auth_state: isAuthenticated ? 'spotify' : 'guest',
+                          is_enabled: newValue,
+                        });
                       }}
                       color={personalize ? 'purple.400' : 'gray.500'}
                       _hover={{ color: personalize ? 'purple.300' : 'gray.300' }}

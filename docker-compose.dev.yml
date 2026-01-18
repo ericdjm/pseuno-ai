@@ -39,6 +39,10 @@ services:
       FRONTEND_ORIGIN: http://127.0.0.1:5173
       DATABASE_URL: postgresql+psycopg://pseuno:pseuno@postgres:5432/pseuno
       REDIS_URL: redis://redis:6379/0
+      # PostHog (backend telemetry: LLM call timings + repair agent)
+      POSTHOG_API_KEY: phc_QSa2Ckp3pGSJvQVSKo7WZ46mVzlkyQkfJbO0afgPxkE
+      POSTHOG_HOST: https://us.i.posthog.com
+      APP_ENV: dev
     volumes:
       - ./backend:/app
     ports:
@@ -56,6 +60,10 @@ services:
     environment:
       VITE_API_BASE: http://127.0.0.1:8000
       CHOKIDAR_USEPOLLING: "true"
+      # PostHog (frontend analytics)
+      VITE_POSTHOG_KEY: phc_QSa2Ckp3pGSJvQVSKo7WZ46mVzlkyQkfJbO0afgPxkE
+      VITE_POSTHOG_HOST: https://us.i.posthog.com
+      VITE_APP_ENV: dev
     volumes:
       - ./frontend:/app
       - /app/node_modules
