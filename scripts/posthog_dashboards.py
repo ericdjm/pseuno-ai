@@ -190,12 +190,18 @@ def ensure_insight(
     # IMPORTANT: PostHog expects saved "insights" to be an InsightVizNode (or similar)
     # so the UI can render charts. A raw TrendsQuery runs fine via /query/, but will
     # show up as JSON in dashboards.
-    viz_query_obj: Dict[str, Any] = {
-        "kind": "InsightVizNode",
-        "source": query_obj,
-        # NOTE: Some PostHog versions reject a top-level `display` field here.
-        # The UI can pick a default visualization and you can change it manually.
-    }
+    # HogQL (DataVisualizationNode) should NOT be wrapped in InsightVizNode.
+    query_kind = query_obj.get("kind", "")
+    if query_kind == "DataVisualizationNode":
+        # Already wrapped for HogQL - use as-is
+        viz_query_obj = query_obj
+    else:
+        viz_query_obj: Dict[str, Any] = {
+            "kind": "InsightVizNode",
+            "source": query_obj,
+            # NOTE: Some PostHog versions reject a top-level `display` field here.
+            # The UI can pick a default visualization and you can change it manually.
+        }
 
     existing_id = _find_by_exact_name_first_page(
         cfg, f"/api/projects/{cfg.project_id}/insights/", name=name
@@ -269,9 +275,15 @@ def attach_insight_to_dashboard(cfg: PostHogConfig, dashboard_id: int, insight_i
 
 
 def run_query(cfg: PostHogConfig, query_obj: Dict[str, Any]) -> Dict[str, Any]:
-    # Query endpoint is the fastest “does this work?” test.
+    # Query endpoint is the fastest "does this work?" test.
     # Docs indicate body includes `query`.
-    return _request(cfg, "POST", f"/api/projects/{cfg.project_id}/query/", body={"query": query_obj})
+    # For DataVisualizationNode (HogQL), extract the inner HogQLQuery for /query/
+    query_kind = query_obj.get("kind", "")
+    if query_kind == "DataVisualizationNode" and query_obj.get("source"):
+        actual_query = query_obj["source"]
+    else:
+        actual_query = query_obj
+    return _request(cfg, "POST", f"/api/projects/{cfg.project_id}/query/", body={"query": actual_query})
 
 
 def _events_node(
@@ -284,7 +296,8 @@ def _events_node(
 ) -> Dict[str, Any]:
     node: Dict[str, Any] = {"kind": "EventsNode", "event": event}
     if name:
-        node["name"] = name
+        # PostHog uses `custom_name` for the legend label, not `name`
+        node["custom_name"] = name
     if math:
         node["math"] = math
     if math_property:
@@ -775,11 +788,39 @@ def backend_observability_tiles() -> List[Tuple[str, Dict[str, Any], str, List[s
         ),
     ]
 
+def hogql_query(query: str) -> Dict[str, Any]:
+    """Create a HogQL insight query. Results render as a table by default.
+    Note: HogQL queries use DataVisualizationNode, not InsightVizNode."""
+    return {
+        "kind": "DataVisualizationNode",
+        "source": {
+            "kind": "HogQLQuery",
+            "query": query,
+        },
+    }
+
+
 def prompt_quality_tiles() -> List[Tuple[str, Dict[str, Any], str, List[str]]]:
     """
     Prompt/tag quality & engagement deep-dive (kept OUT of the exec dashboard to reduce noise).
     """
     return [
+        (
+            "Top 15 tags used (last 30d)",
+            hogql_query("""
+SELECT
+  arrayJoin(JSONExtractArrayRaw(properties, 'tags_selected')) as tag,
+  count() as count
+FROM events
+WHERE event = 'generate_succeeded'
+  AND timestamp > now() - interval 30 day
+GROUP BY tag
+ORDER BY count DESC
+LIMIT 15
+            """.strip()),
+            "Most frequently selected tags in successful generations (HogQL).",
+            ["prompt_quality", "tags", "hogql"],
+        ),
         (
             "Generate succeeded by primary_tag_bucket (selected)",
             trends_query(
@@ -837,6 +878,32 @@ def prompt_quality_tiles() -> List[Tuple[str, Dict[str, Any], str, List[str]]]:
             ),
             "How often users generate after using randomize-lyrics (last 30d).",
             ["prompt_quality", "randomize"],
+        ),
+        (
+            "Avg tags per generation (last 30d)",
+            hogql_query("""
+SELECT
+  round(avg(properties.tags_count), 2) as avg_tags,
+  count() as generations
+FROM events
+WHERE event = 'generate_succeeded'
+  AND timestamp > now() - interval 30 day
+            """.strip()),
+            "Average number of tags selected per successful generation.",
+            ["prompt_quality", "tags", "hogql"],
+        ),
+        (
+            "Tag sources breakdown (last 30d)",
+            hogql_query("""
+SELECT
+  sum(properties.tags_recommended_count) as recommended,
+  sum(properties.tags_auto_picked_count) as auto_picked
+FROM events
+WHERE event = 'generate_succeeded'
+  AND timestamp > now() - interval 30 day
+            """.strip()),
+            "Total tags by source: recommended clicks vs auto-picked from 'Surprise me'.",
+            ["prompt_quality", "tags", "hogql"],
         ),
     ]
 

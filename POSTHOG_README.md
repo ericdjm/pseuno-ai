@@ -221,65 +221,11 @@ POSTHOG_PERSONAL_API_KEY="***" \
 python3 scripts/posthog_dashboards.py ensure-core-health
 ```
 
-## PostHog Investigation Runbook (keep dashboards clean; debug fast)
+## Runbook (Debugging + Rollout)
 
-This is the “what to do when something looks off” playbook. The dashboards are intentionally kept **low-noise**; use these steps to drill down quickly and consistently.
+This README is the “why + what”. The **operational runbook** (debugging, rolling out new events/properties, smoke + dashboards + Playwright truth tests) lives here:
 
-### 0) First sanity checks (before you trust any chart)
-- **Correct project**: make sure you’re on the `Pseuno` project (not “Default project”).
-- **Environment filter**: if you’re investigating production, add `environment = prod`.
-- **Indexing delay**: new events/properties can take a bit to appear in dropdowns / breakdown menus.
-
-### 1) Triage: is it reliability, performance, or value?
-Start on `Core Health (Exec)`:
-- If **`generate_failed` spikes** → go to “Failures”.
-- If **latency p95 spikes** → go to “Latency”.
-- If **`output_used` drops** but generates are stable → likely a UX/value-extraction issue → go to “Output / Export Behavior”.
-
-### 2) Failures (where are users dropping?)
-Use these standard breakdowns/filters:
-- **Breakdown**: `auth_state` to see if it’s guest-only vs Spotify-only.
-- **Breakdown**: `error_type` (keep `error_type` low-cardinality; don’t rely on raw exception strings).
-- **Filter out test noise**:
-  - If you’re running smoke scripts, exclude `seed_id is set` (or `seed_id != *` depending on UI).
-
-Then pivot to the relevant dashboard:
-- Generate failures → `Core Health (Exec)` + `Backend LLM + Repair (Obs)` (if backend failures rose too)
-- Clipboard failures → `Output / Export Behavior`
-- Edit/refine failures → `Iteration (Refine + Manual Edit)`
-- Library failures (delete/reorder/new lyrics in style) → `Library Engagement`
-
-### 3) Proving causality: “did output_used come from THIS generation?”
-Prefer using correlation properties instead of time-window guessing:
-- **`flow_id`**: links a single draft flow (randomize → generate → output usage) or a refine/edit attempt.
-- **`origin_action`** on `output_used` / `suno_link_clicked` / clipboard events:
-  - `generate` vs `style_refine` vs `lyrics_ai_edit` vs `unknown`
-- **`origin_mode`**:
-  - `generated` means value usage happened from the currently generated draft
-  - `loaded` means user loaded an older style/song and used output from there
-
-Practical drill-down:
-- From an `output_used` trend, add filter `origin_mode = generated` to measure “direct from generation”.
-- If you want “direct from refine”, filter `origin_action = style_refine` (or `lyrics_ai_edit`).
-
-### 4) Prompt quality / tags deep-dive (keep it out of exec)
-Use `Prompt Quality (Tags)` when you’re investigating:
-- which tag buckets create the most successful generations
-- which tag buckets lead to the most `output_used`
-- whether randomizers are being used (`used_randomize_style` / `used_randomize_lyrics`)
-
-Important: we intentionally **do not** send raw user tags as properties (too high-cardinality). We bucket into a curated set + `other`.
-
-### 5) Backend/LLM debugging loop
-Use `Backend LLM + Repair (Obs)`:
-- **Failures**: breakdown by `operation` + `error_type`
-- **Latency**: p95 by `operation`
-- **Repairs**: watch `repair_agent_invoked`/`validated` and `fixed`
-
-### 6) When the UI lies (common PostHog quirks)
-- **Live events missing**: events may still be ingesting—use the Events table and query endpoints, and check filters.
-- **Property exists but not breakdown option yet**: indexing delay; wait or trigger events again.
-- **Dashboards look like JSON**: saved insight payload needs an `InsightVizNode` wrapper (handled by `scripts/posthog_dashboards.py`).
+- `POSTHOG_RUNBOOK.md`
 
 ## E2E “telemetry truth” tests (Playwright)
 

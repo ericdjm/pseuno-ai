@@ -196,6 +196,11 @@ export function trackGenerateClicked(props: {
   used_randomize_lyrics?: boolean;
   primary_tag_bucket?: TagBucket;
   tag_buckets?: TagBucket[];
+  // Tag analytics
+  tags_selected?: string[];
+  tags_count?: number;
+  tags_recommended_count?: number;
+  tags_auto_picked_count?: number;
 }) {
   capture('generate_clicked', {
     flow: 'generate',
@@ -215,6 +220,11 @@ export function trackGenerateSucceeded(props: {
   used_randomize_lyrics?: boolean;
   primary_tag_bucket?: TagBucket;
   tag_buckets?: TagBucket[];
+  // Tag analytics
+  tags_selected?: string[];
+  tags_count?: number;
+  tags_recommended_count?: number;
+  tags_auto_picked_count?: number;
 }) {
   capture('generate_succeeded', {
     flow: 'generate',

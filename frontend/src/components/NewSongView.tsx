@@ -152,6 +152,8 @@ export default function NewSongView({
   
   // Style tags (not persisted - clears on refresh)
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  // Track the source of each tag (key = lowercase tag, value = source)
+  const [tagSources, setTagSources] = useState<Map<string, 'recommended' | 'auto_picked'>>(new Map());
   
   // Auto-picked tags from last "Surprise me" (shown as subtle chips)
   const [lastAutoPickedTags, setLastAutoPickedTags] = useState<string[]>([]);
@@ -162,6 +164,7 @@ export default function NewSongView({
       setSongPrompt('');
       setLyricsAbout('');
       setSelectedTags([]);
+      setTagSources(new Map());
       setLastAutoPickedTags([]);
     }
   }, [resetKey, setSongPrompt, setLyricsAbout]);
@@ -348,20 +351,28 @@ export default function NewSongView({
     // Preserve casing for display (e.g., Spotify artist names), but dedupe case-insensitively
     const trimmed = tag.trim();
     if (!trimmed) return;
-    const exists = selectedTags.some((t) => t.toLowerCase() === trimmed.toLowerCase());
+    const key = trimmed.toLowerCase();
+    const exists = selectedTags.some((t) => t.toLowerCase() === key);
     if (!exists) {
       setSelectedTags([...selectedTags, trimmed]);
+      setTagSources((prev) => new Map(prev).set(key, source));
       trackTagAdded({
         auth_state: isAuthenticated ? 'spotify' : 'guest',
         source,
       });
     }
     // Remove from suggestions without reshuffling
-    setRecommendedTags((prev) => prev.filter((t) => t.toLowerCase() !== trimmed.toLowerCase()));
+    setRecommendedTags((prev) => prev.filter((t) => t.toLowerCase() !== key));
   };
   
   const removeTag = (tagToRemove: string) => {
-    setSelectedTags(selectedTags.filter((t) => t.toLowerCase() !== tagToRemove.toLowerCase()));
+    const key = tagToRemove.toLowerCase();
+    setSelectedTags(selectedTags.filter((t) => t.toLowerCase() !== key));
+    setTagSources((prev) => {
+      const next = new Map(prev);
+      next.delete(key);
+      return next;
+    });
     trackTagRemoved({
       auth_state: isAuthenticated ? 'spotify' : 'guest',
     });
@@ -609,6 +620,14 @@ export default function NewSongView({
     const hasStyleInput = songPrompt.trim().length > 0;
     const { instrumental_intended, instrumental_intent_signal } = getInstrumentalIntent();
 
+    // Compute tag source counts
+    let tags_recommended_count = 0;
+    let tags_auto_picked_count = 0;
+    for (const src of tagSources.values()) {
+      if (src === 'recommended') tags_recommended_count++;
+      else if (src === 'auto_picked') tags_auto_picked_count++;
+    }
+
     // Track generate clicked
     trackGenerateClicked({
       auth_state: authState,
@@ -622,6 +641,10 @@ export default function NewSongView({
       used_randomize_lyrics: draftUsedRandomizeLyricsRef.current,
       primary_tag_bucket: primaryTagBucket(selectedTags),
       tag_buckets,
+      tags_selected: selectedTags,
+      tags_count: selectedTags.length,
+      tags_recommended_count,
+      tags_auto_picked_count,
     });
 
     const startTime = Date.now();
@@ -666,6 +689,10 @@ export default function NewSongView({
         used_randomize_lyrics: draftUsedRandomizeLyricsRef.current,
         primary_tag_bucket: primaryTagBucket(selectedTags),
         tag_buckets,
+        tags_selected: selectedTags,
+        tags_count: selectedTags.length,
+        tags_recommended_count,
+        tags_auto_picked_count,
       });
 
       onGenerate(result, { flow_id: flowId });

@@ -659,21 +659,17 @@ export default function WorkingPromptPanel({
     setIsCreatingSong(true);
     const startTime = Date.now();
     const hasLyricsAboutInput = draftLyricsAbout.trim().length > 0;
+    const flowId = createFlowId();
     trackNewLyricsInStyleStarted({
       auth_state: authState,
       has_lyrics_about_input: hasLyricsAboutInput,
+      flow_id: flowId,
     });
     try {
       // Generate lyrics + title (or just title for instrumental)
       const lyricsResult = await generateLyricsOnly({
         suno_prompt: state.styleFields.suno_prompt,
         lyrics_about: draftLyricsAbout.trim(),
-      });
-      
-      trackDraftLyricsGenerated({
-        auth_state: authState,
-        duration_ms: Date.now() - startTime,
-        has_lyrics_about_input: hasLyricsAboutInput,
       });
 
       const songTitle = lyricsResult.song_title || 'New Song';
@@ -711,23 +707,30 @@ export default function WorkingPromptPanel({
       // Notify parent to refresh sidebar
       onThreadUpdated?.();
 
+      // Track "draft lyrics generated" only once the end-to-end flow has succeeded
+      // (avoids recording partial success when persistence/fetch fails).
+      trackDraftLyricsGenerated({
+        auth_state: authState,
+        duration_ms: Date.now() - startTime,
+        has_lyrics_about_input: hasLyricsAboutInput,
+        flow_id: flowId,
+      });
+
       trackNewLyricsInStyleSucceeded({
         auth_state: authState,
         duration_ms: Date.now() - startTime,
         has_lyrics_about_input: hasLyricsAboutInput,
+        flow_id: flowId,
       });
     } catch (error) {
-      trackDraftLyricsFailed({
-        auth_state: authState,
-        duration_ms: Date.now() - startTime,
-        error_type: error instanceof Error ? error.name : 'unknown',
-        has_lyrics_about_input: hasLyricsAboutInput,
-      });
+      // Only emit the end-to-end failure here. The error may come from thread create/update/fetch,
+      // so emitting draft_lyrics_failed as well would be misleading and double-count failures.
       trackNewLyricsInStyleFailed({
         auth_state: authState,
         duration_ms: Date.now() - startTime,
         error_type: error instanceof Error ? error.name : 'unknown',
         has_lyrics_about_input: hasLyricsAboutInput,
+        flow_id: flowId,
       });
       console.error('Failed to create song:', error);
       toast({
