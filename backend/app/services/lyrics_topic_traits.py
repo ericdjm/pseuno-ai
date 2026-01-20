@@ -935,14 +935,27 @@ def get_default_traits() -> Dict[str, float]:
     """
     Return default trait weights when no context is provided.
 
-    Biased toward common, broadly appealing topics.
+    Balanced to avoid over-favoring abstract/existential banks.
+    Includes variety traits to spread selections across bank types.
+    Also includes low-weight "setting" traits so banks with specific
+    themes (domestic, coastal, etc.) still have a baseline chance.
     """
     return {
-        "introspective": 0.5,
-        "romantic": 0.4,
-        "melancholic": 0.4,
-        "uplifting": 0.4,
-        "emotional_intensity": 0.5,
+        # Core emotional traits
+        "introspective": 0.35,  # Reduced from 0.5 to avoid existential bias
+        "romantic": 0.45,  # Slightly boosted for relationship banks
+        "melancholic": 0.35,  # Reduced from 0.4
+        "uplifting": 0.45,  # Boosted for more positive variety
+        "emotional_intensity": 0.4,  # Reduced from 0.5
+        "playful": 0.3,  # Adds variety toward lighter banks
+        "narrative": 0.35,  # Adds variety toward story-driven banks
+        "confessional": 0.35,  # Helps heartbreak/vulnerability banks
+        "vulnerable": 0.3,  # Helps emo/confessional banks
+        # Setting/imagery traits (low weights for baseline presence)
+        "domestic": 0.25,  # Helps domestic_quiet bank
+        "coastal": 0.2,  # Helps coastal_mysticism bank
+        "pastoral": 0.25,  # Helps whimsical_nature_folk bank
+        "surreal": 0.2,  # Helps psychedelic/abstract banks
     }
 
 

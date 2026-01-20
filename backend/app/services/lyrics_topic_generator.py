@@ -205,13 +205,23 @@ class LyricsTopicGenerator:
             score = score_bank_match(traits_for_scoring, bank.traits)
             trait_bank_scores[bank_id] = score
 
-        def _topk_linear_probabilities(scores: Dict[str, float], k: int = 10) -> Dict[str, float]:
+        def _topk_linear_probabilities(
+            scores: Dict[str, float],
+            k: int = 10,
+            diversity_noise: float = 0.15,
+        ) -> Dict[str, float]:
             """
-            Take top-K scores and normalize linearly:
-              p_i = score_i / sum(top_k_scores)
+            Take top-K scores and normalize linearly with diversity noise:
+              p_i = (score_i + noise) / sum(top_k_scores + noise)
 
-            This matches the desired behavior: if top scores are 25/20/5,
-            probabilities become 50%/40%/10%.
+            The diversity_noise parameter adds small random jitter to break ties
+            and prevent the same high-scoring banks from dominating every request.
+            This helps spread selections more evenly across banks with similar scores.
+
+            Args:
+                scores: bank_id -> score mapping
+                k: Number of top banks to consider
+                diversity_noise: Scale of random noise to add (0.0 = no noise, 0.2 = 20% of max)
             """
             if not scores:
                 return {}
@@ -219,12 +229,24 @@ class LyricsTopicGenerator:
             # Drop non-positive scores (they produce 0-probability "phantom" entries like
             # "position 1,3,4" in the UI). Then renormalize.
             clamped = [(bid, float(s)) for bid, s in items if float(s) > 0]
-            total = sum(s for _, s in clamped)
-            if total <= 1e-9:
+            
+            if not clamped:
                 # If everything is <=0, fall back to uniform over the raw top-K list.
                 uniform = 1.0 / len(items)
                 return {bid: uniform for bid, _ in items}
-            return {bid: s / total for bid, s in clamped}
+            
+            # Add diversity noise to break ties and spread selections
+            max_score = max(s for _, s in clamped)
+            noise_scale = max_score * diversity_noise
+            noisy_scores = [
+                (bid, s + self._rng.uniform(0, noise_scale)) for bid, s in clamped
+            ]
+            
+            total = sum(s for _, s in noisy_scores)
+            if total <= 1e-9:
+                uniform = 1.0 / len(noisy_scores)
+                return {bid: uniform for bid, _ in noisy_scores}
+            return {bid: s / total for bid, s in noisy_scores}
 
         # If the classifier provided bank_similarities but we otherwise have only defaults,
         # route primarily by similarity (more accurate; avoids default-trait bias).
