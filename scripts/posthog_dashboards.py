@@ -958,6 +958,129 @@ def journeys_tiles() -> List[Tuple[str, Dict[str, Any], str, List[str]]]:
     ]
 
 
+def lyrics_topic_tiles() -> List[Tuple[str, Dict[str, Any], str, List[str]]]:
+    """
+    Lyrics topic generation analytics - bank selection and usage patterns.
+    """
+    return [
+        (
+            "Lyrics topic: generations over time",
+            trends_query(
+                [_events_node("lyrics_topic.generated", name="lyrics_topic.generated")],
+                days=30,
+                interval="day",
+            ),
+            "Total lyrics topic generations per day (last 30d).",
+            ["lyrics_topic", "usage"],
+        ),
+        (
+            "Lyrics topic: randomize clicks (frontend)",
+            trends_query(
+                [_events_node("randomize_lyrics_succeeded", name="randomize_lyrics_succeeded")],
+                days=30,
+                interval="day",
+            ),
+            "Frontend randomize lyrics clicks that succeeded (last 30d).",
+            ["lyrics_topic", "usage"],
+        ),
+        (
+            "Lyrics topic: top banks (last 30d)",
+            hogql_query("""
+SELECT
+  properties.bank_id as bank_id,
+  count() as count
+FROM events
+WHERE event = 'lyrics_topic.generated'
+  AND timestamp > now() - interval 30 day
+  AND properties.bank_id IS NOT NULL
+GROUP BY bank_id
+ORDER BY count DESC
+LIMIT 20
+            """.strip()),
+            "Most frequently selected topic banks in the last 30d.",
+            ["lyrics_topic", "banks", "hogql"],
+        ),
+        (
+            "Lyrics topic: top banks from randomize clicks",
+            hogql_query("""
+SELECT
+  properties.bank_id as bank_id,
+  count() as count
+FROM events
+WHERE event = 'randomize_lyrics_succeeded'
+  AND timestamp > now() - interval 30 day
+  AND properties.bank_id IS NOT NULL
+GROUP BY bank_id
+ORDER BY count DESC
+LIMIT 20
+            """.strip()),
+            "Banks selected when users clicked randomize (last 30d).",
+            ["lyrics_topic", "banks", "hogql"],
+        ),
+        (
+            "Lyrics topic: by context (new_song vs draft_composer)",
+            trends_query(
+                [
+                    _events_node(
+                        "randomize_lyrics_succeeded",
+                        name="new_song_view",
+                        properties=[_event_prop_equals("randomize_context", "new_song_view")],
+                    ),
+                    _events_node(
+                        "randomize_lyrics_succeeded",
+                        name="draft_composer",
+                        properties=[_event_prop_equals("randomize_context", "draft_composer")],
+                    ),
+                ],
+                days=30,
+                interval="day",
+            ),
+            "Where are users randomizing lyrics topics? (last 30d)",
+            ["lyrics_topic", "usage"],
+        ),
+        (
+            "Lyrics topic: has_style_input breakdown",
+            trends_query(
+                [
+                    _events_node(
+                        "randomize_lyrics_succeeded",
+                        name="has_style_input=true",
+                        properties=[_event_prop_equals("has_style_input", True)],
+                    ),
+                    _events_node(
+                        "randomize_lyrics_succeeded",
+                        name="has_style_input=false",
+                        properties=[_event_prop_equals("has_style_input", False)],
+                    ),
+                ],
+                days=30,
+                interval="day",
+            ),
+            "How often do users have a style prompt when randomizing? (last 30d)",
+            ["lyrics_topic", "usage"],
+        ),
+        (
+            "Lyrics topic: banks by genre bucket",
+            hogql_query("""
+SELECT
+  properties.primary_tag_bucket as genre_bucket,
+  properties.bank_id as bank_id,
+  count() as count
+FROM events
+WHERE event = 'randomize_lyrics_succeeded'
+  AND timestamp > now() - interval 30 day
+  AND properties.bank_id IS NOT NULL
+  AND properties.primary_tag_bucket IS NOT NULL
+GROUP BY genre_bucket, bank_id
+ORDER BY count DESC
+LIMIT 30
+            """.strip()),
+            "Which banks are selected for which genre buckets? (last 30d)",
+            ["lyrics_topic", "banks", "hogql"],
+        ),
+    ]
+
+
 def cmd_list_projects(cfg: PostHogConfig) -> int:
     payload = _request(cfg, "GET", "/api/projects/")
     results = payload.get("results", [])
@@ -1032,6 +1155,7 @@ def cmd_ensure_dashboard_pack(cfg: PostHogConfig, pack: str) -> int:
         "backend": ("Backend LLM + Repair (Obs)", backend_observability_tiles()),
         "journeys": ("Journeys (Funnels + Stickiness + Lifecycle)", journeys_tiles()),
         "prompt-quality": ("Prompt Quality (Tags)", prompt_quality_tiles()),
+        "lyrics-topic": ("Lyrics Topic Analytics", lyrics_topic_tiles()),
     }
     if pack not in packs:
         raise SystemExit(f"Unknown pack '{pack}'. Choose one of: {', '.join(sorted(packs.keys()))}")
@@ -1043,7 +1167,7 @@ def cmd_ensure_dashboard_pack(cfg: PostHogConfig, pack: str) -> int:
 
 def cmd_ensure_all(cfg: PostHogConfig) -> int:
     failures = 0
-    for pack in ["core-health", "output", "iteration", "library", "backend", "journeys", "prompt-quality"]:
+    for pack in ["core-health", "output", "iteration", "library", "backend", "journeys", "prompt-quality", "lyrics-topic"]:
         print(f"\n\n#############################\n# PACK: {pack}\n#############################")
         rc = cmd_ensure_dashboard_pack(cfg, pack)
         if rc != 0:

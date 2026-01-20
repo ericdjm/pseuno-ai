@@ -173,9 +173,10 @@ def main() -> int:
         ("randomize_style_clicked", "smoke_user", {"flow": "style_create", "page": "new_song", "auth_state": "guest", "personalize_enabled": False, "manual_tags_count": 2, "primary_tag_bucket": "electronic", "tag_buckets": ["electronic"]}),
         ("randomize_style_succeeded", "smoke_user", {"flow": "style_create", "page": "new_song", "auth_state": "guest", "duration_ms": 800, "auto_picked_count": 3, "primary_tag_bucket": "electronic", "tag_buckets": ["electronic"]}),
         ("randomize_style_failed", "smoke_user", {"flow": "style_create", "page": "new_song", "auth_state": "guest", "duration_ms": 200, "error_type": "TimeoutError", "primary_tag_bucket": "electronic", "tag_buckets": ["electronic"]}),
-        ("randomize_lyrics_clicked", "smoke_user", {"flow": "style_create", "page": "new_song", "auth_state": "guest", "has_style_input": True, "randomize_context": "new_song"}),
-        ("randomize_lyrics_succeeded", "smoke_user", {"flow": "style_create", "page": "new_song", "auth_state": "guest", "duration_ms": 500, "randomize_context": "new_song"}),
-        ("randomize_lyrics_failed", "smoke_user", {"flow": "style_create", "page": "new_song", "auth_state": "guest", "duration_ms": 150, "error_type": "APIError", "randomize_context": "new_song"}),
+        ("randomize_lyrics_clicked", "smoke_user", {"flow": "style_create", "page": "new_song", "auth_state": "guest", "has_style_input": True, "randomize_context": "new_song_view", "primary_tag_bucket": "electronic", "tag_buckets": ["electronic"]}),
+        ("randomize_lyrics_succeeded", "smoke_user", {"flow": "style_create", "page": "new_song", "auth_state": "guest", "duration_ms": 500, "randomize_context": "new_song_view", "has_style_input": True, "bank_id": "confessional_heartbreak", "primary_tag_bucket": "electronic", "tag_buckets": ["electronic"]}),
+        ("randomize_lyrics_succeeded", "smoke_user", {"flow": "style_create", "page": "song_view", "auth_state": "guest", "duration_ms": 350, "randomize_context": "draft_composer", "has_style_input": True, "bank_id": "consciousness_metaphysical"}),
+        ("randomize_lyrics_failed", "smoke_user", {"flow": "style_create", "page": "new_song", "auth_state": "guest", "duration_ms": 150, "error_type": "APIError", "randomize_context": "new_song_view"}),
         ("personalize_toggled", "smoke_user", {"flow": "style_create", "page": "new_song", "auth_state": "spotify", "is_enabled": True}),
         ("tag_added", "smoke_user", {"flow": "style_create", "page": "new_song", "auth_state": "guest", "source": "recommended"}),
         ("tag_removed", "smoke_user", {"flow": "style_create", "page": "new_song", "auth_state": "guest"}),
@@ -229,6 +230,11 @@ def main() -> int:
         ("llm_call", "backend", {"operation": "style.repair", "provider": "openai", "model": "gpt-4o-mini", "duration_ms": 333, "status": "succeeded", "error_type": None, "variant_id": "smoke", "architecture": "two_step", "is_repair": True, "repair_kind": "style", "attempt": 1}),
         ("repair_agent_invoked", "backend", {"repair_kind": "style", "attempt": 1, "issues_count": 2, "issue_category": "schema", "variant_id": "smoke", "architecture": "smoke", "model": "gpt-4o-mini"}),
         ("repair_agent_validated", "backend", {"repair_kind": "style", "attempt": 1, "issues_count": 2, "issue_category": "schema", "fixed": True, "variant_id": "smoke", "architecture": "smoke", "model": "gpt-4o-mini"}),
+        # Lyrics topic generation (backend)
+        ("lyrics_topic.generated", "backend", {"bank_id": "confessional_heartbreak", "topic_preview": "Replaying the voicemail forty times, memorizing", "input_genres": ["indie rock", "melancholic"], "input_moods": [], "has_style_prompt": True}),
+        ("lyrics_topic.generated", "backend", {"bank_id": "consciousness_metaphysical", "topic_preview": "The shadow self finally stepping into the light", "input_genres": ["progressive metal"], "input_moods": ["dark", "introspective"], "has_style_prompt": False}),
+        ("lyrics_topic.generated", "backend", {"bank_id": "political_systems_critique", "topic_preview": "The war machine needs feeding and we're standing", "input_genres": ["metal"], "input_moods": ["aggressive", "political"], "has_style_prompt": True}),
+        ("lyrics_topic.generated", "backend", {"bank_id": "absurdist_comedy", "topic_preview": "Attacked by a coordinated squirrel army during", "input_genres": ["comedy"], "input_moods": ["absurdist"], "has_style_prompt": False}),
     ]
 
     total = 0
