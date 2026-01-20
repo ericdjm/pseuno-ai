@@ -2715,11 +2715,10 @@ Please fix the issues and regenerate the complete output with all 6 sections.
         error_type: Optional[str] = None
 
         try:
-            try:
-                response = await llm.ainvoke(messages, temperature=temperature)
-            except TypeError:
-                # Compatibility with stubs or older clients without temperature kwarg.
-                response = await llm.ainvoke(messages)
+            response = await llm.ainvoke(messages, temperature=temperature)
+        except TypeError:
+            # Compatibility with stubs or older clients without temperature kwarg.
+            response = await llm.ainvoke(messages)
         except Exception as e:
             status = "failed"
             error_type = e.__class__.__name__

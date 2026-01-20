@@ -1,19 +1,30 @@
 """
 Lyrics topic generator service.
 
-Generates a short lyric topic/theme based on genre/mood influences.
-This is the "lyrics input side" - the returned topic can be used
-as the lyrics_about field in full generation.
+Generates a short lyric topic/theme based on genre/mood/style influences.
+Uses trait-based routing to select from curated topic banks.
 
 Design principles:
-- Pure: does not call external APIs directly
-- Simple: v1 uses templates with variance; can be upgraded to LLM-based later
-- Aligned: optionally incorporates style_prompt context for coherence
+- Pure: does not call external APIs directly (LLM classification is async/optional)
+- Fast: trait scoring is instant, no LLM at generation time
+- Varied: recency memory prevents repeats within a session
+- Extensible: async classifier can improve routing (future)
 """
 
 import random
+from collections import deque
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Dict, List, Optional
+
+from app.services.lyrics_topic_banks import TOPIC_BANKS
+import re
+from app.services.lyrics_topic_traits import (
+    extract_traits_from_style_prompt,
+    get_default_traits,
+    infer_traits_from_tags,
+    merge_traits,
+    score_bank_match,
+)
 
 
 @dataclass
@@ -21,228 +32,409 @@ class LyricsTopicResult:
     """Result of lyrics topic generation."""
 
     topic: str
-    chosen_moods: List[str]
+    bank_id: str
+    traits_used: Dict[str, float]
+    chosen_moods: List[str]  # Kept for backward compatibility
     reasoning: Optional[str] = None
 
 
-# Theme templates by mood category
-MOOD_THEMES: dict[str, list[str]] = {
-    "melancholic": [
-        "A bittersweet memory of someone who slipped away",
-        "The quiet ache of an empty room",
-        "Watching rain trace paths down a window, thinking of what could have been",
-        "The last conversation that never happened",
-        "Finding old photos and reliving faded moments",
-    ],
-    "uplifting": [
-        "Breaking free and chasing the horizon",
-        "Dancing through the chaos with unshakable joy",
-        "The moment everything clicks into place",
-        "Rising from the ashes stronger than before",
-        "Celebrating the small victories that matter most",
-    ],
-    "romantic": [
-        "The electric moment before a first kiss",
-        "Falling in love in the most unexpected place",
-        "A love letter written but never sent",
-        "The comfort of knowing someone truly sees you",
-        "Late night conversations that last until dawn",
-    ],
-    "rebellious": [
-        "Refusing to play by their rules anymore",
-        "Burning bridges with zero regrets",
-        "The thrill of choosing chaos over conformity",
-        "Standing alone against the world",
-        "Reclaiming your power from those who took it",
-    ],
-    "nostalgic": [
-        "Summer nights that seemed to last forever",
-        "The soundtrack of your teenage years",
-        "Returning to a place that's changed but still feels like home",
-        "Missing the person you used to be",
-        "Old friends reuniting after years apart",
-    ],
-    "introspective": [
-        "Questioning everything you thought you knew",
-        "The quiet battle between who you are and who you want to be",
-        "Learning to be comfortable in your own skin",
-        "The weight of unspoken thoughts",
-        "Finding meaning in the mundane",
-    ],
-    "dark": [
-        "The shadows that follow even in daylight",
-        "Confronting the demons you've been running from",
-        "The seductive pull of self-destruction",
-        "Secrets buried so deep they've become part of you",
-        "Walking the line between sanity and surrender",
-    ],
-    "playful": [
-        "A ridiculous adventure with no destination in mind",
-        "Flirting with danger just for the fun of it",
-        "Inside jokes that only you and your crew understand",
-        "Making bad decisions with good friends",
-        "The absurdity of everyday life",
-    ],
-    "empowering": [
-        "Owning your story, scars and all",
-        "The confidence that comes from surviving",
-        "Telling your doubters to watch and learn",
-        "Becoming the person others underestimated",
-        "Turning pain into unstoppable power",
-    ],
-    "dreamy": [
-        "Floating through a world that exists only at night",
-        "Losing yourself in a daydream you don't want to leave",
-        "The blurred line between fantasy and reality",
-        "Chasing visions that dissolve at dawn",
-        "A love that feels like a beautiful hallucination",
-    ],
-}
+class RecencyMemory:
+    """
+    Tracks recently used prompts to avoid repetition.
 
-# Genre-to-mood affinities (for when no moods are provided)
-GENRE_MOOD_AFFINITIES: dict[str, list[str]] = {
-    "indie rock": ["melancholic", "introspective", "nostalgic"],
-    "electronic": ["dreamy", "dark", "uplifting"],
-    "hip-hop": ["rebellious", "empowering", "playful"],
-    "r&b": ["romantic", "introspective", "dreamy"],
-    "pop": ["uplifting", "romantic", "playful"],
-    "metal": ["dark", "rebellious", "empowering"],
-    "folk": ["nostalgic", "introspective", "melancholic"],
-    "punk": ["rebellious", "dark", "playful"],
-    "ambient": ["dreamy", "introspective", "melancholic"],
-    "jazz": ["romantic", "introspective", "nostalgic"],
-    "country": ["nostalgic", "romantic", "melancholic"],
-    "dance": ["uplifting", "playful", "empowering"],
-}
+    Per-session memory with configurable window size.
+    In production, this should be stored in Redis/session store keyed by device_id.
+    """
 
-# Fallback seed moods when nothing is provided
-FALLBACK_MOODS = ["introspective", "uplifting", "melancholic", "romantic", "dreamy"]
+    def __init__(self, max_size: int = 30):
+        self._recent: deque[str] = deque(maxlen=max_size)
+
+    def is_recent(self, prompt: str) -> bool:
+        """Check if a prompt was recently used."""
+        return prompt in self._recent
+
+    def record(self, prompt: str) -> None:
+        """Record a prompt as recently used."""
+        self._recent.append(prompt)
+
+    def filter_prompts(self, prompts: tuple[str, ...]) -> List[str]:
+        """Return prompts not in recent memory."""
+        return [p for p in prompts if p not in self._recent]
+
+    def clear(self) -> None:
+        """Clear recency memory."""
+        self._recent.clear()
 
 
 class LyricsTopicGenerator:
     """
-    Generates short lyric topics based on mood/genre influences.
+    Generates lyrics topics via trait-based bank selection.
 
-    v1: Template-based with variance.
-    Future: Can be upgraded to LLM-based for more creative results.
+    Flow:
+    1. Infer traits from tags (instant heuristics)
+    2. Score all banks against traits
+    3. Sample a bank proportional to scores (or pool from top banks if multi_bank=True)
+    4. Sample a prompt from that bank (avoiding recents)
     """
 
-    def __init__(self, seed: Optional[int] = None):
+    def __init__(
+        self,
+        seed: Optional[int] = None,
+        recency_memory: Optional[RecencyMemory] = None,
+    ):
         """
         Initialize the generator.
 
         Args:
             seed: Optional random seed for reproducible results (testing).
+            recency_memory: Optional shared recency memory (for session persistence).
         """
         self._rng = random.Random(seed)
+        self._recency = recency_memory or RecencyMemory()
+
+    def _get_top_banks(
+        self,
+        probabilities: Dict[str, float],
+        max_banks: int = 3,
+        min_probability: float = 0.1,
+    ) -> List[tuple[str, float]]:
+        """
+        Get top banks that meet the probability threshold.
+
+        When trait_overrides come from the async classifier with multi-modal
+        distributions (e.g., 40% prog metal, 35% djent), this allows sampling
+        from a weighted pool of the top matching banks instead of just one.
+
+        Args:
+            probabilities: bank_id -> probability from softmax
+            max_banks: Maximum banks to include in pool
+            min_probability: Minimum probability to include a bank
+
+        Returns:
+            List of (bank_id, probability) tuples, sorted by probability desc
+        """
+        # Sort by probability descending
+        sorted_banks = sorted(probabilities.items(), key=lambda x: -x[1])
+
+        # Take top banks that meet threshold
+        top_banks = []
+        for bank_id, prob in sorted_banks[:max_banks]:
+            if prob >= min_probability:
+                top_banks.append((bank_id, prob))
+
+        return top_banks
 
     async def generate(
+        self,
+        tags: List[str],
+        style_prompt: Optional[str] = None,
+        trait_overrides: Optional[Dict[str, float]] = None,
+        bank_similarities: Optional[Dict[str, float]] = None,
+        multi_bank_pool: bool = False,
+    ) -> LyricsTopicResult:
+        """
+        Generate a lyrics topic from user context.
+
+        Args:
+            tags: List of genre/mood/artist tags (unified).
+            style_prompt: Optional style description (for future async classifier).
+            trait_overrides: Optional pre-computed traits (from async classifier cache).
+            bank_similarities: Optional embedding-based similarity scores for banks.
+            multi_bank_pool: If True, pool prompts from top banks weighted by score.
+                             Useful when async classifier returns multi-modal traits.
+
+        Returns:
+            LyricsTopicResult with topic and metadata.
+        """
+        def _is_informative_override(traits_in: Dict[str, float]) -> bool:
+            if not traits_in:
+                return False
+            # Treat 1 generic trait as low-confidence; require either multiple traits
+            # or a strong top trait.
+            max_w = max(traits_in.values()) if traits_in else 0.0
+            num_mid = sum(1 for v in traits_in.values() if v >= 0.55)
+            return num_mid >= 2 or max_w >= 0.75
+
+        # Step 1: Determine traits
+        informative_trait_overrides = bool(trait_overrides and _is_informative_override(trait_overrides))
+        if informative_trait_overrides:
+            traits = trait_overrides or {}
+            inferred_tag_traits = {}
+            inferred_style_traits = {}
+        else:
+            # Start with tag-based traits
+            inferred_tag_traits = infer_traits_from_tags(tags) if tags else {}
+
+            # Extract traits from style_prompt (if provided)
+            inferred_style_traits = (
+                extract_traits_from_style_prompt(style_prompt) if style_prompt else {}
+            )
+
+            # Merge: style_prompt supplements but doesn't override explicit tags
+            if inferred_tag_traits and inferred_style_traits:
+                traits = merge_traits(
+                    inferred_tag_traits, inferred_style_traits, strategy="max"
+                )
+            elif inferred_tag_traits:
+                traits = inferred_tag_traits
+            elif inferred_style_traits:
+                traits = inferred_style_traits
+            else:
+                traits = get_default_traits()
+
+        # IMPORTANT: We do NOT compute embeddings inside /generate/lyrics-topic.
+        # Embedding-based routing is asynchronous: the frontend calls /generate/classify-style
+        # in the background and passes bank_similarities into this endpoint when ready.
+
+        # "Real traits" should override embeddings. But weak single-keyword matches
+        # (e.g., "rich") shouldn't drown out explicit entities (e.g., an artist name).
+        if inferred_tag_traits:
+            has_real_traits = True
+        elif informative_trait_overrides:
+            has_real_traits = True
+        elif inferred_style_traits:
+            max_w = max(inferred_style_traits.values()) if inferred_style_traits else 0.0
+            has_real_traits = (len(inferred_style_traits) >= 2) or (max_w >= 0.65)
+        else:
+            has_real_traits = False
+
+        # Step 2: Score all banks (trait-based)
+        traits_for_scoring = traits
+        trait_bank_scores: Dict[str, float] = {}
+        for bank_id, bank in TOPIC_BANKS.items():
+            score = score_bank_match(traits_for_scoring, bank.traits)
+            trait_bank_scores[bank_id] = score
+
+        def _topk_linear_probabilities(scores: Dict[str, float], k: int = 10) -> Dict[str, float]:
+            """
+            Take top-K scores and normalize linearly:
+              p_i = score_i / sum(top_k_scores)
+
+            This matches the desired behavior: if top scores are 25/20/5,
+            probabilities become 50%/40%/10%.
+            """
+            if not scores:
+                return {}
+            items = sorted(scores.items(), key=lambda x: -x[1])[:k]
+            # Drop non-positive scores (they produce 0-probability "phantom" entries like
+            # "position 1,3,4" in the UI). Then renormalize.
+            clamped = [(bid, float(s)) for bid, s in items if float(s) > 0]
+            total = sum(s for _, s in clamped)
+            if total <= 1e-9:
+                # If everything is <=0, fall back to uniform over the raw top-K list.
+                uniform = 1.0 / len(items)
+                return {bid: uniform for bid, _ in items}
+            return {bid: s / total for bid, s in clamped}
+
+        # If the classifier provided bank_similarities but we otherwise have only defaults,
+        # route primarily by similarity (more accurate; avoids default-trait bias).
+        if bank_similarities and not has_real_traits:
+            # Pure similarity routing: use top-K similarities and normalize linearly.
+            probabilities = _topk_linear_probabilities(bank_similarities, k=10)
+            bank_scores = dict(bank_similarities)
+        else:
+            bank_scores = dict(trait_bank_scores)
+
+            # Step 2b: Blend with embedding-based similarities (if provided)
+            if bank_similarities:
+                # Use embeddings more when they're confident, but keep tags/traits as primary signal.
+                sims_sorted = sorted(bank_similarities.values(), reverse=True)
+                top = sims_sorted[0] if sims_sorted else 0.0
+                second = sims_sorted[1] if len(sims_sorted) > 1 else 0.0
+                gap = top - second
+                embedding_weight = 0.45 if gap >= 0.02 else 0.3
+                trait_weight = 1.0 - embedding_weight
+                for bank_id in bank_scores:
+                    trait_score = bank_scores[bank_id]
+                    emb_score = bank_similarities.get(bank_id, 0.0)
+                    bank_scores[bank_id] = (trait_score * trait_weight) + (
+                        emb_score * embedding_weight
+                    )
+
+            # Step 3: Convert to probabilities (top-K linear normalization)
+            probabilities = _topk_linear_probabilities(bank_scores, k=10)
+
+        def sanitize_topic(s: str) -> str:
+            # Remove em/en dashes which read AI-ish; prefer commas.
+            s = s.replace("—", ", ").replace("–", ", ")
+            s = re.sub(r"\s+,", ",", s)
+            s = re.sub(r"\s{2,}", " ", s).strip()
+            return s
+
+        # Step 4: Sample a bank (or pool from multiple banks)
+        if multi_bank_pool and trait_overrides:
+            # Multi-bank mode: pool prompts from top banks weighted by probability
+            top_banks = self._get_top_banks(
+                probabilities, max_banks=3, min_probability=0.1
+            )
+
+            if len(top_banks) > 1:
+                # Build weighted prompt pool from top banks
+                weighted_prompts: List[tuple[str, str, float]] = (
+                    []
+                )  # (prompt, bank_id, weight)
+                for bank_id, prob in top_banks:
+                    bank = TOPIC_BANKS[bank_id]
+                    available = self._recency.filter_prompts(bank.prompts)
+                    if not available:
+                        available = list(bank.prompts)
+                    for prompt in available:
+                        weighted_prompts.append((prompt, bank_id, prob))
+
+                if weighted_prompts:
+                    # Sample from pooled prompts weighted by bank probability
+                    prompts, bank_ids_list, weights = zip(*weighted_prompts)
+                    chosen_idx = self._rng.choices(
+                        range(len(prompts)), weights=weights, k=1
+                    )[0]
+                    topic = sanitize_topic(prompts[chosen_idx])
+                    chosen_bank_id = bank_ids_list[chosen_idx]
+                    chosen_bank = TOPIC_BANKS[chosen_bank_id]
+                    self._recency.record(topic)
+
+                    # Extract mood-like traits for backward compatibility
+                    mood_traits = [
+                        "melancholic",
+                        "uplifting",
+                        "romantic",
+                        "dark",
+                        "playful",
+                        "introspective",
+                        "empowering",
+                    ]
+                    chosen_moods = [t for t in mood_traits if traits.get(t, 0) > 0.3]
+
+                    return LyricsTopicResult(
+                        topic=topic,
+                        bank_id=chosen_bank_id,
+                        traits_used=traits,
+                        chosen_moods=(
+                            chosen_moods if chosen_moods else ["introspective"]
+                        ),
+                        reasoning=f"Multi-bank pool from {len(top_banks)} banks: {[b[0] for b in top_banks]}",
+                    )
+
+        # Standard single-bank mode (or fallback if multi-bank didn't work)
+        bank_ids = list(probabilities.keys())
+        weights = [probabilities[bid] for bid in bank_ids]
+        chosen_bank_id = self._rng.choices(bank_ids, weights=weights, k=1)[0]
+        chosen_bank = TOPIC_BANKS[chosen_bank_id]
+
+        # Step 5: Sample a prompt (avoiding recents)
+        available_prompts = self._recency.filter_prompts(chosen_bank.prompts)
+        if not available_prompts:
+            # All prompts recently used - allow any from this bank
+            available_prompts = list(chosen_bank.prompts)
+
+        topic = self._rng.choice(available_prompts)
+        topic = sanitize_topic(topic)
+        self._recency.record(topic)
+
+        # Extract mood-like traits for backward compatibility
+        mood_traits = [
+            "melancholic",
+            "uplifting",
+            "romantic",
+            "dark",
+            "playful",
+            "introspective",
+            "empowering",
+        ]
+        chosen_moods = [t for t in mood_traits if traits.get(t, 0) > 0.3]
+
+        return LyricsTopicResult(
+            topic=topic,
+            bank_id=chosen_bank_id,
+            traits_used=traits,
+            chosen_moods=chosen_moods if chosen_moods else ["introspective"],
+            reasoning=f"Selected bank '{chosen_bank.name}' (score: {bank_scores[chosen_bank_id]:.2f})",
+        )
+
+    async def generate_legacy(
         self,
         genres: List[str],
         moods: List[str],
         style_prompt: Optional[str] = None,
     ) -> LyricsTopicResult:
         """
-        Generate a lyric topic from influences.
+        Legacy API - combines genres and moods into tags.
 
-        Args:
-            genres: List of genre influences (used to infer moods if moods empty).
-            moods: List of mood tags.
-            style_prompt: Optional style prompt for context alignment.
-
-        Returns:
-            LyricsTopicResult with topic and metadata.
+        This method provides backward compatibility with the old API signature.
         """
-        # Determine which moods to use
-        effective_moods = self._resolve_moods(genres, moods)
+        tags = genres + moods
+        return await self.generate(tags=tags, style_prompt=style_prompt)
 
-        # Pick 1-2 moods to blend
-        num_moods = min(len(effective_moods), self._rng.randint(1, 2))
-        chosen_moods = self._rng.sample(effective_moods, num_moods)
 
-        # Generate topic from chosen moods
-        topic = self._generate_topic_from_moods(chosen_moods, style_prompt)
+# =============================================================================
+# MODULE-LEVEL STATE
+# =============================================================================
 
-        return LyricsTopicResult(
-            topic=topic,
-            chosen_moods=chosen_moods,
-            reasoning=f"Blended moods: {', '.join(chosen_moods)}",
-        )
+# Module-level recency memory (persists across requests in same process)
+# In production, this should be per-session via Redis/session store
+_default_recency = RecencyMemory(max_size=30)
 
-    def _resolve_moods(
-        self,
-        genres: List[str],
-        moods: List[str],
-    ) -> List[str]:
-        """Determine effective moods from inputs or fallbacks."""
-        # If moods provided, use them (filter to known moods)
-        if moods:
-            known_moods = [m.lower() for m in moods if m.lower() in MOOD_THEMES]
-            if known_moods:
-                return known_moods
 
-        # Infer moods from genres
-        inferred_moods: set[str] = set()
-        for genre in genres:
-            genre_lower = genre.lower()
-            for known_genre, affinities in GENRE_MOOD_AFFINITIES.items():
-                if known_genre in genre_lower or genre_lower in known_genre:
-                    inferred_moods.update(affinities)
-                    break
-
-        if inferred_moods:
-            return list(inferred_moods)
-
-        # Fallback to seed moods
-        return FALLBACK_MOODS.copy()
-
-    def _generate_topic_from_moods(
-        self,
-        chosen_moods: List[str],
-        style_prompt: Optional[str],
-    ) -> str:
-        """Generate a topic string from chosen moods."""
-        # Collect candidate themes from all chosen moods
-        candidates: List[str] = []
-        for mood in chosen_moods:
-            if mood in MOOD_THEMES:
-                candidates.extend(MOOD_THEMES[mood])
-
-        if not candidates:
-            # Ultimate fallback
-            candidates = [
-                "A moment that changed everything",
-                "The feeling of being truly alive",
-                "Searching for meaning in the noise",
-            ]
-
-        # Pick a random theme
-        topic = self._rng.choice(candidates)
-
-        # Optionally add style context hint
-        if style_prompt and len(style_prompt) > 20:
-            # Extract a vibe hint if style_prompt is substantial
-            # Just return the base topic for v1 (LLM integration later)
-            pass
-
-        return topic
+# =============================================================================
+# CONVENIENCE FUNCTIONS (maintain backward compatibility)
+# =============================================================================
 
 
 async def generate_lyrics_topic(
     genres: List[str],
     moods: List[str],
     style_prompt: Optional[str] = None,
+    trait_overrides: Optional[Dict[str, float]] = None,
+    bank_similarities: Optional[Dict[str, float]] = None,
 ) -> LyricsTopicResult:
     """
-    Convenience function to generate a lyrics topic.
+    Convenience function matching the existing API signature.
+
+    Combines genres and moods into unified tags for the new system.
 
     Args:
         genres: List of genre influences.
         moods: List of mood tags.
         style_prompt: Optional style prompt for context.
+        trait_overrides: Optional pre-computed traits from async classifier.
+        bank_similarities: Optional embedding-based similarity scores for banks.
 
     Returns:
         LyricsTopicResult with the generated topic.
     """
-    generator = LyricsTopicGenerator()
-    return await generator.generate(genres, moods, style_prompt)
+    tags = genres + moods
+    generator = LyricsTopicGenerator(recency_memory=_default_recency)
+    # Use multi-bank when we have classifier results
+    use_multi_bank = trait_overrides is not None or bank_similarities is not None
+    return await generator.generate(
+        tags=tags,
+        style_prompt=style_prompt,
+        trait_overrides=trait_overrides,
+        bank_similarities=bank_similarities,
+        multi_bank_pool=use_multi_bank,
+    )
+
+
+async def generate_lyrics_topic_from_tags(
+    tags: List[str],
+    style_prompt: Optional[str] = None,
+    trait_overrides: Optional[Dict[str, float]] = None,
+) -> LyricsTopicResult:
+    """
+    Generate a lyrics topic from unified tags.
+
+    This is the preferred API for new code.
+
+    Args:
+        tags: List of genre/mood/artist tags (unified).
+        style_prompt: Optional style description.
+        trait_overrides: Optional pre-computed traits.
+
+    Returns:
+        LyricsTopicResult with the generated topic.
+    """
+    generator = LyricsTopicGenerator(recency_memory=_default_recency)
+    return await generator.generate(
+        tags=tags,
+        style_prompt=style_prompt,
+        trait_overrides=trait_overrides,
+    )

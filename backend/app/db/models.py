@@ -37,6 +37,23 @@ class JSONEncodedList(TypeDecorator):
         return json.loads(value)
 
 
+class JSONEncodedDict(TypeDecorator):
+    """Store a dict as a JSON-encoded string (portable across SQLite/Postgres)."""
+
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        return json.dumps(value)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        return json.loads(value)
+
+
 def _uuid_str() -> str:
     return str(uuid.uuid4())
 
@@ -172,6 +189,19 @@ class SunoPrompt(Base):
     )  # private | unlisted | public
     share_id: Mapped[str] = mapped_column(
         String(24), unique=True, nullable=False, default=_share_id
+    )
+
+    # Classifier weights for lyrics topic routing (computed async, cached)
+    # These are computed by the style classifier service and cached for reuse
+    classifier_traits: Mapped[Optional[dict]] = mapped_column(
+        JSONEncodedDict, nullable=True, default=None
+    )
+    classifier_bank_sims: Mapped[Optional[dict]] = mapped_column(
+        JSONEncodedDict, nullable=True, default=None
+    )
+    # SHA-256 hash of suno_prompt when classifier was run (for staleness detection)
+    classifier_prompt_hash: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True, default=None
     )
 
     # Timestamps

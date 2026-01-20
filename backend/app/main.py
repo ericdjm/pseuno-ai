@@ -58,6 +58,7 @@ async def lifespan(app: FastAPI):
     session_store.clear_all()
     # Close PostHog telemetry client
     from app.services import posthog_capture
+
     await posthog_capture.close()
     http_client = getattr(app.state, "http_client", None)
     if http_client is not None:
@@ -144,9 +145,29 @@ if settings.debug:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    # In dev, allow any localhost/127.* origin even if FRONTEND_ORIGIN is misconfigured.
+    # This prevents silent failures for async endpoints like /generate/classify-style.
+    allow_origin_regex=(
+        r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$" if settings.debug else None
+    ),
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    # NOTE: When allow_credentials=True, do NOT use wildcard "*" for allow_headers.
+    # Some browsers will reject credentialed CORS responses that use wildcard headers.
+    allow_headers=(
+        [
+            "Accept",
+            "Accept-Language",
+            "Authorization",
+            "Cache-Control",
+            "Content-Language",
+            "Content-Type",
+            "Pragma",
+            "X-Requested-With",
+        ]
+        if settings.debug
+        else ["Content-Type", "Authorization"]
+    ),
     max_age=3600,  # Cache preflight requests for 1 hour
 )
 

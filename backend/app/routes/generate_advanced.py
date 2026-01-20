@@ -232,6 +232,37 @@ async def generate_advanced(
         db.commit()
         logger.info("Auto-saved prompt id=%d for user=%s", prompt_id, user_id)
 
+        # Fire async classifier to compute weights for lyrics topic routing
+        # This runs in background - don't block the response
+        import asyncio
+        import hashlib
+        from app.services.style_classifier import classify_style_prompt
+
+        async def _compute_classifier_weights():
+            try:
+                suno_prompt = result["suno_prompt"]
+                classify_result = await classify_style_prompt(suno_prompt)
+                
+                if classify_result.get("success"):
+                    prompt_hash = hashlib.sha256(suno_prompt.encode()).hexdigest()
+                    
+                    # Update the prompt with classifier weights
+                    # Need a new session since we're in a background task
+                    from app.db.base import SessionLocal
+                    with SessionLocal() as session:
+                        db_prompt = session.get(SunoPrompt, prompt_id)
+                        if db_prompt:
+                            db_prompt.classifier_traits = classify_result.get("traits", {})
+                            db_prompt.classifier_bank_sims = classify_result.get("bank_similarities", {})
+                            db_prompt.classifier_prompt_hash = prompt_hash
+                            session.commit()
+                            logger.info("Computed classifier weights for prompt id=%d", prompt_id)
+            except Exception as e:
+                logger.warning("Failed to compute classifier weights: %s", e)
+
+        # Schedule the background task
+        asyncio.create_task(_compute_classifier_weights())
+
     except Exception as e:
         # Don't fail the request if auto-save fails - just log it
         logger.warning("Failed to auto-save prompt: %s", e)

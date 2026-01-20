@@ -3,7 +3,7 @@ Schemas for saved Suno prompts (favorites).
 """
 
 from datetime import datetime
-from typing import Optional
+from typing import Dict, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -74,10 +74,32 @@ class SunoPromptResponse(BaseModel):
     source_action: str = "unknown"
     # Count of LyricsThreads (songs) under this StylePrompt
     threads_count: int = 0
+    # Cached classifier weights for lyrics topic routing
+    classifier_traits: Optional[Dict[str, float]] = None
+    classifier_bank_sims: Optional[Dict[str, float]] = None
+    classifier_prompt_hash: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class SunoPromptClassifierUpdate(BaseModel):
+    """Request to update classifier weights for a saved prompt."""
+
+    classifier_traits: Optional[Dict[str, float]] = Field(
+        default=None,
+        description="Trait weights from style classifier",
+    )
+    classifier_bank_sims: Optional[Dict[str, float]] = Field(
+        default=None,
+        description="Bank similarity scores from embeddings",
+    )
+    classifier_prompt_hash: Optional[str] = Field(
+        default=None,
+        max_length=64,
+        description="SHA-256 hash of suno_prompt when classifier was run",
+    )
 
 
 class SunoPromptListResponse(BaseModel):

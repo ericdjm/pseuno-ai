@@ -286,12 +286,36 @@ export interface LyricsTopicRequest {
   genres?: string[];
   moods?: string[];
   style_prompt?: string;
+  trait_overrides?: Record<string, number>;
+  bank_similarities?: Record<string, number>;
+}
+
+export interface LyricsTopicDebugInfo {
+  tag_traits: Record<string, number>;
+  style_prompt_traits: Record<string, number>;
+  merged_traits: Record<string, number>;
+  top_banks: Array<{ bank_id: string; probability: number; name: string }>;
+  style_prompt_keywords_matched: string[];
 }
 
 export interface LyricsTopicResponse {
   topic: string;
+  bank_id: string | null;
   chosen_moods: string[];
   reasoning: string | null;
+  debug?: LyricsTopicDebugInfo | null;
+}
+
+export interface ClassifyStyleRequest {
+  style_prompt: string;
+}
+
+export interface ClassifyStyleResponse {
+  traits: Record<string, number>;
+  bank_similarities: Record<string, number>;
+  latency_ms: number;
+  success: boolean;
+  error?: string | null;
 }
 
 export type TimeRange = 'short_term' | 'medium_term' | 'long_term';
@@ -316,8 +340,18 @@ export interface SavedSunoPrompt {
   parent_prompt_id: number | null;
   source_action: string;
   threads_count: number;
+  // Cached classifier weights for lyrics topic routing
+  classifier_traits: Record<string, number> | null;
+  classifier_bank_sims: Record<string, number> | null;
+  classifier_prompt_hash: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface ClassifierWeightsUpdate {
+  classifier_traits?: Record<string, number>;
+  classifier_bank_sims?: Record<string, number>;
+  classifier_prompt_hash?: string;
 }
 
 export interface SavedPromptsListResponse {
@@ -591,6 +625,29 @@ export async function generateLyricsTopic(
 }
 
 /**
+ * Classify a style prompt into trait weights using LLM.
+ * 
+ * This is designed to be called asynchronously when the user types in the style prompt field.
+ * The response can be cached and used to influence lyrics topic generation.
+ * 
+ * @param stylePrompt - Style description (artist names, genres, vibes)
+ * @returns Trait weights extracted from the style prompt
+ */
+export async function classifyStyle(
+  stylePrompt: string
+): Promise<ClassifyStyleResponse> {
+  const response = await fetch(`${API_BASE}/generate/classify-style`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ style_prompt: stylePrompt }),
+  });
+  return handleResponse<ClassifyStyleResponse>(response);
+}
+
+/**
  * Unified refinement for multi-field edits.
  * 
  * Applies a single user instruction to refine multiple song fields at once:
@@ -674,6 +731,25 @@ export async function updateSavedPrompt(
   payload: UpdateSunoPromptRequest
 ): Promise<SavedSunoPrompt> {
   const response = await fetch(`${API_BASE}/prompts/${promptId}`, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  return handleResponse<SavedSunoPrompt>(response);
+}
+
+/**
+ * Update classifier weights for a saved prompt.
+ * Called after async style classification completes.
+ */
+export async function updatePromptClassifier(
+  promptId: number,
+  payload: ClassifierWeightsUpdate
+): Promise<SavedSunoPrompt> {
+  const response = await fetch(`${API_BASE}/prompts/${promptId}/classifier`, {
     method: 'PATCH',
     credentials: 'include',
     headers: {
@@ -870,4 +946,16 @@ export function checkUrlSuccess(): boolean {
  */
 export function clearUrlParams(): void {
   window.history.replaceState({}, '', window.location.pathname);
+}
+
+/**
+ * Compute SHA-256 hash of a string.
+ * Used for classifier staleness detection.
+ */
+export async function sha256(text: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(text);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }

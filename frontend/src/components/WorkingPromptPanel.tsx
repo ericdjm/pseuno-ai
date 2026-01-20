@@ -49,6 +49,9 @@ import {
   generateLyricsTopic,
   createLyricsThread,
   reorderThreads,
+  classifyStyle,
+  updatePromptClassifier,
+  sha256,
 } from '../api';
 import {
   trackStyleRefineStarted,
@@ -602,6 +605,7 @@ export default function WorkingPromptPanel({
   };
 
   // Handle "Surprise me" topic generation for draft composer
+  // Implements Option B: use cached classifier weights if fresh, else keyword fallback + async re-classify
   const handleGenerateTopic = async () => {
     if (!state.styleFields.suno_prompt) return;
     
@@ -613,9 +617,62 @@ export default function WorkingPromptPanel({
       page: 'song_view',
       randomize_context: 'draft_composer',
     });
+
     try {
+      // Check if cached classifier weights are fresh
+      const currentPromptHash = await sha256(state.styleFields.suno_prompt);
+      const cachedHash = state.styleFields.classifier_prompt_hash;
+      const isFresh = cachedHash === currentPromptHash;
+
+      let traitOverrides: Record<string, number> | undefined;
+      let bankSimilarities: Record<string, number> | undefined;
+
+      if (isFresh && state.styleFields.classifier_traits) {
+        // Use cached weights
+        traitOverrides = state.styleFields.classifier_traits;
+        bankSimilarities = state.styleFields.classifier_bank_sims || undefined;
+        console.log('[StyleView] Using cached classifier weights');
+      } else {
+        // Stale or missing - fire async re-classify (don't block this request)
+        console.log('[StyleView] Classifier weights stale/missing, using keyword fallback');
+        
+        // Fire async re-classify in background
+        if (state.stylePromptId) {
+          const promptId = state.stylePromptId;
+          const sunoPrompt = state.styleFields.suno_prompt;
+          
+          // Don't await - let this run in background
+          (async () => {
+            try {
+              const classifyResult = await classifyStyle(sunoPrompt);
+              if (classifyResult.success) {
+                const newHash = await sha256(sunoPrompt);
+                // Update local state
+                dispatch({
+                  type: 'UPDATE_CLASSIFIER_WEIGHTS',
+                  traits: classifyResult.traits,
+                  bankSims: classifyResult.bank_similarities,
+                  promptHash: newHash,
+                });
+                // Persist to backend
+                await updatePromptClassifier(promptId, {
+                  classifier_traits: classifyResult.traits,
+                  classifier_bank_sims: classifyResult.bank_similarities,
+                  classifier_prompt_hash: newHash,
+                });
+                console.log('[StyleView] Classifier weights refreshed and saved');
+              }
+            } catch (err) {
+              console.warn('[StyleView] Background re-classify failed:', err);
+            }
+          })();
+        }
+      }
+
       const result = await generateLyricsTopic({
         style_prompt: state.styleFields.suno_prompt,
+        trait_overrides: traitOverrides,
+        bank_similarities: bankSimilarities,
       });
       setDraftLyricsAbout(result.topic);
       trackRandomizeLyricsSucceeded({
@@ -624,6 +681,7 @@ export default function WorkingPromptPanel({
         has_style_input: true,
         page: 'song_view',
         randomize_context: 'draft_composer',
+        bank_id: result.bank_id,
       });
       // No toast - the topic appearing in the box is enough feedback
     } catch (error) {

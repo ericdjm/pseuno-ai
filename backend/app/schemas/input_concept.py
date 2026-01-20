@@ -8,7 +8,7 @@ This is separate from the "output side" (AdvancedGenerate*) which
 produces the final 500-char Suno prompt + lyrics.
 """
 
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -91,12 +91,50 @@ class LyricsTopicRequest(BaseModel):
         max_length=500,
     )
 
+    trait_overrides: Optional[Dict[str, float]] = Field(
+        default=None,
+        description="Optional trait weights from async style classifier (LLM).",
+    )
+    bank_similarities: Optional[Dict[str, float]] = Field(
+        default=None,
+        description="Optional embedding-based bank similarity scores from async classifier.",
+    )
+
+
+class LyricsTopicDebugInfo(BaseModel):
+    """Debug information for lyrics topic generation (dev only)."""
+
+    tag_traits: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Traits extracted from input tags",
+    )
+    style_prompt_traits: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Traits extracted from style_prompt",
+    )
+    merged_traits: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Final merged traits used for routing",
+    )
+    top_banks: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Top candidate banks with probabilities",
+    )
+    style_prompt_keywords_matched: List[str] = Field(
+        default_factory=list,
+        description="Keywords from style_prompt that matched trait mappings",
+    )
+
 
 class LyricsTopicResponse(BaseModel):
     """Response containing the generated lyrics topic."""
 
     topic: str = Field(
         description="A short 1-2 sentence lyric topic or theme",
+    )
+    bank_id: Optional[str] = Field(
+        default=None,
+        description="The topic bank this prompt was selected from (for analytics)",
     )
     chosen_moods: List[str] = Field(
         default_factory=list,
@@ -106,3 +144,42 @@ class LyricsTopicResponse(BaseModel):
         default=None,
         description="Optional reasoning for the topic (for debugging)",
     )
+    debug: Optional[LyricsTopicDebugInfo] = Field(
+        default=None,
+        description="Debug info (only populated in dev mode)",
+    )
+
+
+class ClassifyStyleRequest(BaseModel):
+    """Request to classify a free-text style prompt into lyric topic routing signals."""
+
+    style_prompt: str = Field(
+        description="Free-text style prompt (may include artists, genres, vibes).",
+        max_length=2000,
+    )
+
+
+class ClassifyStyleResponse(BaseModel):
+    """Response containing classifier-derived routing signals (traits + bank similarities)."""
+
+    traits: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Trait weights inferred from the style prompt.",
+    )
+    latency_ms: int = Field(
+        default=0,
+        description="End-to-end classifier latency in milliseconds.",
+    )
+    success: bool = Field(
+        default=True,
+        description="Whether the classification succeeded.",
+    )
+    error: Optional[str] = Field(
+        default=None,
+        description="Error message when success=false.",
+    )
+    bank_similarities: Optional[Dict[str, float]] = Field(
+        default=None,
+        description="Top-K bank similarity scores from embeddings.",
+    )
+

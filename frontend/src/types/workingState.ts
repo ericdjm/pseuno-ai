@@ -17,6 +17,10 @@ export interface StyleFields {
   weirdness: number;
   style_influence: number;
   auto_tags: string[];
+  // Cached classifier weights for lyrics topic routing
+  classifier_traits: Record<string, number> | null;
+  classifier_bank_sims: Record<string, number> | null;
+  classifier_prompt_hash: string | null;
 }
 
 // Fields for the lyrics (the song)
@@ -70,7 +74,8 @@ export type WorkingAction =
   | { type: 'EDIT_LYRICS_TITLE'; value: string }
   | { type: 'SAVE_THREAD_SUCCESS'; thread: LyricsThread }
   | { type: 'MARK_CLEAN'; which: 'style' | 'lyrics' | 'both' }
-  | { type: 'APPLY_REFINE_SNAPSHOT'; snapshot: RefineSnapshot };
+  | { type: 'APPLY_REFINE_SNAPSHOT'; snapshot: RefineSnapshot }
+  | { type: 'UPDATE_CLASSIFIER_WEIGHTS'; traits: Record<string, number> | null; bankSims: Record<string, number> | null; promptHash: string | null };
 
 // Initial state factory
 export function createInitialWorkingState(): WorkingState {
@@ -84,6 +89,9 @@ export function createInitialWorkingState(): WorkingState {
       weirdness: 50,
       style_influence: 50,
       auto_tags: [],
+      classifier_traits: null,
+      classifier_bank_sims: null,
+      classifier_prompt_hash: null,
     },
     lyricsFields: {
       lyrics_text: '',
@@ -117,6 +125,9 @@ export function workingReducer(state: WorkingState, action: WorkingAction): Work
           weirdness: action.prompt.weirdness,
           style_influence: action.prompt.style_influence,
           auto_tags: action.prompt.auto_tags,
+          classifier_traits: action.prompt.classifier_traits,
+          classifier_bank_sims: action.prompt.classifier_bank_sims,
+          classifier_prompt_hash: action.prompt.classifier_prompt_hash,
         },
         lyricsFields: {
           lyrics_text: '',
@@ -166,6 +177,9 @@ export function workingReducer(state: WorkingState, action: WorkingAction): Work
           weirdness: action.prompt.weirdness,
           style_influence: action.prompt.style_influence,
           auto_tags: action.prompt.auto_tags,
+          classifier_traits: action.prompt.classifier_traits,
+          classifier_bank_sims: action.prompt.classifier_bank_sims,
+          classifier_prompt_hash: action.prompt.classifier_prompt_hash,
         },
         lyricsFields: {
           // Use thread-specific lyrics if provided, fallback to prompt.lyrics
@@ -252,6 +266,17 @@ export function workingReducer(state: WorkingState, action: WorkingAction): Work
 
       return newState;
     }
+
+    case 'UPDATE_CLASSIFIER_WEIGHTS':
+      return {
+        ...state,
+        styleFields: {
+          ...state.styleFields,
+          classifier_traits: action.traits,
+          classifier_bank_sims: action.bankSims,
+          classifier_prompt_hash: action.promptHash,
+        },
+      };
 
     default:
       return state;

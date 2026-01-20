@@ -24,6 +24,7 @@ from app.deps import (
     get_or_create_device_user,
 )
 from app.schemas.prompts import (
+    SunoPromptClassifierUpdate,
     SunoPromptCreate,
     SunoPromptListResponse,
     SunoPromptResponse,
@@ -83,6 +84,10 @@ def _prompt_to_response(prompt: SunoPrompt, db: Session) -> SunoPromptResponse:
         parent_prompt_id=prompt.parent_prompt_id,
         source_action=prompt.source_action,
         threads_count=threads_count,
+        # Classifier weights for lyrics topic routing
+        classifier_traits=prompt.classifier_traits,
+        classifier_bank_sims=prompt.classifier_bank_sims,
+        classifier_prompt_hash=prompt.classifier_prompt_hash,
         created_at=prompt.created_at,
         updated_at=prompt.updated_at,
     )
@@ -367,4 +372,45 @@ def get_shared_prompt(
     if prompt.visibility == "private":
         raise HTTPException(status_code=404, detail="Prompt not found")
 
+    return _prompt_to_response(prompt, db)
+
+
+@router.patch("/{prompt_id}/classifier", response_model=SunoPromptResponse)
+def update_prompt_classifier(
+    prompt_id: int,
+    body: SunoPromptClassifierUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    device_user: User | None = Depends(get_device_user),
+):
+    """
+    Update a prompt's classifier weights (owner only).
+    
+    This is called by the frontend after async style classification completes.
+    The classifier_prompt_hash should be the SHA-256 of the current suno_prompt
+    to enable staleness detection.
+    """
+    spotify_user_id = get_current_user_id_optional(request)
+    user_id = _get_user_id_or_raise(spotify_user_id, device_user)
+
+    prompt = db.get(SunoPrompt, prompt_id)
+
+    if not prompt:
+        raise HTTPException(status_code=404, detail="Prompt not found")
+
+    if prompt.owner_user_id != user_id:
+        raise HTTPException(
+            status_code=403, detail="Not authorized to update this prompt"
+        )
+
+    # Update classifier fields
+    if body.classifier_traits is not None:
+        prompt.classifier_traits = body.classifier_traits
+    if body.classifier_bank_sims is not None:
+        prompt.classifier_bank_sims = body.classifier_bank_sims
+    if body.classifier_prompt_hash is not None:
+        prompt.classifier_prompt_hash = body.classifier_prompt_hash
+
+    db.commit()
+    db.refresh(prompt)
     return _prompt_to_response(prompt, db)

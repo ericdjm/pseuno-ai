@@ -34,6 +34,7 @@ import {
   generateAdvanced,
   generateInputConcept,
   generateLyricsTopic,
+  classifyStyle,
   getPromptVariants,
   getModels,
   getProfile,
@@ -49,7 +50,10 @@ import {
   LyricExplicitness,
   LyricPOV,
   TimeRange,
+  LyricsTopicDebugInfo,
+  ClassifyStyleResponse,
 } from '../api';
+import { LyricsTopicDebugPanel } from './LyricsTopicDebugPanel';
 import { useSessionStorageState } from '../hooks';
 import {
   trackGenerateClicked,
@@ -112,6 +116,19 @@ export default function NewSongView({
   // Core inputs (persisted)
   const [songPrompt, setSongPrompt] = useSessionStorageState('draft:songPrompt', '');
   const [lyricsAbout, setLyricsAbout] = useSessionStorageState('draft:lyricsAbout', '');
+
+  // Debug info for lyrics topic (dev only)
+  const [lyricsTopicDebug, setLyricsTopicDebug] = useState<{
+    debug: LyricsTopicDebugInfo | null;
+    bankId: string | null;
+    basedOn: string;
+  } | null>(null);
+
+  // Cached style classifier result (for improved lyrics topic generation)
+  const [cachedStyleTraits, setCachedStyleTraits] = useState<Record<string, number> | null>(null);
+  const [cachedBankSimilarities, setCachedBankSimilarities] = useState<Record<string, number> | null>(null);
+  const [isClassifyingStyle, setIsClassifyingStyle] = useState(false);
+  const lastClassifiedPrompt = useRef<string>('');
 
   // Correlation: one flow_id per draft cycle (randomize → generate → output_used).
   const draftFlowIdRef = useRef<string>(createFlowId());
@@ -181,6 +198,71 @@ export default function NewSongView({
       setPersonalize(true);
     }
   }, [isAuthenticated]);
+
+  // Debounced async style classifier - runs when songPrompt changes
+  // Caches results for use in lyrics topic generation
+  useEffect(() => {
+    const trimmedPrompt = songPrompt.trim();
+
+    // If the user has changed the prompt since the last completed classification,
+    // immediately invalidate cached async routing signals to avoid misleading debug
+    // and stale routing influence.
+    if (lastClassifiedPrompt.current && trimmedPrompt !== lastClassifiedPrompt.current) {
+      setCachedStyleTraits(null);
+      setCachedBankSimilarities(null);
+    }
+    
+    // Skip if prompt is too short or unchanged
+    if (trimmedPrompt.length < 10 || trimmedPrompt === lastClassifiedPrompt.current) {
+      return;
+    }
+
+    // Debounce: wait 800ms after user stops typing
+    const timeoutId = setTimeout(async () => {
+      // Don't re-classify if prompt hasn't changed
+      if (trimmedPrompt !== songPrompt.trim()) return;
+      
+      setIsClassifyingStyle(true);
+      try {
+        const result = await classifyStyle(trimmedPrompt);
+        if (!result.success) return;
+
+        const hasTraits = Object.keys(result.traits || {}).length > 0;
+        const hasBankSims =
+          Object.keys(result.bank_similarities || {}).length > 0;
+
+        // Cache whatever signal we got. Many artist-only prompts produce few/no explicit traits,
+        // but embeddings still provide strong bank routing signal.
+        if (hasTraits) setCachedStyleTraits(result.traits);
+        if (hasBankSims) setCachedBankSimilarities(result.bank_similarities || null);
+
+        if (hasTraits || hasBankSims) {
+          lastClassifiedPrompt.current = trimmedPrompt;
+          console.log('[StyleClassifier] Cached:', {
+            traits: result.traits,
+            bankSims: result.bank_similarities,
+            latency: `${result.latency_ms}ms`,
+          });
+        }
+      } catch (error) {
+        // Silent fail - classifier is optional enhancement
+        console.warn('[StyleClassifier] Failed:', error);
+      } finally {
+        setIsClassifyingStyle(false);
+      }
+    }, 800);
+
+    return () => clearTimeout(timeoutId);
+  }, [songPrompt]);
+
+  // Clear cached traits when prompt changes significantly
+  useEffect(() => {
+    if (songPrompt.trim().length < 5) {
+      setCachedStyleTraits(null);
+      setCachedBankSimilarities(null);
+      lastClassifiedPrompt.current = '';
+    }
+  }, [songPrompt]);
 
   // When personalized, we merge multiple Spotify time ranges to build a larger, more robust tag pool.
   const [spotifyProfilesByRange, setSpotifyProfilesByRange] = useState<Partial<Record<TimeRange, SpotifyProfileResponse>>>({});
@@ -569,19 +651,42 @@ export default function NewSongView({
     const startTime = Date.now();
     setIsGeneratingLyricsTopic(true);
     try {
+      const trimmedPrompt = songPrompt.trim();
+      const traitOverrides = cachedStyleTraits || undefined;
+      const bankSimilarities = cachedBankSimilarities || undefined;
+
+      // Only show "Based on" if we actually used async routing signals for THIS prompt.
+      const usedAsyncSignals =
+        (traitOverrides && Object.keys(traitOverrides).length > 0) ||
+        (bankSimilarities && Object.keys(bankSimilarities).length > 0);
+      const asyncBasis =
+        usedAsyncSignals && lastClassifiedPrompt.current === trimmedPrompt
+          ? lastClassifiedPrompt.current
+          : '';
+
       const result = await generateLyricsTopic({
         genres: selectedTags,
-        style_prompt: songPrompt.trim() || undefined,
+        style_prompt: trimmedPrompt || undefined,
+        // Pass cached classifier results (if available)
+        trait_overrides: traitOverrides,
+        bank_similarities: bankSimilarities,
       });
       setLyricsAbout(result.topic);
       draftUsedRandomizeLyricsRef.current = true;
+      // Capture debug info for dev panel
+      setLyricsTopicDebug({
+        debug: result.debug || null,
+        bankId: result.bank_id,
+        basedOn: asyncBasis,
+      });
       trackRandomizeLyricsSucceeded({
         auth_state: isAuthenticated ? 'spotify' : 'guest',
         duration_ms: Date.now() - startTime,
-        has_style_input: songPrompt.trim().length > 0,
+        has_style_input: trimmedPrompt.length > 0,
         flow_id: flowId,
         primary_tag_bucket: primaryTagBucket(selectedTags),
         tag_buckets,
+        bank_id: result.bank_id,
       });
     } catch (error) {
       trackRandomizeLyricsFailed({
@@ -969,6 +1074,16 @@ export default function NewSongView({
                   p={0}
                   fontSize="sm"
                 />
+
+                {/* Debug panel for lyrics topic (dev only) */}
+                {lyricsTopicDebug && (
+                  <LyricsTopicDebugPanel
+                    debug={lyricsTopicDebug.debug}
+                    bankId={lyricsTopicDebug.bankId}
+                    topic={lyricsAbout}
+                    basedOn={lyricsTopicDebug.basedOn}
+                  />
+                )}
 
                 {/* Lyric controls (power user) - hidden by default */}
                 {!isInstrumental && (

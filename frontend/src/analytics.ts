@@ -539,6 +539,7 @@ export function trackRandomizeLyricsSucceeded(props: {
   flow_id?: string;
   primary_tag_bucket?: TagBucket;
   tag_buckets?: TagBucket[];
+  bank_id?: string | null;
 }) {
   capture('randomize_lyrics_succeeded', {
     flow: 'generate',
