@@ -224,16 +224,42 @@ async def generate_lyrics_topic_endpoint(
                 for bid, bank in TOPIC_BANKS.items()
             }
 
-            def _topk_linear_probabilities(scores: dict, k: int = 10) -> dict:
+            def _topk_linear_probabilities(
+                scores: dict, k: int = 10, diversity_noise: float = 0.15
+            ) -> dict:
+                """
+                Take top-K scores and normalize linearly with diversity noise.
+                Matches the actual generator's implementation for consistency.
+                
+                The diversity_noise parameter adds small random jitter to break ties
+                and prevent the same high-scoring banks from dominating every request.
+                """
                 if not scores:
                     return {}
                 items = sorted(scores.items(), key=lambda x: -x[1])[:k]
+                # Drop non-positive scores
                 clamped = [(bid, float(s)) for bid, s in items if float(s) > 0]
-                total = sum(s for _, s in clamped)
-                if total <= 1e-9:
+                
+                if not clamped:
+                    # If everything is <=0, fall back to uniform over the raw top-K list
                     uniform = 1.0 / len(items)
                     return {bid: uniform for bid, _ in items}
-                return {bid: s / total for bid, s in clamped}
+                
+                # Add diversity noise to break ties and spread selections
+                # Use seeded RNG for reproducibility in debug output
+                import random
+                debug_rng = random.Random(hash(tuple(sorted(scores.items()))))
+                max_score = max(s for _, s in clamped)
+                noise_scale = max_score * diversity_noise
+                noisy_scores = [
+                    (bid, s + debug_rng.uniform(0, noise_scale)) for bid, s in clamped
+                ]
+                
+                total = sum(s for _, s in noisy_scores)
+                if total <= 1e-9:
+                    uniform = 1.0 / len(noisy_scores)
+                    return {bid: uniform for bid, _ in noisy_scores}
+                return {bid: s / total for bid, s in noisy_scores}
 
             # Blend with bank_similarities if provided
             if debug_bank_sims:

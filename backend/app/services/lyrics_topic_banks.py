@@ -41,7 +41,14 @@ _register_bank(
         id="confessional_heartbreak",
         name="Confessional Heartbreak",
         description="Raw breakup confession, longing, regret, late-night thoughts.",
-        traits={"romantic": 0.9, "melancholic": 0.85, "confessional": 0.9, "vulnerable": 0.7, "rnb_friendly": 0.5, "pop_friendly": 0.5},
+        traits={
+            "romantic": 0.9,
+            "melancholic": 0.85,
+            "confessional": 0.9,
+            "vulnerable": 0.7,
+            "rnb_friendly": 0.5,
+            "pop_friendly": 0.5,
+        },
         prompts=(
             "Reading our old texts like scripture, trying to find the exact moment we started losing each other",
             "I keep rehearsing the apology I will never get to say, and it keeps changing but it never fixes anything",
@@ -62,7 +69,14 @@ _register_bank(
         id="domestic_quiet",
         name="Domestic Quiet",
         description="Small, intimate moments at home, comfort, routine, subtle emotions.",
-        traits={"domestic": 0.9, "romantic": 0.5, "folk_friendly": 0.5, "pop_friendly": 0.4, "uplifting": 0.4},
+        traits={
+            "domestic": 0.9,
+            "romantic": 0.55,
+            "introspective": 0.4,
+            "uplifting": 0.45,
+            "folk_friendly": 0.5,
+            "pop_friendly": 0.4,
+        },
         prompts=(
             "Keys dropping in the bowl, shoes by the door, the small sounds that mean someone is home and the house is full again",
             "The dishwasher humming while we talk about nothing important, and realizing this is what peace feels like",
@@ -83,7 +97,13 @@ _register_bank(
         id="new_love_electricity",
         name="New Love Electricity",
         description="First sparks, butterflies, thrilling uncertainty, playful flirtation.",
-        traits={"romantic": 0.95, "uplifting": 0.75, "playful": 0.6, "pop_friendly": 0.6, "rnb_friendly": 0.5},
+        traits={
+            "romantic": 0.95,
+            "uplifting": 0.75,
+            "playful": 0.6,
+            "pop_friendly": 0.6,
+            "rnb_friendly": 0.5,
+        },
         prompts=(
             "The first time our hands touched and I felt my whole week rearrange itself",
             "Every notification feels like a little lightning strike because it might be them",
@@ -104,7 +124,13 @@ _register_bank(
         id="post_breakup_liberation",
         name="Post Breakup Liberation",
         description="Relief, self-reclamation, rebuilding identity, glowing up after loss.",
-        traits={"empowering": 0.85, "uplifting": 0.7, "pop_friendly": 0.55, "rnb_friendly": 0.45, "rock_friendly": 0.4},
+        traits={
+            "empowering": 0.85,
+            "uplifting": 0.7,
+            "pop_friendly": 0.55,
+            "rnb_friendly": 0.45,
+            "rock_friendly": 0.4,
+        },
         prompts=(
             "First weekend in months where the time is mine, no compromises, no eggshells, just air in my lungs",
             "I found my hobbies again, like buried treasure under years of shrinking myself",
@@ -125,7 +151,13 @@ _register_bank(
         id="melancholy_stillness",
         name="Melancholy and Stillness",
         description="Soft sadness, quiet reflection, gentle imagery, slow time.",
-        traits={"melancholic": 0.9, "vulnerable": 0.6, "folk_friendly": 0.5, "pop_friendly": 0.4, "rnb_friendly": 0.35},
+        traits={
+            "melancholic": 0.9,
+            "vulnerable": 0.6,
+            "folk_friendly": 0.5,
+            "pop_friendly": 0.4,
+            "rnb_friendly": 0.35,
+        },
         prompts=(
             "Watching rain trace paths down the window and feeling like my thoughts are doing the same",
             "Homesick for a place I have never been, missing a version of life that only exists in my head",
@@ -146,7 +178,12 @@ _register_bank(
         id="spiritual_existential",
         name="Spiritual and Existential",
         description="Meaning, mortality, awe, faith, cosmic questions, self and universe.",
-        traits={"spiritual": 0.9, "introspective": 0.7, "emotional_intensity": 0.5, "surreal": 0.4},
+        traits={
+            "spiritual": 0.9,
+            "introspective": 0.7,
+            "emotional_intensity": 0.5,
+            "surreal": 0.4,
+        },
         prompts=(
             "The terror and wonder of infinite space hitting at the same time, too big to hold but impossible to ignore",
             "I keep asking the sky for answers and it keeps answering with silence that sounds like truth",
@@ -171,7 +208,15 @@ _register_bank(
         id="rebellion_defiance",
         name="Rebellion and Defiance",
         description="Anti-authority, refusing control, breaking rules, self-determination.",
-        traits={"aggressive": 0.7, "empowering": 0.75, "rock_friendly": 0.7, "metal_friendly": 0.5, "hip_hop_friendly": 0.5, "dark": 0.4},
+        traits={
+            "aggressive": 0.7,
+            "empowering": 0.75,
+            "emotional_intensity": 0.5,  # Overlap with defaults
+            "rock_friendly": 0.7,
+            "metal_friendly": 0.5,
+            "hip_hop_friendly": 0.5,
+            "dark": 0.4,
+        },
         prompts=(
             "I am done asking permission, my life is not a committee decision",
             "They built a cage and called it safety, I learned the lock and swallowed the key",
@@ -192,7 +237,14 @@ _register_bank(
         id="political_systems_critique",
         name="Political and Systems Critique",
         description="Power, propaganda, surveillance, exploitation, modern societal critique.",
-        traits={"political": 0.95, "dark": 0.5, "aggressive": 0.4, "hip_hop_friendly": 0.5, "rock_friendly": 0.5},
+        traits={
+            "political": 0.95,
+            "dark": 0.5,
+            "introspective": 0.35,  # Overlap with defaults
+            "aggressive": 0.4,
+            "hip_hop_friendly": 0.5,
+            "rock_friendly": 0.5,
+        },
         prompts=(
             "A world where truth is a subscription and empathy is treated like a weakness",
             "They sell us fear and call it news, they sell us hope and call it a product",
@@ -217,7 +269,12 @@ _register_bank(
         id="consciousness_metaphysical",
         name="Consciousness and Metaphysical",
         description="Identity layers, perception, reality as metaphor, inner worlds.",
-        traits={"surreal": 0.8, "introspective": 0.6, "prog_rock_friendly": 0.6, "prog_metal_friendly": 0.5},
+        traits={
+            "surreal": 0.8,
+            "introspective": 0.6,
+            "prog_rock_friendly": 0.6,
+            "prog_metal_friendly": 0.5,
+        },
         prompts=(
             "Spiraling through layers of self, each one revealing a mask I did not know I was wearing",
             "If I am the observer, who is the one being observed inside my own mind",
@@ -238,7 +295,13 @@ _register_bank(
         id="scifi_dystopia_philosophy",
         name="Sci Fi Dystopia and Philosophy",
         description="Futurism, collapse, AI, simulation, ethics, identity in a broken future.",
-        traits={"dark": 0.7, "surreal": 0.6, "political": 0.5, "electronic_friendly": 0.5, "prog_metal_friendly": 0.4},
+        traits={
+            "dark": 0.7,
+            "surreal": 0.6,
+            "political": 0.5,
+            "electronic_friendly": 0.5,
+            "prog_metal_friendly": 0.4,
+        },
         prompts=(
             "Dystopia arrived gradually, we decorated it and called it progress",
             "A city of neon promises and quiet despair, where everything is rented including hope",
@@ -259,7 +322,13 @@ _register_bank(
         id="mythology_allegory",
         name="Mythology and Allegory",
         description="Modern myths, archetypes, gods as metaphors, symbolic storytelling.",
-        traits={"narrative": 0.85, "surreal": 0.5, "prog_rock_friendly": 0.5, "metal_friendly": 0.4, "folk_friendly": 0.4},
+        traits={
+            "narrative": 0.85,
+            "surreal": 0.5,
+            "prog_rock_friendly": 0.5,
+            "metal_friendly": 0.4,
+            "folk_friendly": 0.4,
+        },
         prompts=(
             "A modern Icarus with a smartphone, flying too close to fame and burning anyway",
             "Orpheus looking back, not from doubt but from longing that refuses to be rational",
@@ -284,7 +353,13 @@ _register_bank(
         id="psychedelic_perception",
         name="Psychedelic Perception",
         description="Synesthesia, wonder, ego-dissolve metaphors, kaleidoscopic imagery.",
-        traits={"surreal": 0.9, "spiritual": 0.5, "rock_friendly": 0.5, "electronic_friendly": 0.5, "uplifting": 0.35},
+        traits={
+            "surreal": 0.9,
+            "spiritual": 0.5,
+            "rock_friendly": 0.5,
+            "electronic_friendly": 0.5,
+            "uplifting": 0.35,
+        },
         prompts=(
             "Colors have opinions today, and they keep arguing in the corners of my vision",
             "The room is breathing with me, like the walls learned compassion",
@@ -305,7 +380,13 @@ _register_bank(
         id="manic_velocity",
         name="Manic Velocity",
         description="Speed, confidence spikes, racing mind, bright edges, restless motion.",
-        traits={"emotional_intensity": 0.8, "uplifting": 0.5, "electronic_friendly": 0.5, "rock_friendly": 0.4, "aggressive": 0.35},
+        traits={
+            "emotional_intensity": 0.8,
+            "uplifting": 0.5,
+            "electronic_friendly": 0.5,
+            "rock_friendly": 0.4,
+            "aggressive": 0.35,
+        },
         prompts=(
             "My thoughts are sprinting ahead of my mouth, and I am trying to keep up",
             "I feel invincible until I blink, and then I remember gravity",
@@ -330,7 +411,14 @@ _register_bank(
         id="whimsical_nature_folk",
         name="Whimsical Nature and Folk",
         description="Gentle nature scenes, small-town warmth, whimsical storytelling, cozy imagery.",
-        traits={"folk_friendly": 0.9, "pastoral": 0.8, "playful": 0.5, "uplifting": 0.5, "narrative": 0.4},
+        traits={
+            "pastoral": 0.9,
+            "folk_friendly": 0.85,
+            "playful": 0.55,
+            "uplifting": 0.55,
+            "narrative": 0.45,
+            "romantic": 0.3,
+        },
         prompts=(
             "A porch light and a summer breeze, telling stories to the fireflies like they are old friends",
             "A creek that knows my secrets, carrying them downstream with leaves and laughter",
@@ -351,7 +439,14 @@ _register_bank(
         id="coastal_mysticism",
         name="Coastal Mysticism",
         description="Ocean imagery, fog, salt air, liminal shorelines, quiet mythic vibe.",
-        traits={"coastal": 0.9, "surreal": 0.5, "melancholic": 0.45, "introspective": 0.4, "folk_friendly": 0.4},
+        traits={
+            "coastal": 0.9,
+            "melancholic": 0.5,
+            "romantic": 0.4,
+            "introspective": 0.45,
+            "surreal": 0.4,
+            "folk_friendly": 0.4,
+        },
         prompts=(
             "Fog rolling in like a verdict, like the coast deciding what I am allowed to see today",
             "Salt on my lips, old stories in the tide pools, and the feeling that the ocean remembers everything",
@@ -372,7 +467,14 @@ _register_bank(
         id="body_groove",
         name="Body and Groove",
         description="Rhythm-forward themes, swagger, movement, heat, playful confidence.",
-        traits={"party": 0.8, "playful": 0.7, "uplifting": 0.6, "rnb_friendly": 0.6, "hip_hop_friendly": 0.5, "electronic_friendly": 0.5},
+        traits={
+            "party": 0.8,
+            "playful": 0.7,
+            "uplifting": 0.6,
+            "rnb_friendly": 0.6,
+            "hip_hop_friendly": 0.5,
+            "electronic_friendly": 0.5,
+        },
         prompts=(
             "The beat feels like a second heartbeat, and I finally trust my body to lead",
             "A dance floor confession, saying everything with shoulders and smiles instead of words",
@@ -393,7 +495,13 @@ _register_bank(
         id="warm_numbness",
         name="Warm Numbness",
         description="Soft dissociation, emotional buffering, cozy but hollow comfort.",
-        traits={"melancholic": 0.7, "vulnerable": 0.6, "confessional": 0.55, "electronic_friendly": 0.4, "pop_friendly": 0.4},
+        traits={
+            "melancholic": 0.7,
+            "vulnerable": 0.6,
+            "confessional": 0.55,
+            "electronic_friendly": 0.4,
+            "pop_friendly": 0.4,
+        },
         prompts=(
             "I am wrapped in comfort like a blanket, but I cannot feel the warmth the way I used to",
             "Laughing at the right moments, doing all the right things, and still feeling like a ghost in my own life",
@@ -414,7 +522,13 @@ _register_bank(
         id="absurdist_comedy",
         name="Absurdist Comedy",
         description="Weird humor, surreal everyday observations, playful nonsense with heart.",
-        traits={"absurdist": 0.95, "playful": 0.85, "surreal": 0.5, "uplifting": 0.4, "pop_friendly": 0.4},
+        traits={
+            "absurdist": 0.95,
+            "playful": 0.85,
+            "surreal": 0.5,
+            "uplifting": 0.4,
+            "pop_friendly": 0.4,
+        },
         prompts=(
             "My brain is a group chat with no moderator, and everyone is typing at once",
             "I tried to romanticize my life but the receipts keep interrupting the poetry",
@@ -435,7 +549,14 @@ _register_bank(
         id="emo_rap_vulnerability",
         name="Emo Rap and Vulnerability",
         description="Modern confessional pain, loneliness, self doubt, soft darkness.",
-        traits={"hip_hop_friendly": 0.8, "melancholic": 0.75, "confessional": 0.8, "vulnerable": 0.7, "dark": 0.5, "self_destructive": 0.4},
+        traits={
+            "hip_hop_friendly": 0.8,
+            "melancholic": 0.75,
+            "confessional": 0.8,
+            "vulnerable": 0.7,
+            "dark": 0.5,
+            "self_destructive": 0.4,
+        },
         prompts=(
             "I keep joking about being okay because the truth is too heavy to say out loud",
             "Fame in my feed, emptiness in my chest, and nobody notices because I keep performing",

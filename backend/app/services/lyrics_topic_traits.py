@@ -737,10 +737,15 @@ MOOD_TRAIT_MAP: Dict[str, Dict[str, float]] = {
     "quirky": {"absurdist": 0.5, "playful": 0.6},
     # Additional moods
     "epic": {"emotional_intensity": 0.8, "empowering": 0.6, "narrative": 0.5},
-    "cinematic": {"emotional_intensity": 0.7, "narrative": 0.6, "surreal": 0.3},
+    "cinematic": {
+        "emotional_intensity": 0.7,
+        "narrative": 0.6,
+        "dark": 0.4,
+        "surreal": 0.3,
+    },
     "anthemic": {"empowering": 0.8, "uplifting": 0.6, "emotional_intensity": 0.6},
     "gritty": {"dark": 0.6, "urban": 0.5, "aggressive": 0.4},
-    "moody": {"dark": 0.5, "introspective": 0.6, "melancholic": 0.4},
+    "moody": {"melancholic": 0.6, "dark": 0.5, "introspective": 0.5, "vulnerable": 0.4},
     "groovy": {"party": 0.6, "playful": 0.5, "rnb_friendly": 0.4},
     "trippy": {"surreal": 0.9, "spiritual": 0.4, "dark": 0.2},
     "psychedelic": {"surreal": 0.9, "spiritual": 0.5, "introspective": 0.4},
@@ -776,6 +781,37 @@ MOOD_TRAIT_MAP: Dict[str, Dict[str, float]] = {
     "storytelling": {"narrative": 0.9, "folk_friendly": 0.5},
     "charming": {"playful": 0.6, "folk_friendly": 0.4, "romantic": 0.3},
     "rustic": {"pastoral": 0.8, "folk_friendly": 0.7, "domestic": 0.4},
+    # Setting / Location keywords (critical for location bank routing)
+    "coastal": {"coastal": 0.95, "melancholic": 0.3, "introspective": 0.3},
+    "beach": {"coastal": 0.9, "uplifting": 0.4, "playful": 0.3},
+    "ocean": {"coastal": 0.9, "melancholic": 0.4, "surreal": 0.3},
+    "seaside": {"coastal": 0.85, "romantic": 0.4},
+    "california": {"coastal": 0.8, "uplifting": 0.4, "playful": 0.3},
+    "pastoral": {"pastoral": 0.95, "folk_friendly": 0.5, "uplifting": 0.3},
+    "nature": {"pastoral": 0.8, "introspective": 0.4, "spiritual": 0.3},
+    "rural": {"pastoral": 0.8, "folk_friendly": 0.5, "narrative": 0.3},
+    "countryside": {"pastoral": 0.85, "folk_friendly": 0.4, "romantic": 0.3},
+    "forest": {"pastoral": 0.7, "surreal": 0.4, "introspective": 0.4},
+    "wilderness": {"pastoral": 0.7, "spiritual": 0.4, "introspective": 0.3},
+    "domestic": {"domestic": 0.95, "romantic": 0.4, "introspective": 0.3},
+    "home": {"domestic": 0.8, "romantic": 0.4, "melancholic": 0.3},
+    "homey": {"domestic": 0.85, "uplifting": 0.4, "romantic": 0.3},
+    "cozy": {"domestic": 0.7, "romantic": 0.4, "uplifting": 0.3},
+    "intimate": {"domestic": 0.6, "romantic": 0.6, "confessional": 0.4},
+    "urban": {"urban": 0.9, "dark": 0.3},
+    "city": {"urban": 0.8, "dark": 0.3, "party": 0.3},
+    "street": {"urban": 0.7, "hip_hop_friendly": 0.5, "aggressive": 0.3},
+    "night": {"urban": 0.5, "dark": 0.5, "party": 0.3},
+    "neon": {"urban": 0.6, "dark": 0.4, "surreal": 0.3},
+    # Additional keywords for better routing
+    "futuristic": {"electronic_friendly": 0.7, "surreal": 0.5, "dark": 0.3},
+    "dance": {"party": 0.9, "uplifting": 0.5, "electronic_friendly": 0.6},
+    "trip-hop": {
+        "melancholic": 0.6,
+        "dark": 0.6,
+        "electronic_friendly": 0.5,
+        "vulnerable": 0.4,
+    },
 }
 
 
@@ -951,11 +987,11 @@ def get_default_traits() -> Dict[str, float]:
         "narrative": 0.35,  # Adds variety toward story-driven banks
         "confessional": 0.35,  # Helps heartbreak/vulnerability banks
         "vulnerable": 0.3,  # Helps emo/confessional banks
-        # Setting/imagery traits (low weights for baseline presence)
-        "domestic": 0.25,  # Helps domestic_quiet bank
-        "coastal": 0.2,  # Helps coastal_mysticism bank
-        "pastoral": 0.25,  # Helps whimsical_nature_folk bank
-        "surreal": 0.2,  # Helps psychedelic/abstract banks
+        # Setting/imagery traits (moderate weights so location banks compete)
+        "domestic": 0.35,  # Helps domestic_quiet bank
+        "coastal": 0.3,  # Helps coastal_mysticism bank
+        "pastoral": 0.35,  # Helps whimsical_nature_folk bank
+        "surreal": 0.25,  # Helps psychedelic/abstract banks
     }
 
 
