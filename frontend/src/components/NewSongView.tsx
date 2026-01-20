@@ -666,6 +666,10 @@ export default function NewSongView({
           seen.add(key);
           candidatePool.push(trimmed);
         }
+        // Backend schema limits candidate_genres to max 200 items
+        if (candidatePool.length > 200) {
+          candidatePool = candidatePool.slice(0, 200);
+        }
       }
 
       const result = await generateInputConcept({
