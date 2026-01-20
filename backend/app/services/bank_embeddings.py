@@ -337,10 +337,15 @@ async def compute_bank_similarities(
             },
         )
 
-        logger.debug(
-            f"Bank similarity computed in {latency_ms}ms, "
-            f"top: {top_similar[0][0]}={top_similar[0][1]:.3f}"
-        )
+        if top_similar:
+            logger.debug(
+                f"Bank similarity computed in {latency_ms}ms, "
+                f"top: {top_similar[0][0]}={top_similar[0][1]:.3f}"
+            )
+        else:
+            logger.debug(
+                f"Bank similarity computed in {latency_ms}ms, no positive matches"
+            )
 
         return {bank_id: float(score) for bank_id, score in top_similar}
 

@@ -342,15 +342,82 @@ export default function NewSongView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [personalize, isAuthenticated]);
   
-  // Base genre/concept recommendations (curated list)
-  const BASE_RECOMMENDATIONS = [
-    'indie rock', 'electronic', 'synth-pop', 'dreamy', 'lo-fi', 
-    'acoustic', 'ambient', 'jazzy', 'upbeat', 'melancholic',
-    'funk', 'r&b', 'hip-hop', 'folk', 'cinematic'
-  ];
+  // Categorized genre/mood recommendations - ensures diversity across categories
+  // Each category contributes some items so suggestions never feel repetitive
+  const GENRE_CATEGORIES: Record<string, string[]> = {
+    // Core genres (always include at least 1-2)
+    core: [
+      'pop', 'rock', 'hip-hop', 'r&b', 'electronic', 'country', 'jazz', 'folk',
+      'metal', 'punk', 'soul', 'blues', 'classical', 'reggae', 'funk',
+    ],
+    // Electronic subgenres
+    electronic: [
+      'house', 'techno', 'ambient', 'synthwave', 'lo-fi', 'chillout', 'trance',
+      'drum and bass', 'dubstep', 'deep house', 'electropop', 'idm', 'vaporwave',
+      'future bass', 'downtempo', 'trip-hop', 'acid house', 'progressive house',
+      'breakbeat', 'garage', 'hyperpop', 'minimal techno', 'psytrance',
+    ],
+    // Rock subgenres
+    rock: [
+      'indie rock', 'alternative', 'grunge', 'post-punk', 'shoegaze', 'dream pop',
+      'psychedelic rock', 'prog rock', 'art rock', 'garage rock', 'post-rock',
+      'stoner rock', 'surf rock', 'new wave', 'britpop', 'glam rock', 'noise rock',
+      'math rock', 'space rock', 'blues rock', 'southern rock', 'hard rock',
+    ],
+    // Hip-hop subgenres
+    hiphop: [
+      'trap', 'boom bap', 'conscious rap', 'drill', 'lo-fi hip-hop', 'cloud rap',
+      'emo rap', 'melodic rap', 'g-funk', 'crunk', 'grime', 'southern rap',
+      'underground hip-hop', 'gangsta rap', 'lyrical rap', 'mumble rap',
+    ],
+    // Metal subgenres
+    metal: [
+      'heavy metal', 'death metal', 'black metal', 'doom metal', 'thrash metal',
+      'progressive metal', 'metalcore', 'nu metal', 'power metal', 'groove metal',
+      'sludge metal', 'industrial metal', 'symphonic metal', 'djent', 'deathcore',
+    ],
+    // Pop subgenres
+    pop: [
+      'synth-pop', 'indie pop', 'art pop', 'dream pop', 'bedroom pop', 'dark pop',
+      'chamber pop', 'baroque pop', 'city pop', 'dance pop', 'teen pop', 'k-pop',
+      'j-pop', 'electropop', 'sophisti-pop',
+    ],
+    // Folk/Country/Acoustic
+    acoustic: [
+      'acoustic', 'folk pop', 'americana', 'bluegrass', 'alt-country', 'indie folk',
+      'chamber folk', 'neo-folk', 'celtic', 'freak folk', 'outlaw country',
+      'bro-country', 'country rock', 'honky-tonk', 'texas country',
+    ],
+    // Soul/R&B
+    soul: [
+      'neo-soul', 'contemporary r&b', 'quiet storm', 'new jack swing', 'gospel',
+      'alt r&b', 'pbr&b', 'motown', 'disco', 'boogie',
+    ],
+    // Jazz
+    jazz: [
+      'jazz fusion', 'smooth jazz', 'bebop', 'free jazz', 'acid jazz', 'bossa nova',
+      'cool jazz', 'modal jazz', 'big band', 'swing',
+    ],
+    // Latin/World
+    world: [
+      'reggaeton', 'latin pop', 'salsa', 'cumbia', 'afrobeat', 'afrobeats',
+      'dancehall', 'soca', 'zouk', 'flamenco', 'fado', 'bossa nova', 'samba',
+      'mariachi', 'corrido', 'bachata', 'banda', 'norteño', 'klezmer',
+    ],
+    // Moods/Vibes (always include some)
+    moods: [
+      'dreamy', 'melancholic', 'upbeat', 'dark', 'ethereal', 'nostalgic',
+      'introspective', 'energetic', 'romantic', 'aggressive', 'chill', 'cinematic',
+      'epic', 'haunting', 'playful', 'intense', 'atmospheric', 'raw', 'lush',
+      'gritty', 'anthemic', 'intimate', 'euphoric', 'brooding', 'triumphant',
+    ],
+  };
+
+  // Flatten all genres for the full pool
+  const ALL_GENRES = Object.values(GENRE_CATEGORIES).flat();
   
-  // Compute recommended tags (base + taste if personalized).
-  // This is only recomputed when we reshuffle; adding/removing tags should not reorder the remaining suggestions.
+  // Compute recommended tags using category-aware diversity sampling.
+  // Ensures recommendations span multiple categories so they never feel repetitive.
   const computeRecommendedTags = (seed: number): string[] => {
     // Seeded RNG so the recs feel varied without changing every render.
     const mulberry32 = (a: number) => {
@@ -362,8 +429,9 @@ export default function NewSongView({
       };
     };
 
-    const shuffleWithSeed = <T,>(arr: T[], seed: number): T[] => {
-      const rng = mulberry32(seed);
+    const rng = mulberry32(seed);
+
+    const shuffleWithRng = <T,>(arr: T[]): T[] => {
       const copy = [...arr];
       for (let i = copy.length - 1; i > 0; i--) {
         const j = Math.floor(rng() * (i + 1));
@@ -372,11 +440,11 @@ export default function NewSongView({
       return copy;
     };
 
-    let recommendations: string[] = [...BASE_RECOMMENDATIONS];
-    
+    // Step 1: Build the candidate pool
+    let candidatePool: string[] = [];
+
     if (personalize && isAuthenticated) {
-      // Merge multiple time ranges for a richer pool:
-      // short_term (~4w), medium_term (~6m), long_term (years)
+      // Merge multiple time ranges for a richer pool
       const profiles: SpotifyProfileResponse[] = Object.values(spotifyProfilesByRange).filter(
         (p): p is SpotifyProfileResponse => Boolean(p)
       );
@@ -389,37 +457,42 @@ export default function NewSongView({
       for (const p of profiles) {
         tasteGenres.push(...p.taste_profile.top_genres.slice(0, 20));
         tasteMoods.push(...p.taste_profile.mood_tags.slice(0, 10));
-        tasteArtists.push(...p.top_artists.slice(0, 20).map((a) => a.name)); // preserve casing
+        tasteArtists.push(...p.top_artists.slice(0, 20).map((a) => a.name));
         artistGenres.push(...p.top_artists.flatMap((a) => a.genres || []).slice(0, 50));
       }
 
-      recommendations = [
-        ...tasteGenres,
-        ...artistGenres,
-        ...tasteMoods,
-        ...tasteArtists,
-        ...recommendations,
-      ];
+      // Priority order: user taste first, then expand with our taxonomy
+      candidatePool = [...tasteGenres, ...artistGenres, ...tasteMoods, ...tasteArtists];
     }
-    
-    // Dedupe case-insensitively but preserve original display casing (important for artist names)
+
+    // Step 2: Category-aware sampling from our taxonomy
+    // Sample 2-4 items from each category to ensure diversity
+    const categoryOrder = shuffleWithRng(Object.keys(GENRE_CATEGORIES));
+    for (const category of categoryOrder) {
+      const categoryItems = shuffleWithRng(GENRE_CATEGORIES[category]);
+      // Take 2-4 items per category (biased towards 3)
+      const count = Math.floor(rng() * 3) + 2; // 2, 3, or 4
+      candidatePool.push(...categoryItems.slice(0, count));
+    }
+
+    // Step 3: Dedupe case-insensitively but preserve original casing
     const uniqueByLower = new Map<string, string>();
-    for (const raw of recommendations) {
+    for (const raw of candidatePool) {
       const trimmed = raw.trim();
       if (!trimmed) continue;
       const key = trimmed.toLowerCase();
       if (!uniqueByLower.has(key)) uniqueByLower.set(key, trimmed);
     }
 
+    // Step 4: Filter out already selected and recently auto-picked
     const selectedLower = new Set(selectedTags.map((s) => s.toLowerCase()));
     const available = Array.from(uniqueByLower.entries())
       .filter(([key]) => !selectedLower.has(key))
       .map(([, value]) => value)
-      // Avoid showing already-auto-picked tags as "recommended" immediately after Surprise Me
       .filter((t) => !lastAutoPickedTags.some((a) => a.toLowerCase() === t.toLowerCase()));
 
-    // Shuffle to introduce a bit of variance, then take the top N
-    return shuffleWithSeed(available, seed).slice(0, 32);
+    // Step 5: Final shuffle and take top N
+    return shuffleWithRng(available).slice(0, 32);
   };
 
   // Recompute recommendations when seed changes OR when Spotify profiles are updated.
@@ -581,7 +654,7 @@ export default function NewSongView({
           ...artistGenres,
           ...tasteMoods,
           ...tasteArtists,
-          ...BASE_RECOMMENDATIONS,
+          ...ALL_GENRES,
         ];
         const seen = new Set<string>();
         candidatePool = [];
@@ -609,6 +682,9 @@ export default function NewSongView({
       );
       setLastAutoPickedTags(autoPicked);
       draftUsedRandomizeStyleRef.current = true;
+      
+      // Reshuffle recommended tags after "Surprise me" so suggestions feel fresh
+      setRecommendedTagsSeed(Math.floor(Math.random() * 1_000_000_000));
       trackRandomizeStyleSucceeded({
         auth_state: isAuthenticated ? 'spotify' : 'guest',
         duration_ms: Date.now() - startTime,

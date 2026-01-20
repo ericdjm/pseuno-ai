@@ -182,4 +182,3 @@ class ClassifyStyleResponse(BaseModel):
         default=None,
         description="Top-K bank similarity scores from embeddings.",
     )
-

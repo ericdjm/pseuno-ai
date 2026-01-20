@@ -220,6 +220,232 @@ GENRE_DESCRIPTORS: dict[str, dict[str, str]] = {
         "vibe": "smooth and spontaneous",
         "energy": "fluid interplay between musicians",
     },
+    # Additional genres for expanded coverage
+    "trap": {
+        "texture": "808 bass drops and skittering hi-hats",
+        "vibe": "dark and hypnotic",
+        "energy": "slow-burning tension with explosive drops",
+    },
+    "drill": {
+        "texture": "sliding 808s and aggressive flows",
+        "vibe": "cold and menacing",
+        "energy": "relentless pressure with sparse melodies",
+    },
+    "emo rap": {
+        "texture": "melancholic melodies and raw vocals",
+        "vibe": "vulnerable and confessional",
+        "energy": "emotional peaks with introspective valleys",
+    },
+    "cloud rap": {
+        "texture": "dreamy synths and hazy production",
+        "vibe": "ethereal and detached",
+        "energy": "floating rhythms that drift and shimmer",
+    },
+    "boom bap": {
+        "texture": "crisp drums and soulful samples",
+        "vibe": "classic and head-nodding",
+        "energy": "steady grooves with lyrical precision",
+    },
+    "g-funk": {
+        "texture": "smooth synths and laid-back bass",
+        "vibe": "West Coast and sun-soaked",
+        "energy": "cruising rhythms with melodic hooks",
+    },
+    "crunk": {
+        "texture": "aggressive chants and heavy bass",
+        "vibe": "high energy and confrontational",
+        "energy": "relentless party energy that demands movement",
+    },
+    "grime": {
+        "texture": "icy synths and rapid-fire flows",
+        "vibe": "raw and urban",
+        "energy": "aggressive tempos with sharp edges",
+    },
+    "hyperpop": {
+        "texture": "maximalist production and pitched vocals",
+        "vibe": "chaotic and futuristic",
+        "energy": "overwhelming sonic assault with euphoric peaks",
+    },
+    "vaporwave": {
+        "texture": "chopped samples and reverb-drenched synths",
+        "vibe": "nostalgic and surreal",
+        "energy": "slow-motion grooves that feel like memory",
+    },
+    "synthwave": {
+        "texture": "pulsing arpeggios and retro synths",
+        "vibe": "80s nostalgia and neon-lit",
+        "energy": "driving rhythms that chase the horizon",
+    },
+    "future bass": {
+        "texture": "wobbly synths and pitched vocal chops",
+        "vibe": "emotional and uplifting",
+        "energy": "euphoric builds with cathartic drops",
+    },
+    "deep house": {
+        "texture": "warm pads and rolling basslines",
+        "vibe": "hypnotic and sophisticated",
+        "energy": "slow-burning grooves that evolve subtly",
+    },
+    "techno": {
+        "texture": "pounding kicks and mechanical rhythms",
+        "vibe": "dark and industrial",
+        "energy": "relentless forward motion that never stops",
+    },
+    "trance": {
+        "texture": "euphoric melodies and pulsing builds",
+        "vibe": "transcendent and anthemic",
+        "energy": "soaring peaks that lift and release",
+    },
+    "dubstep": {
+        "texture": "massive bass wobbles and aggressive drops",
+        "vibe": "heavy and confrontational",
+        "energy": "tension-building intros with devastating releases",
+    },
+    "drum and bass": {
+        "texture": "rapid breakbeats and deep sub-bass",
+        "vibe": "intense and propulsive",
+        "energy": "high-speed rhythms that never let up",
+    },
+    "idm": {
+        "texture": "glitchy rhythms and experimental sound design",
+        "vibe": "cerebral and avant-garde",
+        "energy": "unpredictable patterns that challenge and reward",
+    },
+    "downtempo": {
+        "texture": "lush textures and spacious production",
+        "vibe": "contemplative and warm",
+        "energy": "slow, deliberate rhythms that breathe",
+    },
+    "chillout": {
+        "texture": "soft pads and gentle rhythms",
+        "vibe": "relaxed and ambient",
+        "energy": "floating grooves that calm and soothe",
+    },
+    "grunge": {
+        "texture": "dirty guitars and raw vocals",
+        "vibe": "angsty and authentic",
+        "energy": "dynamic swings between quiet and loud",
+    },
+    "post-rock": {
+        "texture": "layered guitars and cinematic builds",
+        "vibe": "epic and emotional",
+        "energy": "slow crescendos that explode into catharsis",
+    },
+    "math rock": {
+        "texture": "complex time signatures and intricate riffs",
+        "vibe": "technical and playful",
+        "energy": "unpredictable patterns with tight precision",
+    },
+    "stoner rock": {
+        "texture": "heavy riffs and fuzz-drenched tones",
+        "vibe": "hypnotic and primal",
+        "energy": "slow, crushing grooves that build weight",
+    },
+    "doom metal": {
+        "texture": "glacial tempos and massive distortion",
+        "vibe": "oppressive and monolithic",
+        "energy": "crushing weight that moves like molasses",
+    },
+    "black metal": {
+        "texture": "tremolo riffs and blast beats",
+        "vibe": "cold and atmospheric",
+        "energy": "relentless fury with moments of haunting beauty",
+    },
+    "death metal": {
+        "texture": "guttural vocals and technical riffs",
+        "vibe": "brutal and uncompromising",
+        "energy": "blistering speed with crushing breakdowns",
+    },
+    "progressive metal": {
+        "texture": "complex arrangements and technical precision",
+        "vibe": "epic and cerebral",
+        "energy": "dynamic journeys through multiple movements",
+    },
+    "metalcore": {
+        "texture": "breakdowns and melodic passages",
+        "vibe": "aggressive and anthemic",
+        "energy": "explosive verses with soaring choruses",
+    },
+    "djent": {
+        "texture": "polyrhythmic chugs and atmospheric passages",
+        "vibe": "technical and immersive",
+        "energy": "precise grooves with ambient interludes",
+    },
+    "nu metal": {
+        "texture": "downtuned riffs and hip-hop rhythms",
+        "vibe": "aggressive and angsty",
+        "energy": "bouncing grooves with explosive outbursts",
+    },
+    "power metal": {
+        "texture": "soaring vocals and triumphant melodies",
+        "vibe": "epic and fantasy-driven",
+        "energy": "galloping rhythms with anthemic peaks",
+    },
+    "americana": {
+        "texture": "rootsy instrumentation and storytelling",
+        "vibe": "authentic and heartland",
+        "energy": "honest grooves with emotional depth",
+    },
+    "bluegrass": {
+        "texture": "acoustic strings and virtuosic picking",
+        "vibe": "traditional and spirited",
+        "energy": "rapid tempos with joyful interplay",
+    },
+    "outlaw country": {
+        "texture": "raw guitars and defiant vocals",
+        "vibe": "rebellious and authentic",
+        "energy": "honest storytelling with no-frills attitude",
+    },
+    "indie folk": {
+        "texture": "acoustic warmth and intimate vocals",
+        "vibe": "personal and pastoral",
+        "energy": "gentle strums with heartfelt delivery",
+    },
+    "chamber folk": {
+        "texture": "orchestral arrangements and delicate vocals",
+        "vibe": "elegant and introspective",
+        "energy": "carefully crafted dynamics that breathe",
+    },
+    "quiet storm": {
+        "texture": "smooth production and romantic vocals",
+        "vibe": "intimate and sensual",
+        "energy": "slow-burning grooves that seduce",
+    },
+    "afrobeat": {
+        "texture": "polyrhythmic drums and horn sections",
+        "vibe": "celebratory and hypnotic",
+        "energy": "extended grooves that build collective movement",
+    },
+    "reggaeton": {
+        "texture": "dembow rhythms and catchy hooks",
+        "vibe": "party-ready and infectious",
+        "energy": "irresistible grooves built for the club",
+    },
+    "latin pop": {
+        "texture": "tropical rhythms and polished production",
+        "vibe": "passionate and accessible",
+        "energy": "danceable beats with romantic hooks",
+    },
+    "bossa nova": {
+        "texture": "gentle guitar and sway rhythms",
+        "vibe": "sophisticated and relaxed",
+        "energy": "understated grooves that breathe warmth",
+    },
+    "flamenco": {
+        "texture": "nylon guitar and percussive rhythms",
+        "vibe": "passionate and dramatic",
+        "energy": "building intensity with explosive flourishes",
+    },
+    "k-pop": {
+        "texture": "polished production and hook-driven melodies",
+        "vibe": "vibrant and precision-crafted",
+        "energy": "high-energy performances with dynamic shifts",
+    },
+    "j-pop": {
+        "texture": "bright melodies and playful arrangements",
+        "vibe": "colorful and energetic",
+        "energy": "catchy hooks with emotional sincerity",
+    },
 }
 
 # Fallback descriptors for unknown genres
@@ -247,8 +473,122 @@ DEFAULT_MOODS = [
 ]
 
 # Synonym pools for variance
-CONNECTORS = ["with", "featuring", "built on", "driven by"]
-BLEND_WORDS = ["blend", "mix", "fusion", "crossover"]
+CONNECTORS = [
+    "with",
+    "featuring",
+    "built on",
+    "driven by",
+    "anchored by",
+    "layered with",
+]
+BLEND_WORDS = [
+    "blend",
+    "mix",
+    "fusion",
+    "crossover",
+    "collision",
+    "meeting point",
+    "marriage",
+]
+
+# Natural language openers for more organic phrasing
+# These must work grammatically with patterns like "{opener} {genre}..." or "{opener} {g1} and {g2}..."
+OPENERS = [
+    # Imaginative
+    "Imagine",
+    "Picture",
+    "Think",
+    "Envision",
+    # Descriptive
+    "Something that sounds like",
+    "Music that feels like",
+    "The sonic equivalent of",
+    "A soundscape inspired by",
+    # Tribute
+    "A love letter to",
+    "An ode to",
+    "A tribute to",
+    "A nod to",
+    # Evocative
+    "Channeling the spirit of",
+    "Capturing the essence of",
+    "What happens when you combine",
+    "The sound of",
+    # Casual
+    "Vibes of",
+    "The energy of",
+    "A modern take on",
+]
+
+# Action-oriented verbs for dynamic templates
+ACTION_VERBS = [
+    # Collision
+    "meets",
+    "crashes into",
+    "collides with",
+    "slams into",
+    # Fusion
+    "bleeds into",
+    "merges with",
+    "fuses with",
+    "melts into",
+    # Dance
+    "dances with",
+    "grooves with",
+    "vibes with",
+    "flows into",
+    # Layering
+    "wraps around",
+    "layers over",
+    "weaves through",
+    "threads into",
+    # Tension
+    "clashes with",
+    "wrestles with",
+    "tangles with",
+    "sparks against",
+]
+
+# Vibe descriptors for endings
+VIBE_ENDINGS = [
+    # Breathing room
+    "Let it breathe.",
+    "Give it space.",
+    "Let it unfold.",
+    # Raw energy
+    "Keep it raw.",
+    "Keep it real.",
+    "Keep it honest.",
+    "Stay authentic.",
+    # Impact
+    "Make it hit.",
+    "Make it land.",
+    "Make it count.",
+    "Make it stick.",
+    # Movement
+    "Keep it moving.",
+    "Let it flow.",
+    "Keep the momentum.",
+    # Evolution
+    "Let it evolve.",
+    "Let it grow.",
+    "Let it build.",
+    # Emotional
+    "Make it feel alive.",
+    "Make it resonate.",
+    "Make it memorable.",
+    # Weight
+    "Something with weight.",
+    "Something that lingers.",
+    "Something undeniable.",
+    "Something you can feel.",
+    "Something that stays with you.",
+    # Minimal closers
+    "No filler.",
+    "All signal.",
+    "Pure intent.",
+    "Nothing wasted.",
+]
 
 
 class InputConceptGenerator:
@@ -374,70 +714,117 @@ class InputConceptGenerator:
         mood_hint: Optional[str],
     ) -> tuple[str, Optional[str]]:
         """
-        Generate a 2-3 sentence concept string from chosen genres.
+        Generate a natural-sounding concept string from chosen genres.
+
+        Uses multiple template styles to avoid "mad libs" repetitiveness:
+        - Descriptive ("A track with...")
+        - Evocative ("Imagine..." / "Picture...")
+        - Action-oriented ("Where X meets Y")
+        - Minimal ("X vibes. Keep it raw.")
 
         Returns (concept, inferred_mood)
         """
         mood = mood_hint or random.choice(DEFAULT_MOODS)
         conn = random.choice(CONNECTORS)
+        opener = random.choice(OPENERS)
+        action = random.choice(ACTION_VERBS)
+        ending = random.choice(VIBE_ENDINGS)
 
         if not chosen_genres:
             # Complete fallback - no genres
             texture = random.choice(DEFAULT_TEXTURES)
             vibe = random.choice(DEFAULT_VIBES)
             templates = [
-                f"A track {conn} {texture}. {vibe.capitalize()} and expressive.",
-                f"Something {conn} {texture}. Let it breathe.",
-                f"A song {conn} {texture}. Keep it {vibe}.",
+                f"A track {conn} {texture}. {ending}",
+                f"{opener} {texture}. {vibe.capitalize()} and expressive.",
+                f"Something {conn} {texture}. {ending}",
             ]
             return random.choice(templates), mood
 
         # Build concept from genre descriptors
-        # Note: Do NOT capitalize genre/artist names - preserve original casing from Spotify
-        # (e.g., "TOOL", "deadmau5", "sunkissed", "k.d. lang")
-        # Only use _cap_first() for descriptor texts (texture, vibe) that we control.
+        # Note: Do NOT capitalize genre/artist names - preserve original casing
         if len(chosen_genres) == 1:
             genre = chosen_genres[0]
             desc = self._get_genre_descriptor(genre)
             templates = [
+                # Descriptive
                 f"A {genre} track {conn} {desc['texture']}.",
-                f"Inspired by {genre}. {_cap_first(desc['texture'])}.",
-                f"Channeling {genre} vibes, {conn} {desc['texture']}.",
+                f"{_cap_first(genre)} vibes, {conn} {desc['texture']}.",
+                # Evocative
+                f"{opener} {genre}. {_cap_first(desc['texture'])}.",
+                f"Channeling {genre}. {_cap_first(desc['vibe'])} energy.",
+                # Minimal
+                f"{_cap_first(genre)}. {ending}",
+                f"Pure {genre}. {_cap_first(desc['texture'])}.",
+                # Energy-focused
+                f"A {genre} song that {desc['energy']}.",
             ]
         elif len(chosen_genres) == 2:
             g1, g2 = chosen_genres
             d1 = self._get_genre_descriptor(g1)
+            d2 = self._get_genre_descriptor(g2)
             blend = random.choice(BLEND_WORDS)
             templates = [
-                f"A {blend} of {g1} and {g2}. {_cap_first(d1['texture'])}.",
-                f"Where {g1} meets {g2}, {conn} {d1['texture']}.",
-                f"A {g1}/{g2} {blend}. {_cap_first(d1['vibe'])}.",
+                # Action-oriented
+                f"Where {g1} {action} {g2}. {_cap_first(d1['texture'])}.",
+                f"{_cap_first(g1)} {action} {g2}. {ending}",
+                # Blend-focused
+                f"A {blend} of {g1} and {g2}. {_cap_first(d1['vibe'])}.",
+                f"The {blend} of {g1} and {g2}. {ending}",
+                # Evocative
+                f"{opener} {g1} and {g2} had a conversation. {_cap_first(d1['texture'])}.",
+                f"{opener} {g1} through a {g2} lens.",
+                # Minimal
+                f"{_cap_first(g1)} meets {g2}. {ending}",
+                f"{_cap_first(g1)} and {g2}. {_cap_first(d2['vibe'])} vibes.",
             ]
         elif len(chosen_genres) == 3:
             g1, g2, g3 = chosen_genres[:3]
             d1 = self._get_genre_descriptor(g1)
             templates = [
+                # Descriptive
                 f"Drawing from {g1}, {g2}, and {g3}. {_cap_first(d1['texture'])}.",
-                f"A take on {g1}, {g2}, {g3}. {_cap_first(d1['texture'])}.",
-                f"Crossing {g1} with {g2} and {g3}. {_cap_first(d1['vibe'])}.",
+                f"Taking cues from {g1}, {g2}, {g3}. {ending}",
+                # Action-oriented
+                f"{_cap_first(g1)} {action} {g2}, with {g3} undertones.",
+                f"Where {g1}, {g2}, and {g3} overlap. {_cap_first(d1['vibe'])}.",
+                # Evocative
+                f"{opener} {g1}, {g2}, and {g3} in the same room.",
+                f"A three-way {random.choice(BLEND_WORDS)} of {g1}, {g2}, {g3}.",
+                # Minimal
+                f"{_cap_first(g1)}, {g2}, {g3}. {ending}",
             ]
         elif len(chosen_genres) == 4:
             g1, g2, g3, g4 = chosen_genres[:4]
             d1 = self._get_genre_descriptor(g1)
             blend = random.choice(BLEND_WORDS)
             templates = [
+                # Descriptive
                 f"A {blend} of {g1}, {g2}, {g3}, and {g4}. {_cap_first(d1['texture'])}.",
-                f"Where {g1} meets {g2}, {g3}, and {g4}. {_cap_first(d1['vibe'])}.",
-                f"Weaving {g1}, {g2}, {g3}, {g4} together. {_cap_first(d1['texture'])}.",
+                f"Pulling from {g1}, {g2}, {g3}, {g4}. {ending}",
+                # Action-oriented
+                f"Where {g1} and {g2} meet {g3} and {g4}. {_cap_first(d1['vibe'])}.",
+                # Evocative
+                f"{opener} {g1}, {g2}, {g3}, and {g4} all at once.",
+                f"Weaving {g1}, {g2}, {g3}, {g4} together. {ending}",
+                # Minimal
+                f"{_cap_first(g1)}, {g2}, {g3}, {g4}. {ending}",
             ]
         else:  # 5+ genres
             g1, g2, g3, g4, g5 = chosen_genres[:5]
             d1 = self._get_genre_descriptor(g1)
             blend = random.choice(BLEND_WORDS)
             templates = [
+                # Descriptive
                 f"A rich {blend} of {g1}, {g2}, {g3}, {g4}, and {g5}. {_cap_first(d1['texture'])}.",
-                f"Blending {g1}, {g2}, {g3}, {g4}, {g5}. {_cap_first(d1['vibe'])} and eclectic.",
-                f"Weaving {g1}, {g2}, {g3}, {g4}, {g5} into something new. {_cap_first(d1['texture'])}.",
+                f"Pulling from {g1}, {g2}, {g3}, {g4}, {g5}. {ending}",
+                # Action-oriented
+                f"Where {g1} and {g2} collide with {g3}, {g4}, {g5}.",
+                # Evocative
+                f"Blending {g1}, {g2}, {g3}, {g4}, {g5} into something new.",
+                f"{opener} all of {g1}, {g2}, {g3}, {g4}, {g5} at once. {ending}",
+                # Minimal
+                f"{_cap_first(g1)}, {g2}, {g3}, {g4}, {g5}. Eclectic and {d1['vibe']}.",
             ]
 
         return random.choice(templates), mood
