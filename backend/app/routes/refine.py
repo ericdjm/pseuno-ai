@@ -14,7 +14,12 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db.models import LyricsThread, SunoPrompt
-from app.deps import get_current_user_id_optional, get_db, get_or_create_device_user
+from app.deps import (
+    get_current_user_id_optional,
+    get_db,
+    get_device_user,
+    get_or_create_device_user,
+)
 from app.schemas.unified_refine import (
     UnifiedRefineRequest,
     UnifiedRefineResponse,
@@ -31,7 +36,7 @@ DEVICE_TOKEN_MAX_AGE = 365 * 24 * 60 * 60  # 1 year in seconds
 
 
 def _verify_base_prompt_ownership(
-    db: Session, prompt_id: int | None, user_id: str
+    db: Session, prompt_id: int | None, allowed_user_ids: set[str]
 ) -> SunoPrompt | None:
     """
     Verify the user owns the base prompt if provided.
@@ -42,7 +47,7 @@ def _verify_base_prompt_ownership(
     prompt = db.get(SunoPrompt, prompt_id)
     if not prompt:
         raise HTTPException(status_code=404, detail="Base prompt not found")
-    if prompt.owner_user_id != user_id:
+    if prompt.owner_user_id not in allowed_user_ids:
         raise HTTPException(
             status_code=403, detail="Not authorized to access this prompt"
         )
@@ -50,7 +55,7 @@ def _verify_base_prompt_ownership(
 
 
 def _verify_base_thread_ownership(
-    db: Session, thread_id: int | None, user_id: str
+    db: Session, thread_id: int | None, allowed_user_ids: set[str]
 ) -> LyricsThread | None:
     """
     Verify the user owns the base thread (via its prompt) if provided.
@@ -61,7 +66,7 @@ def _verify_base_thread_ownership(
     thread = db.get(LyricsThread, thread_id)
     if not thread:
         raise HTTPException(status_code=404, detail="Base thread not found")
-    if thread.style_prompt.owner_user_id != user_id:
+    if thread.style_prompt.owner_user_id not in allowed_user_ids:
         raise HTTPException(
             status_code=403, detail="Not authorized to access this thread"
         )
@@ -129,24 +134,48 @@ async def unified_refine(
         # === Resolve user identity early ===
         # We need the user ID to verify ownership of base_prompt_id/base_thread_id
         spotify_user_id = get_current_user_id_optional(fastapi_request)
-        device_user = None
-        device_user_created = False
+        device_user = get_device_user(fastapi_request, db)
 
         if spotify_user_id:
             user_id = spotify_user_id
+        elif device_user:
+            user_id = device_user.id
         else:
-            # Fall back to device token (create guest user if needed)
-            device_user, device_user_created = get_or_create_device_user(
+            # If refining an existing prompt/thread, require identity
+            if request.base_prompt_id is not None or request.base_thread_id is not None:
+                raise HTTPException(
+                    status_code=401,
+                    detail="Not authenticated. Please log in or enable cookies.",
+                )
+
+            # No base IDs: allow creating a guest user for this refine
+            device_user, _ = get_or_create_device_user(
                 fastapi_request, db
             )
             user_id = device_user.id
 
+            # Set device_token cookie for newly created guest users
+            response.set_cookie(
+                key="device_token",
+                value=device_user.device_token,
+                httponly=True,
+                secure=settings.session_cookie_secure,
+                samesite=settings.session_cookie_samesite,
+                max_age=DEVICE_TOKEN_MAX_AGE,
+            )
+
+        allowed_user_ids = {
+            uid
+            for uid in [spotify_user_id, device_user.id if device_user else None]
+            if uid
+        }
+
         # === Verify ownership of referenced IDs ===
         # Prevent users from referencing other users' prompts/threads
         if request.base_prompt_id is not None:
-            _verify_base_prompt_ownership(db, request.base_prompt_id, user_id)
+            _verify_base_prompt_ownership(db, request.base_prompt_id, allowed_user_ids)
         if request.base_thread_id is not None:
-            _verify_base_thread_ownership(db, request.base_thread_id, user_id)
+            _verify_base_thread_ownership(db, request.base_thread_id, allowed_user_ids)
 
         # Call unified refine service
         updated_snapshot, changed_fields, assistant_message, debug_info = (
@@ -169,16 +198,7 @@ async def unified_refine(
         if "suno_prompt" in changed_fields:
             # Style changed: create NEW StylePrompt + copy ALL threads from original
             try:
-                # Set device_token cookie for newly created guest users
-                if device_user_created and device_user is not None:
-                    response.set_cookie(
-                        key="device_token",
-                        value=device_user.device_token,
-                        httponly=True,
-                        secure=settings.session_cookie_secure,
-                        samesite=settings.session_cookie_samesite,
-                        max_age=DEVICE_TOKEN_MAX_AGE,
-                    )
+                # device_token cookie is already set earlier when a guest user was created
 
                 # Create the prompt history record
                 # Use passed-in auto_tags (from original generation) and add "refined" tag
