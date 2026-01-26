@@ -4,6 +4,7 @@ Implements Authorization Code with PKCE flow
 """
 
 import httpx
+from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, Request, Response, HTTPException
 from fastapi.responses import RedirectResponse
 
@@ -15,8 +16,25 @@ from app.services.session_store import session_store
 router = APIRouter()
 
 
+def _cookie_options(request: Request, settings) -> dict:
+    """Return cookie options, forcing cross-site compatibility when needed."""
+    frontend = urlparse(settings.frontend_origin)
+    request_host = request.url.hostname
+    cross_site = bool(frontend.hostname and request_host and frontend.hostname != request_host)
+
+    samesite = settings.session_cookie_samesite
+    secure = settings.session_cookie_secure
+
+    if cross_site:
+        # Cross-site cookies require SameSite=None + Secure (HTTPS).
+        samesite = "none"
+        secure = True
+
+    return {"samesite": samesite, "secure": secure}
+
+
 @router.get("/spotify/login")
-async def spotify_login(response: Response):
+async def spotify_login(request: Request, response: Response):
     """
     Initiate Spotify OAuth login with PKCE
     Returns the authorization URL and sets session cookie
@@ -29,12 +47,13 @@ async def spotify_login(response: Response):
     auth_url, session_id = create_spotify_login(settings)
     
     # Set session cookie with environment-dependent security settings
+    cookie_opts = _cookie_options(request, settings)
     response.set_cookie(
         key="session_id",
         value=session_id,
         httponly=True,
-        secure=settings.session_cookie_secure,  # True in production
-        samesite=settings.session_cookie_samesite,
+        secure=cookie_opts["secure"],
+        samesite=cookie_opts["samesite"],
         max_age=settings.session_max_age
     )
     
@@ -92,11 +111,17 @@ async def auth_status(request: Request):
 @router.post("/logout")
 async def logout(request: Request, response: Response):
     """Clear session and logout"""
+    settings = get_settings()
     session_id = request.cookies.get("session_id")
     
     if session_id:
         session_store.delete_session(session_id)
     
-    response.delete_cookie(key="session_id")
+    cookie_opts = _cookie_options(request, settings)
+    response.delete_cookie(
+        key="session_id",
+        secure=cookie_opts["secure"],
+        samesite=cookie_opts["samesite"],
+    )
     
     return {"message": "Logged out successfully"}
