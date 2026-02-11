@@ -209,8 +209,10 @@ export default function AdvancedGenerationControls({
   const [lyricPOV, setLyricPOV] = useSessionStorageState<LyricPOV>('draft:lyricPOV', 'auto');
   const [lyricRhymeScheme, setLyricRhymeScheme] = useSessionStorageState<LyricRhymeScheme>('draft:lyricRhymeScheme', 'auto');
 
-  // Fetch available prompt variants and models on mount
+  // Fetch available prompt variants and models on mount (dev only)
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
+
     const fetchVariants = async () => {
       try {
         const response = await getPromptVariants();
@@ -226,7 +228,7 @@ export default function AdvancedGenerationControls({
         console.error('Failed to fetch prompt variants:', error);
       }
     };
-    
+
     const fetchModels = async () => {
       try {
         const response = await getModels();
@@ -242,7 +244,7 @@ export default function AdvancedGenerationControls({
         console.error('Failed to fetch models:', error);
       }
     };
-    
+
     fetchVariants();
     fetchModels();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1081,8 +1083,8 @@ export default function AdvancedGenerationControls({
           </Box>
         </Collapse>
 
-        {/* Prompt Variant Selector - only show for Song Style Prompt mode */}
-        <Collapse in={styleMode === 'songStylePrompt' && availableVariants.length > 1} animateOpacity>
+        {/* Prompt Variant Selector - only show for Song Style Prompt mode (dev only) */}
+        {import.meta.env.DEV && <Collapse in={styleMode === 'songStylePrompt' && availableVariants.length > 1} animateOpacity>
           <FormControl>
             <FormLabel>
               <HStack spacing={2}>
@@ -1194,10 +1196,10 @@ export default function AdvancedGenerationControls({
               </Portal>
             </Menu>
           </FormControl>
-        </Collapse>
+        </Collapse>}
 
-        {/* Model Selectors - show different options based on variant type */}
-        <Collapse in={styleMode === 'songStylePrompt' && availableModels.length > 0} animateOpacity>
+        {/* Model Selectors - show different options based on variant type (dev only) */}
+        {import.meta.env.DEV && <Collapse in={styleMode === 'songStylePrompt' && availableModels.length > 0} animateOpacity>
           {/* Single-step variants (V1/V2): single model dropdown */}
           <Collapse
             in={
@@ -1306,7 +1308,7 @@ export default function AdvancedGenerationControls({
               </FormControl>
             </VStack>
           </Collapse>
-        </Collapse>
+        </Collapse>}
       </VStack>
 
       <Button

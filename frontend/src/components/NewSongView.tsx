@@ -565,8 +565,10 @@ export default function NewSongView({
   const MAX_STYLE_PROMPT_LEN = 500;
   const MAX_LYRICS_ABOUT_LEN = 500;
 
-  // Load variants and models on mount
+  // Load variants and models on mount (dev only)
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
+
     const fetchVariants = async () => {
       try {
         const response = await getPromptVariants();
