@@ -40,8 +40,10 @@ services:
       DATABASE_URL: postgresql+psycopg://pseuno:pseuno@postgres:5432/pseuno
       REDIS_URL: redis://redis:6379/0
       # PostHog (backend telemetry: LLM call timings + repair agent)
-      POSTHOG_API_KEY: phc_QSa2Ckp3pGSJvQVSKo7WZ46mVzlkyQkfJbO0afgPxkE
-      POSTHOG_HOST: https://us.i.posthog.com
+      # SECURITY NOTE: Use environment variable in production, not hardcoded value
+      # This is a development-only demo key - replace with your own key
+      POSTHOG_API_KEY: ${POSTHOG_API_KEY:-phc_DEV_DEMO_KEY_REPLACE_IN_PRODUCTION}
+      POSTHOG_HOST: ${POSTHOG_HOST:-https://us.i.posthog.com}
       APP_ENV: dev
     volumes:
       - ./backend:/app
@@ -61,8 +63,10 @@ services:
       VITE_API_BASE: http://127.0.0.1:8000
       CHOKIDAR_USEPOLLING: "true"
       # PostHog (frontend analytics)
-      VITE_POSTHOG_KEY: phc_QSa2Ckp3pGSJvQVSKo7WZ46mVzlkyQkfJbO0afgPxkE
-      VITE_POSTHOG_HOST: https://us.i.posthog.com
+      # SECURITY NOTE: Use environment variable in production, not hardcoded value
+      # This is a development-only demo key - replace with your own key
+      VITE_POSTHOG_KEY: ${VITE_POSTHOG_KEY:-phc_DEV_DEMO_KEY_REPLACE_IN_PRODUCTION}
+      VITE_POSTHOG_HOST: ${VITE_POSTHOG_HOST:-https://us.i.posthog.com}
       VITE_APP_ENV: dev
     volumes:
       - ./frontend:/app

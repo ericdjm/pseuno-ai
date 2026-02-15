@@ -27,10 +27,11 @@ env/
 .venv/
 ENV/
 
-# Environment files
+# Environment files (NEVER commit production secrets!)
 .env
 .env.local
 .env.*.local
+.env.production
 *.local.env
 
 # IDE
