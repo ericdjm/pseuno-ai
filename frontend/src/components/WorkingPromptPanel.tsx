@@ -76,7 +76,6 @@ import {
   trackSongDeleted,
   trackSongsReordered,
   trackCopiedToClipboardFailed,
-  trackDraftLyricsFailed,
   trackLyricsManualEditSaveFailed,
   trackSongDeleteFailed,
   trackSongsReorderFailed,
