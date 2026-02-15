@@ -51,7 +51,6 @@ import {
   LyricPOV,
   TimeRange,
   LyricsTopicDebugInfo,
-  ClassifyStyleResponse,
 } from '../api';
 import { LyricsTopicDebugPanel } from './LyricsTopicDebugPanel';
 import { useSessionStorageState } from '../hooks';
@@ -127,7 +126,6 @@ export default function NewSongView({
   // Cached style classifier result (for improved lyrics topic generation)
   const [cachedStyleTraits, setCachedStyleTraits] = useState<Record<string, number> | null>(null);
   const [cachedBankSimilarities, setCachedBankSimilarities] = useState<Record<string, number> | null>(null);
-  const [isClassifyingStyle, setIsClassifyingStyle] = useState(false);
   const lastClassifiedPrompt = useRef<string>('');
 
   // Correlation: one flow_id per draft cycle (randomize → generate → output_used).
