@@ -2,9 +2,9 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: pseuno
-      POSTGRES_PASSWORD: pseuno
-      POSTGRES_DB: pseuno
+      POSTGRES_USER: ${POSTGRES_USER:-pseuno}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-pseuno}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -33,7 +33,7 @@ services:
     environment:
       DEBUG: "false"
       FRONTEND_ORIGIN: https://pseuno.com
-      DATABASE_URL: postgresql+psycopg://pseuno:pseuno@postgres:5432/pseuno
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-pseuno}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pseuno}
       REDIS_URL: redis://redis:6379/0
       POSTHOG_API_KEY: phc_QSa2Ckp3pGSJvQVSKo7WZ46mVzlkyQkfJbO0afgPxkE
       POSTHOG_HOST: https://us.i.posthog.com
