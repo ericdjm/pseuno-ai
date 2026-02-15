@@ -220,7 +220,6 @@ export default function NewSongView({
       // Don't re-classify if prompt hasn't changed
       if (trimmedPrompt !== songPrompt.trim()) return;
       
-      setIsClassifyingStyle(true);
       try {
         const result = await classifyStyle(trimmedPrompt);
         if (!result.success) return;
@@ -245,8 +244,6 @@ export default function NewSongView({
       } catch (error) {
         // Silent fail - classifier is optional enhancement
         console.warn('[StyleClassifier] Failed:', error);
-      } finally {
-        setIsClassifyingStyle(false);
       }
     }, 800);
 
