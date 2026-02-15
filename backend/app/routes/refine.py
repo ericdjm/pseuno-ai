@@ -398,7 +398,7 @@ async def unified_refine(
             weirdness=updated_snapshot["weirdness"],
             changed_fields=changed_fields,
             assistant_message=assistant_message,
-            debug_info=debug_info,
+            debug_info=debug_info if get_settings().debug else None,
             updates_persisted=updates_persisted,
             saved_prompt_id=saved_prompt_id,
             saved_thread_id=saved_thread_id,

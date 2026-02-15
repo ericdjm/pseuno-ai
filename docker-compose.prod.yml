@@ -1,0 +1,63 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: pseuno
+      POSTGRES_PASSWORD: pseuno
+      POSTGRES_DB: pseuno
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pseuno -d pseuno"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./backend/.env
+    environment:
+      DEBUG: "false"
+      FRONTEND_ORIGIN: https://pseuno.com
+      DATABASE_URL: postgresql+psycopg://pseuno:pseuno@postgres:5432/pseuno
+      REDIS_URL: redis://redis:6379/0
+      POSTHOG_API_KEY: phc_QSa2Ckp3pGSJvQVSKo7WZ46mVzlkyQkfJbO0afgPxkE
+      POSTHOG_HOST: https://us.i.posthog.com
+      APP_ENV: prod
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE: https://pseuno.com
+        VITE_POSTHOG_KEY: phc_QSa2Ckp3pGSJvQVSKo7WZ46mVzlkyQkfJbO0afgPxkE
+        VITE_POSTHOG_HOST: https://us.i.posthog.com
+        VITE_APP_ENV: prod
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  redis_data:

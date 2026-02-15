@@ -84,6 +84,8 @@ app = FastAPI(
     description="Generate personalized Suno AI prompts based on your Spotify taste",
     version="1.0.0",
     lifespan=lifespan,
+    docs_url="/docs" if get_settings().debug else None,
+    redoc_url="/redoc" if get_settings().debug else None,
 )
 
 
@@ -181,4 +183,7 @@ async def health_check():
 @app.get("/")
 async def root():
     """Root endpoint"""
-    return {"message": "Welcome to Pseuno AI API", "docs": "/docs", "health": "/health"}
+    info = {"message": "Welcome to Pseuno AI API", "health": "/health"}
+    if get_settings().debug:
+        info["docs"] = "/docs"
+    return info

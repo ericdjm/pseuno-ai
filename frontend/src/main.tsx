@@ -5,6 +5,14 @@ import { ChakraProvider, extendTheme } from '@chakra-ui/react'
 import App from './App'
 import ErrorBoundary from './components/ErrorBoundary'
 
+// Silence console output in production
+if (import.meta.env.PROD) {
+  const noop = () => {};
+  console.log = noop;
+  console.warn = noop;
+  console.error = noop;
+}
+
 // Initialize PostHog (analytics, feature flags, etc.)
 const posthogKey = import.meta.env.VITE_POSTHOG_KEY
 const posthogHost = import.meta.env.VITE_POSTHOG_HOST

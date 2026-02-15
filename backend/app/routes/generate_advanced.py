@@ -280,7 +280,7 @@ async def generate_advanced(
         prompt_id=prompt_id,
         is_favorite=False,
         auto_tags=result.get("auto_tags", []),
-        debug_info=result.get("debug_info"),
+        debug_info=result.get("debug_info") if settings.debug else None,
     )
 
 

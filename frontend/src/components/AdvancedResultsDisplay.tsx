@@ -586,8 +586,8 @@ export default function AdvancedResultsDisplay({
         </SimpleGrid>
       </Box>
 
-      {/* Debug Info - Expandable */}
-      {(result.debug_info || refineTraces.length > 0) && (
+      {/* Debug Info - Expandable (dev only) */}
+      {import.meta.env.DEV && (result.debug_info || refineTraces.length > 0) && (
         <>
           <Divider />
           <Accordion allowToggle>
