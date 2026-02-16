@@ -248,7 +248,7 @@ async def generate_advanced(
                     
                     # Update the prompt with classifier weights
                     # Need a new session since we're in a background task
-                    from app.db.base import SessionLocal
+                    from app.db.session import SessionLocal
                     with SessionLocal() as session:
                         db_prompt = session.get(SunoPrompt, prompt_id)
                         if db_prompt:

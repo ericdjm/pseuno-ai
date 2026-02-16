@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 EMBEDDINGS_CACHE_PATH = Path(__file__).parent / "_bank_embeddings_cache.json"
 
 # Embedding dimension (depends on model)
-# text-embedding-004 produces 768-dimensional embeddings
+# gemini-embedding-001 produces 768-dimensional embeddings
 EMBEDDING_DIM = 768
 
 
@@ -158,7 +158,7 @@ def _get_embedding_client():
 
 
 def _embed_texts_sync(
-    texts: List[str], model: str = "text-embedding-004"
+    texts: List[str], model: str = "gemini-embedding-001"
 ) -> List[List[float]]:
     """Embed multiple texts synchronously."""
     client = _get_embedding_client()
@@ -178,7 +178,7 @@ def _embed_texts_sync(
 
 
 async def _embed_texts_async(
-    texts: List[str], model: str = "text-embedding-004"
+    texts: List[str], model: str = "gemini-embedding-001"
 ) -> List[List[float]]:
     """Embed texts asynchronously."""
     loop = asyncio.get_event_loop()

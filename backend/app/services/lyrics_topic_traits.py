@@ -7,6 +7,7 @@ This module provides the vocabulary of traits and the math for scoring bank matc
 
 from typing import Dict, List
 import math
+import re
 
 
 # =============================================================================
@@ -1201,8 +1202,6 @@ def extract_traits_from_style_prompt(style_prompt: str) -> Dict[str, float]:
     # Scan for style prompt keywords
     for keyword, keyword_traits in STYLE_PROMPT_KEYWORDS.items():
         # Word boundary check to avoid partial matches
-        import re
-
         if re.search(rf"\b{re.escape(keyword)}\b", prompt_lower):
             for trait_id, weight in keyword_traits.items():
                 # Style prompt keywords get slightly lower weight than explicit tags
