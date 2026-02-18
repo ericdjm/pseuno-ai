@@ -333,7 +333,8 @@ class GeminiChatClient:
     def _sync_generate(
         self, messages: List[Dict[str, str]], temperature: Optional[float]
     ) -> str:
-        """Synchronous generation using the Gemini SDK."""
+        """Synchronous generation using the Gemini SDK with retry on 504."""
+        import time as _time
         from google.genai import types
 
         client = self._get_client()
@@ -363,16 +364,44 @@ class GeminiChatClient:
             system_instruction=system_instruction,
         )
 
-        response = client.models.generate_content(
-            model=self.model,
-            contents=contents,
-            config=config,
-        )
+        # Retry once on transient Gemini 504 DEADLINE_EXCEEDED errors
+        max_retries = 1
+        last_error = None
+        for attempt in range(max_retries + 1):
+            try:
+                response = client.models.generate_content(
+                    model=self.model,
+                    contents=contents,
+                    config=config,
+                )
 
-        # Extract text from response
-        if response.text:
-            return response.text
-        return ""
+                # Extract text from response
+                if response.text:
+                    return response.text
+                return ""
+            except Exception as e:
+                error_str = str(e)
+                is_retryable = (
+                    "DEADLINE_EXCEEDED" in error_str
+                    or "504" in error_str
+                    or "503" in error_str
+                    or "overloaded" in error_str.lower()
+                )
+                if is_retryable and attempt < max_retries:
+                    logger.warning(
+                        "Gemini %s (attempt %d/%d), retrying in 2s: %s",
+                        self.model,
+                        attempt + 1,
+                        max_retries + 1,
+                        error_str[:200],
+                    )
+                    last_error = e
+                    _time.sleep(2)  # Brief backoff before retry
+                    continue
+                raise
+
+        # Should not reach here, but just in case
+        raise last_error  # type: ignore[misc]
 
 
 class _AgentState(TypedDict, total=False):

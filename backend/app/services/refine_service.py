@@ -221,28 +221,50 @@ async def _call_gemini(
             temperature=temperature,
             system_instruction=system_prompt,
         )
-        try:
-            response = client.models.generate_content(
-                model=model,
-                contents=[
-                    types.Content(
-                        role="user", parts=[types.Part.from_text(text=user_message)]
-                    )
-                ],
-                config=config,
+        contents = [
+            types.Content(
+                role="user", parts=[types.Part.from_text(text=user_message)]
             )
-            # Log for debugging
-            if response.candidates:
-                candidate = response.candidates[0]
-                logger.debug(f"Gemini finish_reason: {candidate.finish_reason}")
-            return response.text if response.text else ""
-        except genai_errors.ServerError as e:
-            # Handle Gemini-side timeouts (504 DEADLINE_EXCEEDED)
-            logger.warning(f"Gemini server error: {e}")
-            raise RuntimeError("AI service timed out. Please try again.")
-        except genai_errors.APIError as e:
-            logger.warning(f"Gemini API error: {e}")
-            raise RuntimeError(f"AI service error: {e}")
+        ]
+
+        # Retry once on transient Gemini 504 DEADLINE_EXCEEDED errors
+        max_retries = 1
+        for attempt in range(max_retries + 1):
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=contents,
+                    config=config,
+                )
+                # Log for debugging
+                if response.candidates:
+                    candidate = response.candidates[0]
+                    logger.debug(f"Gemini finish_reason: {candidate.finish_reason}")
+                return response.text if response.text else ""
+            except genai_errors.ServerError as e:
+                error_str = str(e)
+                is_retryable = (
+                    "DEADLINE_EXCEEDED" in error_str
+                    or "504" in error_str
+                    or "503" in error_str
+                    or "overloaded" in error_str.lower()
+                )
+                if is_retryable and attempt < max_retries:
+                    logger.warning(
+                        "Gemini server error (attempt %d/%d), retrying in 2s: %s",
+                        attempt + 1,
+                        max_retries + 1,
+                        error_str[:200],
+                    )
+                    import time as _time
+                    _time.sleep(2)
+                    continue
+                # Non-retryable server error or exhausted retries
+                logger.warning(f"Gemini server error: {e}")
+                raise RuntimeError("AI service timed out. Please try again.")
+            except genai_errors.APIError as e:
+                logger.warning(f"Gemini API error: {e}")
+                raise RuntimeError(f"AI service error: {e}")
 
     start = time.time()
     status = "succeeded"
