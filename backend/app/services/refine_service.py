@@ -188,7 +188,7 @@ def _build_lyrics_refine_prompt() -> str:
 
 
 # Timeout for LLM calls (seconds)
-LLM_TIMEOUT_SECONDS = 60
+LLM_TIMEOUT_SECONDS = 120
 
 
 async def _call_gemini(
