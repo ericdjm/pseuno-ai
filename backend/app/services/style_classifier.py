@@ -1,7 +1,7 @@
 """
 Async style classifier for lyrics topic routing.
 
-Analyzes style_prompt (artist names, style descriptions) using gpt-4o-mini
+Analyzes style_prompt (artist names, style descriptions) using Gemini
 to extract trait weights. Results are cached for subsequent requests.
 
 This runs asynchronously - the frontend fires it when user types,
@@ -15,8 +15,6 @@ import re
 import time
 from typing import Any, Dict, Optional
 
-import httpx
-
 from app.config import get_settings
 from app.services.lyrics_topic_traits import TRAIT_DEFINITIONS
 
@@ -25,8 +23,8 @@ logger = logging.getLogger(__name__)
 # Timeout for classifier LLM calls
 CLASSIFIER_TIMEOUT_SECONDS = 10
 
-# Model for classification - gpt-4o-mini is fast and reliable
-CLASSIFIER_MODEL = "gpt-4o-mini"
+# Model for classification - gemini-2.5-flash-lite is fast and cheap
+CLASSIFIER_MODEL = "gemini-2.5-flash-lite"
 
 # Trait names we ask the LLM to score
 CLASSIFIABLE_TRAITS = [
@@ -87,61 +85,68 @@ Output ONLY valid JSON object mapping trait names to float scores. Example:
 """
 
 
-async def _call_openai_classifier(
+async def _call_gemini_classifier(
     system_prompt: str,
     user_message: str,
 ) -> str:
-    """Call OpenAI gpt-4o-mini for style classification."""
+    """Call Gemini for style classification."""
     from app.services.posthog_capture import capture_background
+    from google import genai
+    from google.genai import types
 
     settings = get_settings()
-    api_key = settings.openai_api_key
+    api_key = settings.gemini_api_key
 
     if not api_key:
-        raise RuntimeError("OPENAI_API_KEY is required for style classification")
+        raise RuntimeError("GEMINI_API_KEY is required for style classification")
 
-    payload = {
-        "model": CLASSIFIER_MODEL,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message},
-        ],
-        "temperature": 0.3,  # Low for consistent classification
-        "max_tokens": 256,  # Trait JSON is small
-        "response_format": {"type": "json_object"},  # Force JSON output
-    }
+    def _sync_generate():
+        from google.genai import errors as genai_errors
 
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
+        client = genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(timeout=CLASSIFIER_TIMEOUT_SECONDS * 1000),
+        )
+        config = types.GenerateContentConfig(
+            temperature=0.3,
+            max_output_tokens=256,
+            system_instruction=system_prompt,
+            response_mime_type="application/json",
+        )
+        contents = [
+            types.Content(
+                role="user", parts=[types.Part.from_text(text=user_message)]
+            )
+        ]
+        try:
+            response = client.models.generate_content(
+                model=CLASSIFIER_MODEL,
+                contents=contents,
+                config=config,
+            )
+            return response.text if response.text else ""
+        except genai_errors.ServerError as e:
+            logger.warning(f"Gemini classifier server error: {e}")
+            raise RuntimeError("Style classification service unavailable")
+        except genai_errors.APIError as e:
+            logger.warning(f"Gemini classifier API error: {e}")
+            raise RuntimeError(f"Style classification failed: {e}")
 
     start = time.time()
     status = "succeeded"
     error_type: Optional[str] = None
 
     try:
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(CLASSIFIER_TIMEOUT_SECONDS)
-        ) as client:
-            response = await client.post(
-                "https://api.openai.com/v1/chat/completions",
-                json=payload,
-                headers=headers,
-            )
-            response.raise_for_status()
-            data = response.json()
-            return data["choices"][0]["message"]["content"].strip()
-    except httpx.TimeoutException:
+        result = await asyncio.wait_for(
+            asyncio.to_thread(_sync_generate),
+            timeout=CLASSIFIER_TIMEOUT_SECONDS + 2,
+        )
+        return result.strip()
+    except asyncio.TimeoutError:
         status = "failed"
         error_type = "Timeout"
         logger.warning("Style classifier timed out")
         raise RuntimeError("Style classification timed out")
-    except httpx.HTTPStatusError as e:
-        status = "failed"
-        error_type = f"HTTP_{e.response.status_code}"
-        logger.warning(f"Style classifier HTTP error: {e.response.status_code}")
-        raise RuntimeError(f"Style classification failed: {e.response.status_code}")
     except Exception as e:
         status = "failed"
         error_type = e.__class__.__name__
@@ -153,7 +158,7 @@ async def _call_openai_classifier(
             distinct_id="backend",
             properties={
                 "operation": "style_classifier",
-                "provider": "openai",
+                "provider": "gemini",
                 "model": CLASSIFIER_MODEL,
                 "duration_ms": int((time.time() - start) * 1000),
                 "status": status,
@@ -214,7 +219,7 @@ async def classify_style_prompt(
     include_embeddings: bool = True,
 ) -> Dict[str, Any]:
     """
-    Classify a style prompt into trait weights using gpt-4o-mini + embedding similarity.
+    Classify a style prompt into trait weights using Gemini + embedding similarity.
 
     Args:
         style_prompt: User's style description (e.g., "Red Hot Chili Peppers funk rock")
@@ -246,7 +251,7 @@ async def classify_style_prompt(
 
     async def get_llm_traits():
         try:
-            raw = await _call_openai_classifier(CLASSIFIER_SYSTEM_PROMPT, user_prompt)
+            raw = await _call_gemini_classifier(CLASSIFIER_SYSTEM_PROMPT, user_prompt)
             return _parse_traits_response(raw), raw
         except Exception as e:
             logger.warning(f"LLM classification failed: {e}")
