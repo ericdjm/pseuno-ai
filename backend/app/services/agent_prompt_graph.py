@@ -318,23 +318,17 @@ class GeminiChatClient:
         self, messages: List[Dict[str, str]], temperature: Optional[float] = None
     ):
         """
-        Invoke the Gemini model with the given messages.
-        Gemini uses a different format - we convert from OpenAI-style messages.
+        Invoke the Gemini model using native async API.
+        Converts from OpenAI-style messages to Gemini format.
         """
-        import asyncio
-
-        # Run synchronous Gemini call in executor to avoid blocking
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            None, self._sync_generate, messages, temperature
-        )
+        response = await self._async_generate(messages, temperature)
         return _LLMResponse(content=response or "")
 
-    def _sync_generate(
+    async def _async_generate(
         self, messages: List[Dict[str, str]], temperature: Optional[float]
     ) -> str:
-        """Synchronous generation using the Gemini SDK with retry on 504."""
-        import time as _time
+        """Native async generation using client.aio.models.generate_content."""
+        import asyncio as _asyncio
         from google.genai import types
 
         client = self._get_client()
@@ -350,7 +344,6 @@ class GeminiChatClient:
             if role == "system":
                 system_instruction = content
             else:
-                # Map roles: "user" -> "user", "assistant" -> "model"
                 gemini_role = "model" if role == "assistant" else "user"
                 contents.append(
                     types.Content(
@@ -369,13 +362,12 @@ class GeminiChatClient:
         last_error = None
         for attempt in range(max_retries + 1):
             try:
-                response = client.models.generate_content(
+                response = await client.aio.models.generate_content(
                     model=self.model,
                     contents=contents,
                     config=config,
                 )
 
-                # Extract text from response
                 if response.text:
                     return response.text
                 return ""
@@ -396,11 +388,10 @@ class GeminiChatClient:
                         error_str[:200],
                     )
                     last_error = e
-                    _time.sleep(2)  # Brief backoff before retry
+                    await _asyncio.sleep(2)
                     continue
                 raise
 
-        # Should not reach here, but just in case
         raise last_error  # type: ignore[misc]
 
 
@@ -2754,6 +2745,10 @@ Please fix the issues and regenerate the complete output with all 6 sections.
             raise
         finally:
             duration_ms = int((time.time() - start) * 1000)
+            logger.info(
+                "LLM call %s (%s, %s) completed in %dms [status=%s]",
+                operation, provider, model_name, duration_ms, status,
+            )
             capture_background(
                 "llm_call",
                 distinct_id="backend",

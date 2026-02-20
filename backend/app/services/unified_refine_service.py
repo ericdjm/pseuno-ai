@@ -525,30 +525,31 @@ async def _call_gemini_planner(
     from google import genai
     from google.genai import types
 
-    def _sync_generate():
+    client = genai.Client(
+        api_key=api_key,
+        http_options=types.HttpOptions(timeout=PLANNER_TIMEOUT_SECONDS * 1000),
+    )
+    config = types.GenerateContentConfig(
+        temperature=0.2,  # Low for structured output
+        max_output_tokens=2000,
+        system_instruction=system_prompt,
+        response_mime_type="application/json",  # Force JSON output
+    )
+    contents = [
+        types.Content(
+            role="user", parts=[types.Part.from_text(text=user_message)]
+        )
+    ]
+
+    # Retry once on transient Gemini 504 DEADLINE_EXCEEDED errors
+    max_retries = 1
+
+    async def _async_generate():
         from google.genai import errors as genai_errors
 
-        client = genai.Client(
-            api_key=api_key,
-            http_options=types.HttpOptions(timeout=PLANNER_TIMEOUT_SECONDS * 1000),
-        )
-        config = types.GenerateContentConfig(
-            temperature=0.2,  # Low for structured output
-            max_output_tokens=2000,
-            system_instruction=system_prompt,
-            response_mime_type="application/json",  # Force JSON output
-        )
-        contents = [
-            types.Content(
-                role="user", parts=[types.Part.from_text(text=user_message)]
-            )
-        ]
-
-        # Retry once on transient Gemini 504 DEADLINE_EXCEEDED errors
-        max_retries = 1
         for attempt in range(max_retries + 1):
             try:
-                response = client.models.generate_content(
+                response = await client.aio.models.generate_content(
                     model=model,
                     contents=contents,
                     config=config,
@@ -569,8 +570,7 @@ async def _call_gemini_planner(
                         max_retries + 1,
                         error_str[:200],
                     )
-                    import time as _time
-                    _time.sleep(2)
+                    await asyncio.sleep(2)
                     continue
                 logger.warning(f"Gemini server error: {e}")
                 raise RuntimeError("AI service timed out. Please try again.")
@@ -583,7 +583,7 @@ async def _call_gemini_planner(
     error_type: Optional[str] = None
     try:
         result = await asyncio.wait_for(
-            asyncio.to_thread(_sync_generate),
+            _async_generate(),
             timeout=PLANNER_TIMEOUT_SECONDS + 5,
         )
         return result.strip()

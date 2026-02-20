@@ -80,11 +80,11 @@ class Settings(BaseSettings):
         description="LLM model for lyrics generation (two-step)",
     )
     profile_inference_model: str = Field(
-        default="gemini-3-flash-preview",
+        default="gemini-2.5-flash-lite",
         description="Fast model for lyric profile inference",
     )
     genre_disambiguation_model: str = Field(
-        default="gemini-3-flash-preview",
+        default="gemini-2.5-flash-lite",
         description="Model for V6 genre disambiguation pre-call",
     )
     title_generation_model: str = Field(

@@ -208,30 +208,30 @@ async def _call_gemini(
     from google import genai
     from google.genai import types
 
-    def _sync_generate():
+    client = genai.Client(
+        api_key=api_key,
+        http_options=types.HttpOptions(timeout=LLM_TIMEOUT_SECONDS * 1000),  # ms
+    )
+    # No max_output_tokens - let model use default (matches agent_prompt_graph.py)
+    config = types.GenerateContentConfig(
+        temperature=temperature,
+        system_instruction=system_prompt,
+    )
+    contents = [
+        types.Content(
+            role="user", parts=[types.Part.from_text(text=user_message)]
+        )
+    ]
+
+    # Retry once on transient Gemini 504 DEADLINE_EXCEEDED errors
+    max_retries = 1
+
+    async def _async_generate():
         from google.genai import errors as genai_errors
 
-        # Set HTTP timeout on the client
-        client = genai.Client(
-            api_key=api_key,
-            http_options=types.HttpOptions(timeout=LLM_TIMEOUT_SECONDS * 1000),  # ms
-        )
-        # No max_output_tokens - let model use default (matches agent_prompt_graph.py)
-        config = types.GenerateContentConfig(
-            temperature=temperature,
-            system_instruction=system_prompt,
-        )
-        contents = [
-            types.Content(
-                role="user", parts=[types.Part.from_text(text=user_message)]
-            )
-        ]
-
-        # Retry once on transient Gemini 504 DEADLINE_EXCEEDED errors
-        max_retries = 1
         for attempt in range(max_retries + 1):
             try:
-                response = client.models.generate_content(
+                response = await client.aio.models.generate_content(
                     model=model,
                     contents=contents,
                     config=config,
@@ -256,8 +256,7 @@ async def _call_gemini(
                         max_retries + 1,
                         error_str[:200],
                     )
-                    import time as _time
-                    _time.sleep(2)
+                    await asyncio.sleep(2)
                     continue
                 # Non-retryable server error or exhausted retries
                 logger.warning(f"Gemini server error: {e}")
@@ -270,10 +269,9 @@ async def _call_gemini(
     status = "succeeded"
     error_type: Optional[str] = None
     try:
-        # Also wrap with asyncio timeout as a safety net
         result = await asyncio.wait_for(
-            asyncio.to_thread(_sync_generate),
-            timeout=LLM_TIMEOUT_SECONDS + 5,  # Give HTTP timeout a chance first
+            _async_generate(),
+            timeout=LLM_TIMEOUT_SECONDS + 5,  # Safety net
         )
         return result.strip()
     except asyncio.TimeoutError:
