@@ -2757,9 +2757,13 @@ class AgentPromptGraph:
         song_title = self._first_non_empty_line(sections.get("SONG TITLE", ""))
         lyrics_raw = sections.get("LYRICS", "").strip()
 
-        # Fallback: if no headers were found, infer from raw output
         if not song_title and not lyrics_raw:
+            # No headers found at all — infer both from raw output
             song_title, lyrics_raw = self._infer_lyrics_from_raw(raw)
+        elif not song_title:
+            # LYRICS header found but no SONG TITLE header — title is the
+            # text before the first recognized header in the raw output
+            song_title = self._infer_title_from_preamble(raw)
 
         # Strip any preamble - only count from first section tag
         lyrics = self._strip_lyrics_preamble(lyrics_raw)
@@ -2769,6 +2773,21 @@ class AgentPromptGraph:
             lyrics=lyrics,
             raw=raw,
         )
+
+    def _infer_title_from_preamble(self, raw: str) -> str:
+        """Extract song title from text before the first recognized header.
+
+        When the model outputs a bare title (no SONG TITLE header) followed
+        by a LYRICS header, the title sits in the unrecognized preamble.
+        """
+        for line in raw.splitlines():
+            header = self._normalize_header(line)
+            if header:
+                break
+            text = line.strip()
+            if text:
+                return text
+        return ""
 
     def _infer_lyrics_from_raw(self, raw: str) -> tuple:
         """Infer song title and lyrics when the model omits section headers.
