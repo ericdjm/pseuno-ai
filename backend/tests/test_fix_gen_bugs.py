@@ -451,20 +451,18 @@ class TestPlannerFallback:
 class TestVocabularyRules:
     """Verify the vocabulary rules are present in LYRICS_SPEC."""
 
-    def test_banned_words_in_spec(self):
+    def test_overused_words_flagged_in_spec(self):
         from app.prompts.specs import LYRICS_SPEC
 
-        assert "BANNED" in LYRICS_SPEC
+        assert "Avoid overusing" in LYRICS_SPEC
         for word in ["silver", "velvet", "neon", "shattered", "crimson", "golden"]:
-            assert word in LYRICS_SPEC, f"Banned word '{word}' missing from LYRICS_SPEC"
+            assert word in LYRICS_SPEC, f"Overused word '{word}' missing from LYRICS_SPEC"
 
-    def test_genre_guidance_in_spec(self):
+    def test_genre_vocabulary_guidance_in_spec(self):
         from app.prompts.specs import LYRICS_SPEC
 
-        for genre_hint in ["Country/folk", "Punk/hardcore", "Hip-hop/rap", "Metal"]:
-            assert (
-                genre_hint in LYRICS_SPEC
-            ), f"Genre guidance '{genre_hint}' missing from LYRICS_SPEC"
+        assert "genre and era context" in LYRICS_SPEC
+        assert "linguistic register" in LYRICS_SPEC
 
     def test_unique_vocabulary_rule_in_spec(self):
         from app.prompts.specs import LYRICS_SPEC
@@ -484,11 +482,13 @@ class TestChorusRulesInSpecs:
         from app.prompts.specs import LYRICS_SPEC
 
         assert "each line must be DIFFERENT" in LYRICS_SPEC
+        assert "same lyrics as the other chorus" in LYRICS_SPEC
 
     def test_output_contract_has_distinct_lines_rule(self):
         from app.prompts.specs import OUTPUT_CONTRACT_LYRICS
 
         assert "every line must be distinct" in OUTPUT_CONTRACT_LYRICS
+        assert "same lyrics as the other chorus" in OUTPUT_CONTRACT_LYRICS
 
     def test_repair_agent_has_varied_lines_rule(self):
         from app.prompts.specs import LYRICS_REPAIR_AGENT

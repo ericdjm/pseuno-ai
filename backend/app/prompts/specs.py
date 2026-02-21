@@ -146,7 +146,7 @@ LYRICS constraints:
 - Section tags: [Intro], [Verse], [Pre-Chorus], [Chorus], [Post-Chorus], [Bridge], [Breakdown], [Outro]
 - Tag modifiers allowed: [Verse, soft, introspective, breathy vocals]
 - Follow lines_per_section from LYRIC PROFILE (2_lines, 4_lines, 6_lines, or 8_lines).
-- Chorus repetition: when a [Chorus] appears multiple times, copy-paste the same lyrics each time. But within one chorus, every line must be distinct — never repeat the same line consecutively.
+- Each chorus should contain the same lyrics as the other chorus. But within one chorus, every line must be distinct — never repeat the same line consecutively.
 - [Intro], [Breakdown], [Outro] have no lyrics (tag only).
 
 RHYME SCHEME adaptation (match pattern to section length):
@@ -342,21 +342,13 @@ Content rules:
 - Lyrics inspired by lyrics_about; style_request influences phrasing and genre tropes only.
 - style_request sounds/production must not appear in lyrics.
 - Choruses: 0 or 2+. Never exactly 1 chorus (awkward structure).
-- When a [Chorus] section appears multiple times in the song, use the SAME lyrics each time (copy-paste the identical lines). However, within a single chorus, each line must be DIFFERENT — do NOT repeat the same line consecutively. A 4-line chorus needs 4 distinct lines.
+- Each chorus should contain the same lyrics as the other chorus. However, within a single chorus, each line must be DIFFERENT — do NOT repeat the same line consecutively. A 4-line chorus needs 4 distinct lines.
 - Prioritize punchy, impactful lines over filler. Each line should earn its place.
 
 Vocabulary rules:
-- BANNED overused words — never use: "silver", "velvet", "neon", "shattered", "whisper(s)", "shadow(s)", "echo(es)", "crimson", "golden", "embers", "ashes", "hollow", "fade".
-- Derive vocabulary from the genre/era context:
-  Country/folk → rural, earthy, grounded (dirt roads, porches, rivers, calloused hands)
-  Punk/hardcore → raw, street-level, confrontational (concrete, bruises, static, debt)
-  Hip-hop/rap → urban, contemporary, specific (blocks, racks, whips, posted up)
-  Metal → visceral, aggressive, physical (iron, bile, fracture, corrode)
-  Electronic/dance → kinetic, sensory, modern (pulse, signal, frequency, strobe)
-  Pop → conversational, relatable, direct (phone, 3 AM, lipstick, stupid)
-  R&B/soul → intimate, tactile, warm (skin, slow, honey, sheets)
-  Indie/alt → observational, offbeat, specific (parking lots, receipts, voicemail, tile floors)
-- Each song must have its own unique vocabulary palette drawn from the genre and topic. Do NOT default to generic "poetic" words.
+- Avoid overusing generic "poetic" words like "silver", "velvet", "neon", "shattered", "whisper", "shadows", "echoes", "crimson", "golden", "embers". These are fine occasionally but should not appear in every song.
+- Derive vocabulary from the genre and era context. Each genre has its own linguistic register — think about what words and imagery belong to that genre's world. A country song and a punk song should not share the same adjectives.
+- Each song must have its own unique vocabulary palette drawn from the genre and topic.
 
 Rhyme scheme adaptation (match pattern to section length):
 - 2 lines: AA (all schemes collapse to couplet)
