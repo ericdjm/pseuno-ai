@@ -65,43 +65,57 @@ async def refine_all(
         architecture="unified_refine",
     )
 
-    # Step 1: Decide what to change — skip planner for targeted requests
+    # Step 1: Call planner to decide what to change.
+    # For targeted requests, build a guaranteed fallback so a planner
+    # timeout/failure still produces the correct primary edit.
+    fallback_plan: Optional[PlannerOutput] = None
     if request.refine_target == "lyrics":
-        plan = PlannerOutput(
+        fallback_plan = PlannerOutput(
             edit_lyrics=True,
             lyrics_change_request=request.change_request,
             edit_style=False,
         )
-        logger.info("Skipping planner for lyrics-targeted refine")
     elif request.refine_target == "style":
-        plan = PlannerOutput(
+        fallback_plan = PlannerOutput(
             edit_style=True,
             style_change_request=request.change_request,
             edit_lyrics=False,
         )
-        logger.info("Skipping planner for style-targeted refine")
-    else:
-        with tracer.span("refine.planner", "llm_call", model=settings.llm_model) as span:
+
+    with tracer.span("refine.planner", "llm_call", model=settings.llm_model) as span:
+        try:
             plan = await _call_planner(request, settings)
-            span.set_meta("edit_style", plan.edit_style)
-            span.set_meta("edit_lyrics", plan.edit_lyrics)
-            span.set_meta("has_exclude_update", plan.exclude_update is not None)
-            span.set_meta("has_title_update", plan.title_update is not None)
-            span.set_meta("has_weirdness_update", plan.weirdness_update is not None)
-            span.set_artifact("change_request", request.change_request)
-            if plan.style_change_request:
-                span.set_artifact("style_instruction", plan.style_change_request)
-            if plan.lyrics_change_request:
-                span.set_artifact("lyrics_instruction", plan.lyrics_change_request)
-            if plan.exclude_update:
-                span.set_artifact(
-                    "exclude_update",
-                    f"{plan.exclude_update.mode}: {plan.exclude_update.value}",
+        except Exception as e:
+            if fallback_plan:
+                logger.warning(
+                    f"Planner failed for targeted refine ({request.refine_target}), "
+                    f"using fallback: {e}"
                 )
-            if plan.title_update:
-                span.set_artifact("title_update", plan.title_update)
-            if plan.weirdness_update is not None:
-                span.set_meta("weirdness_update", plan.weirdness_update)
+                span.set_meta("fallback_used", True)
+                span.set_meta("planner_error", str(e)[:200])
+                plan = fallback_plan
+            else:
+                raise
+
+        span.set_meta("edit_style", plan.edit_style)
+        span.set_meta("edit_lyrics", plan.edit_lyrics)
+        span.set_meta("has_exclude_update", plan.exclude_update is not None)
+        span.set_meta("has_title_update", plan.title_update is not None)
+        span.set_meta("has_weirdness_update", plan.weirdness_update is not None)
+        span.set_artifact("change_request", request.change_request)
+        if plan.style_change_request:
+            span.set_artifact("style_instruction", plan.style_change_request)
+        if plan.lyrics_change_request:
+            span.set_artifact("lyrics_instruction", plan.lyrics_change_request)
+        if plan.exclude_update:
+            span.set_artifact(
+                "exclude_update",
+                f"{plan.exclude_update.mode}: {plan.exclude_update.value}",
+            )
+        if plan.title_update:
+            span.set_artifact("title_update", plan.title_update)
+        if plan.weirdness_update is not None:
+            span.set_meta("weirdness_update", plan.weirdness_update)
 
     # Step 2: Execute the plan
     updated_snapshot = {
