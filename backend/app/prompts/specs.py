@@ -345,8 +345,8 @@ Content rules:
 - Each chorus should contain the same lyrics as the other chorus. However, within a single chorus, each line must be DIFFERENT — do NOT repeat the same line consecutively. A 4-line chorus needs 4 distinct lines.
 - Prioritize punchy, impactful lines over filler. Each line should earn its place.
 
-Vocabulary rules:
-- Avoid overusing generic "poetic" words like "silver", "velvet", "neon", "shattered", "whisper", "shadows", "echoes", "crimson", "golden", "embers". These are fine occasionally but should not appear in every song.
+Vocabulary rules (CRITICAL — validation will reject violations):
+- NEVER use 3 or more of these generic "poetic" words in a single song: "silver", "velvet", "neon", "shattered", "whisper", "shadows", "echoes", "crimson", "golden", "embers". Using 1-2 is acceptable if genuinely fitting; 3+ will trigger a rewrite.
 - Derive vocabulary from the genre and era context. Each genre has its own linguistic register — think about what words and imagery belong to that genre's world. A country song and a punk song should not share the same adjectives.
 - Each song must have its own unique vocabulary palette drawn from the genre and topic.
 

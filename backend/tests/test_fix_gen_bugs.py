@@ -454,7 +454,7 @@ class TestVocabularyRules:
     def test_overused_words_flagged_in_spec(self):
         from app.prompts.specs import LYRICS_SPEC
 
-        assert "Avoid overusing" in LYRICS_SPEC
+        assert "NEVER use 3 or more" in LYRICS_SPEC
         for word in ["silver", "velvet", "neon", "shattered", "crimson", "golden"]:
             assert word in LYRICS_SPEC, f"Overused word '{word}' missing from LYRICS_SPEC"
 
@@ -494,3 +494,108 @@ class TestChorusRulesInSpecs:
         from app.prompts.specs import LYRICS_REPAIR_AGENT
 
         assert "Each line in a chorus must be distinct" in LYRICS_REPAIR_AGENT
+
+
+# ============================================================================
+# PR 5: Overused word validation
+# ============================================================================
+
+
+class TestOverusedWordValidation:
+    """Test _check_overused_words detects banned generic poetic words."""
+
+    def _check(self, lyrics: str) -> list[str]:
+        from app.services.agent_prompt_graph import AgentPromptGraph
+
+        return AgentPromptGraph(MagicMock())._check_overused_words(lyrics)
+
+    def test_no_banned_words_passes(self):
+        lyrics = """[Verse]
+Walking down the highway
+Wind against my face
+Truck is running steady
+Heading for that place"""
+        assert self._check(lyrics) == []
+
+    def test_one_banned_word_passes(self):
+        lyrics = """[Verse]
+Golden sunset falling
+Over fields of grain"""
+        assert self._check(lyrics) == []
+
+    def test_two_banned_words_passes(self):
+        lyrics = """[Verse]
+Golden light through shadows
+Dancing on the wall"""
+        assert self._check(lyrics) == []
+
+    def test_three_banned_words_flagged(self):
+        lyrics = """[Verse]
+Golden whisper through the shadows
+Falling into darkness"""
+        issues = self._check(lyrics)
+        assert len(issues) == 1
+        assert "generic poetic words" in issues[0]
+
+    def test_five_banned_words_flagged(self):
+        lyrics = """[Verse]
+Silver moonlight through velvet shadows
+Crimson embers whisper low"""
+        issues = self._check(lyrics)
+        assert len(issues) == 1
+        for word in ["silver", "velvet", "shadows", "crimson", "embers"]:
+            assert word in issues[0]
+
+    def test_case_insensitive(self):
+        lyrics = """[Verse]
+GOLDEN light through SHADOWS
+WHISPER in the night"""
+        issues = self._check(lyrics)
+        assert len(issues) == 1
+
+    def test_banned_word_as_substring_not_counted(self):
+        """'whispering' should not match 'whisper'."""
+        lyrics = """[Verse]
+Whispering wind through shadowed halls
+Golden sunrise on the wall"""
+        # "whispering" != "whisper", "shadowed" != "shadows"
+        # Only "golden" is an exact match → passes
+        assert self._check(lyrics) == []
+
+
+# ============================================================================
+# PR 5: concept_title fallback
+# ============================================================================
+
+
+class TestConceptTitleFallback:
+    """Test _derive_title fallback when lyrics branch returns empty title."""
+
+    def test_derive_title_from_lyrics_about(self):
+        from app.services.agent_prompt_graph import AgentPromptGraph
+
+        agent = AgentPromptGraph(MagicMock())
+        title = agent._derive_title("fast punk rock", "corporate greed and rebellion")
+        assert title  # Not empty
+        assert len(title) <= 50
+
+    def test_derive_title_from_user_prompt_when_no_lyrics_about(self):
+        from app.services.agent_prompt_graph import AgentPromptGraph
+
+        agent = AgentPromptGraph(MagicMock())
+        title = agent._derive_title("indie rock with jangly guitars", "")
+        assert title  # Not empty
+        assert "Indie" in title or "indie" in title.lower()
+
+    def test_derive_title_returns_untitled_for_empty_input(self):
+        from app.services.agent_prompt_graph import AgentPromptGraph
+
+        agent = AgentPromptGraph(MagicMock())
+        title = agent._derive_title("", "")
+        assert title == "Untitled"
+
+    def test_vocabulary_spec_has_stronger_language(self):
+        from app.prompts.specs import LYRICS_SPEC
+
+        assert "NEVER use 3 or more" in LYRICS_SPEC
+        assert "validation will reject" in LYRICS_SPEC

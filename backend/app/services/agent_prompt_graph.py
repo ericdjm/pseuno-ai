@@ -1075,9 +1075,20 @@ class AgentPromptGraph:
 
         suno_prompt = style_result["suno_prompt"]
 
+        # Derive concept_title with fallback if lyrics branch didn't produce one
+        concept_title = lyrics_result["song_title"]
+        if not concept_title:
+            concept_title = self._derive_title(
+                request.user_prompt, request.lyrics_about or ""
+            )
+            logger.warning(
+                "Lyrics branch returned empty song_title, using fallback: %s",
+                concept_title,
+            )
+
         # Generate unique ID for this generation
         generation_id = hashlib.md5(
-            f"{lyrics_result['song_title']}{suno_prompt}{time.time()}".encode()
+            f"{concept_title}{suno_prompt}{time.time()}".encode()
         ).hexdigest()[:12]
 
         logger.info(
@@ -1086,7 +1097,7 @@ class AgentPromptGraph:
         )
 
         return {
-            "concept_title": lyrics_result["song_title"],
+            "concept_title": concept_title,
             "style_name": style_result.get("style_name", ""),
             "lyrics": lyrics_result["lyrics"],
             "suno_prompt": suno_prompt,
@@ -2427,6 +2438,11 @@ class AgentPromptGraph:
             return lyrics[match.start() :].strip()
         return lyrics.strip()
 
+    _OVERUSED_WORDS = frozenset({
+        "silver", "velvet", "neon", "shattered", "whisper",
+        "shadows", "echoes", "crimson", "golden", "embers",
+    })
+
     def _validate_lyrics_output(self, output: _ParsedLyricsOutput) -> List[str]:
         """Validate lyrics output, return list of issues."""
         issues = []
@@ -2439,7 +2455,20 @@ class AgentPromptGraph:
         else:
             # Check for chorus lines that are mostly identical
             issues.extend(self._check_chorus_repetition(output.lyrics))
+            # Check for overused generic "poetic" words
+            issues.extend(self._check_overused_words(output.lyrics))
         return issues
+
+    def _check_overused_words(self, lyrics: str) -> List[str]:
+        """Flag lyrics that use 3+ banned generic poetic words."""
+        words_in_lyrics = set(re.findall(r"[a-z]+", lyrics.lower()))
+        found = words_in_lyrics & self._OVERUSED_WORDS
+        if len(found) >= 3:
+            return [
+                f"Too many generic poetic words ({', '.join(sorted(found))}). "
+                f"Replace with genre-specific vocabulary."
+            ]
+        return []
 
     @staticmethod
     def _check_chorus_repetition(lyrics: str) -> List[str]:
