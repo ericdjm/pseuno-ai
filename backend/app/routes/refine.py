@@ -81,10 +81,17 @@ def _derive_title_from_prompt(suno_prompt: str, auto_tags: list[str]) -> str:
         # Use top 3 tags joined with bullet
         return " • ".join(tag.title() for tag in auto_tags[:3])
 
-    # Fallback: first line of suno_prompt (up to 50 chars)
+    # Fallback: first meaningful clause of suno_prompt (max 30 chars at word boundary)
     first_line = suno_prompt.split("\n")[0].strip()
-    if len(first_line) > 50:
-        return first_line[:47] + "..."
+    # Take up to first comma, dash, or semicolon for a short clause
+    for sep in [",", " - ", ";", ":"]:
+        if sep in first_line:
+            first_line = first_line[: first_line.index(sep)].strip()
+            break
+    if len(first_line) > 30:
+        # Truncate at word boundary
+        truncated = first_line[:30].rsplit(" ", 1)[0]
+        return truncated + "..." if truncated else first_line[:27] + "..."
     return first_line or "Refined Prompt"
 
 

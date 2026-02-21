@@ -1756,8 +1756,8 @@ class AgentPromptGraph:
         artists_for_name = []
         if genre_data:
             for artist in genre_data.get("artists", []):
-                if artist.get("genres_to_use"):
-                    genres_for_name.extend(artist["genres_to_use"])
+                if artist.get("genres"):
+                    genres_for_name.extend(artist["genres"])
                 if artist.get("name"):
                     artists_for_name.append(artist["name"])
         if not genres_for_name:
@@ -2436,6 +2436,35 @@ class AgentPromptGraph:
             issues.append("LYRICS is empty")
         elif "[" not in output.lyrics:
             issues.append("LYRICS missing section tags")
+        else:
+            # Check for chorus lines that are mostly identical
+            issues.extend(self._check_chorus_repetition(output.lyrics))
+        return issues
+
+    @staticmethod
+    def _check_chorus_repetition(lyrics: str) -> List[str]:
+        """Detect choruses where >50% of lines are identical."""
+        from collections import Counter
+
+        issues = []
+        sections = re.split(r"(\[[^\]]+\])", lyrics)
+        for i, section in enumerate(sections):
+            if not re.match(r"\[Chorus", section, re.IGNORECASE):
+                continue
+            if i + 1 >= len(sections):
+                continue
+            block = sections[i + 1].strip()
+            if not block:
+                continue
+            lines = [ln.strip() for ln in block.split("\n") if ln.strip()]
+            if len(lines) < 2:
+                continue
+            counts = Counter(lines)
+            most_common_count = counts.most_common(1)[0][1]
+            if most_common_count > len(lines) / 2:
+                issues.append(
+                    f"Chorus has {most_common_count}/{len(lines)} identical lines — rewrite with varied lines"
+                )
         return issues
 
     def _create_error_result(self, error_type: str, details: str) -> Dict[str, Any]:
