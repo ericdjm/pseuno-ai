@@ -9,6 +9,7 @@
  */
 
 import { useState, useRef, useEffect } from 'react';
+import { useMusicalLoadingMessage } from '../hooks';
 import {
   Box,
   VStack,
@@ -127,14 +128,12 @@ export default function WorkingPromptPanel({
   const [styleRefineOpen, setStyleRefineOpen] = useState(false);
   const [styleRefineText, setStyleRefineText] = useState('');
   const [isRefiningStyle, setIsRefiningStyle] = useState(false);
-  const [showRefineWaitMessage, setShowRefineWaitMessage] = useState(false);
   const styleRefineInputRef = useRef<HTMLInputElement>(null);
 
   // Lyrics Edit composer state (updates in-place)
   const [lyricsEditOpen, setLyricsEditOpen] = useState(false);
   const [lyricsEditText, setLyricsEditText] = useState('');
   const [isEditingLyrics, setIsEditingLyrics] = useState(false);
-  const [showEditWaitMessage, setShowEditWaitMessage] = useState(false);
   const lyricsEditInputRef = useRef<HTMLInputElement>(null);
 
   // Lyrics save debounce
@@ -172,23 +171,15 @@ export default function WorkingPromptPanel({
   const [draftLyricsAbout, setDraftLyricsAbout] = useState('');
   const [isCreatingSong, setIsCreatingSong] = useState(false);
   const [isGeneratingTopic, setIsGeneratingTopic] = useState(false);
-  const [showLongWaitMessage, setShowLongWaitMessage] = useState(false);
 
   // Drag-and-drop state for reordering tabs
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
 
-  // Show "can take up to a minute" message after 10 seconds of loading
-  useEffect(() => {
-    if (!isCreatingSong) {
-      setShowLongWaitMessage(false);
-      return;
-    }
-    const timer = setTimeout(() => {
-      setShowLongWaitMessage(true);
-    }, 10000);
-    return () => clearTimeout(timer);
-  }, [isCreatingSong]);
+  // Cycling musical loading messages
+  const musicalCreateMessage = useMusicalLoadingMessage(isCreatingSong, 10000);
+  const musicalRefineMessage = useMusicalLoadingMessage(isRefiningStyle, 5000);
+  const musicalEditMessage = useMusicalLoadingMessage(isEditingLyrics, 5000);
 
   // Keyboard shortcut: Cmd/Ctrl + Enter to create (only when draft is open)
   useEffect(() => {
@@ -286,30 +277,6 @@ export default function WorkingPromptPanel({
       setDraftOpen(false);
     }
   }, [state.stylePromptId, state.lyricsThreadId]);
-
-  // Show "can take up to a minute" message after 5 seconds of refining
-  useEffect(() => {
-    if (!isRefiningStyle) {
-      setShowRefineWaitMessage(false);
-      return;
-    }
-    const timer = setTimeout(() => {
-      setShowRefineWaitMessage(true);
-    }, 5000);
-    return () => clearTimeout(timer);
-  }, [isRefiningStyle]);
-
-  // Show "can take up to a minute" message after 5 seconds of editing
-  useEffect(() => {
-    if (!isEditingLyrics) {
-      setShowEditWaitMessage(false);
-      return;
-    }
-    const timer = setTimeout(() => {
-      setShowEditWaitMessage(true);
-    }, 5000);
-    return () => clearTimeout(timer);
-  }, [isEditingLyrics]);
 
   // Build Suno URL with style as query param
   const buildSunoUrl = () => {
@@ -1358,11 +1325,11 @@ export default function WorkingPromptPanel({
                   </Tooltip>
                 </HStack>
                 {/* Second line: wait message (reserve space) */}
-                <Text 
-                  fontSize="xs" 
-                  color={showRefineWaitMessage && isRefiningStyle ? 'gray.500' : 'transparent'}
+                <Text
+                  fontSize="xs"
+                  color={musicalRefineMessage ? 'gray.500' : 'transparent'}
                 >
-                  Generations can take up to a minute...
+                  {musicalRefineMessage ?? '\u00A0'}
                 </Text>
               </VStack>
             </Box>
@@ -1543,9 +1510,7 @@ export default function WorkingPromptPanel({
 
                 {/* Keyboard shortcut hint */}
                 <Text fontSize="xs" color="gray.600" textAlign="center">
-                  {isCreatingSong && showLongWaitMessage
-                    ? 'Generations can take up to a minute...'
-                    : '⌘ Enter to create'}
+                  {musicalCreateMessage ?? '⌘ Enter to create'}
                 </Text>
               </VStack>
             </Box>
@@ -1732,9 +1697,9 @@ export default function WorkingPromptPanel({
                         </Text>
                       </Tooltip>
                     </HStack>
-                    {showEditWaitMessage && isEditingLyrics && (
+                    {musicalEditMessage && (
                       <Text fontSize="xs" color="gray.500">
-                        Generations can take up to a minute...
+                        {musicalEditMessage}
                       </Text>
                     )}
                   </VStack>
