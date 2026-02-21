@@ -168,7 +168,7 @@ export default function NewSongView({
   
   // Suno-like collapsible sections
   const [stylesExpanded, setStylesExpanded] = useState(true);
-  const [lyricsExpanded, setLyricsExpanded] = useState(false);
+  const [lyricsExpanded, setLyricsExpanded] = useState(true);
   
   // Style tags (not persisted - clears on refresh)
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
