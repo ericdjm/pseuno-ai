@@ -1,0 +1,72 @@
+[
+  {
+    "name": "Simple pop — Dua Lipa",
+    "user_prompt": "Upbeat summer dance pop anthem",
+    "lyrics_about": "falling in love on a summer night",
+    "selected_artists": ["Dua Lipa"],
+    "tags": ["pop", "dance", "summer"]
+  },
+  {
+    "name": "Complex fusion — Meshuggah + Snarky Puppy + Aphex Twin",
+    "user_prompt": "Polyrhythmic metal jazz with glitchy IDM textures and odd time signatures",
+    "lyrics_about": "the mathematics of chaos",
+    "selected_artists": ["Meshuggah", "Snarky Puppy", "Aphex Twin"],
+    "tags": ["metal", "jazz", "IDM", "polyrhythm", "experimental"]
+  },
+  {
+    "name": "V8 channel split — Steel Panther vocalist + TOOL music",
+    "user_prompt": "Steel Panther's vocalist singing over TOOL-style progressive metal instrumentation",
+    "lyrics_about": "a cosmic journey through the desert",
+    "selected_artists": ["Steel Panther", "TOOL"],
+    "tags": ["metal", "progressive", "comedy"]
+  },
+  {
+    "name": "Single artist country — Chris Stapleton",
+    "user_prompt": "Raw, whiskey-soaked country ballad with soul influence",
+    "lyrics_about": "losing everything and starting over in a small town",
+    "selected_artists": ["Chris Stapleton"],
+    "tags": ["country", "soul", "ballad"]
+  },
+  {
+    "name": "Dense hip-hop — Kendrick + J. Cole",
+    "user_prompt": "Conscious hip-hop with intricate wordplay and jazz-sampled beats",
+    "lyrics_about": "growing up in the city and escaping cycles of violence",
+    "selected_artists": ["Kendrick Lamar", "J. Cole"],
+    "tags": ["hip-hop", "conscious", "jazz-rap"]
+  },
+  {
+    "name": "Ambient minimal — Brian Eno",
+    "user_prompt": "Sparse, meditative ambient with long drones and subtle texture shifts",
+    "lyrics_about": "the stillness of an empty cathedral",
+    "selected_artists": ["Brian Eno"],
+    "tags": ["ambient", "drone", "minimal"]
+  },
+  {
+    "name": "Tag-only — Dark synthwave, no artists",
+    "user_prompt": "Dark synthwave with pulsing bass, arpeggiators, and retro analog warmth",
+    "lyrics_about": "driving alone through neon-lit streets at midnight",
+    "selected_artists": [],
+    "tags": ["synthwave", "dark", "retro", "analog", "80s"]
+  },
+  {
+    "name": "Max complexity — Radiohead + Tame Impala + Fleet Foxes",
+    "user_prompt": "Art rock with psychedelic swirls, lush vocal harmonies, and electronic undercurrents building from intimate acoustic beginnings to a massive wall of sound climax",
+    "lyrics_about": "the slow erosion of certainty in a world that keeps shifting beneath your feet",
+    "selected_artists": ["Radiohead", "Tame Impala", "Fleet Foxes"],
+    "tags": ["art rock", "psychedelic", "indie", "experimental", "harmonies"]
+  },
+  {
+    "name": "R&B ballad — SZA + Frank Ocean",
+    "user_prompt": "Dreamy R&B with layered vocals, neo-soul chords, and ethereal production",
+    "lyrics_about": "the ache of loving someone who is slowly drifting away",
+    "selected_artists": ["SZA", "Frank Ocean"],
+    "tags": ["r&b", "neo-soul", "dreamy", "ballad"]
+  },
+  {
+    "name": "Punk energy — Green Day",
+    "user_prompt": "Fast, aggressive punk rock with sing-along choruses and raw guitar",
+    "lyrics_about": "being fed up with the system and wanting to burn it all down",
+    "selected_artists": ["Green Day"],
+    "tags": ["punk", "rock", "fast", "aggressive"]
+  }
+]

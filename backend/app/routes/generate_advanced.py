@@ -25,8 +25,14 @@ from app.prompts import (
 from app.schemas.advanced import (
     AdvancedGenerateRequest,
     AdvancedGenerateResponse,
+    GenerateLyricsRequest,
+    GenerateLyricsResponse,
+    GenerateStyleRequest,
+    GenerateStyleResponse,
     LyricsOnlyRequest,
     LyricsOnlyResponse,
+    SaveGenerationResultRequest,
+    SaveGenerationResultResponse,
 )
 from app.services.agent_prompt_graph import AgentPromptGraph
 
@@ -281,6 +287,202 @@ async def generate_advanced(
         is_favorite=False,
         auto_tags=result.get("auto_tags", []),
         debug_info=result.get("debug_info") if settings.debug else None,
+    )
+
+
+# ===========================================================================
+# SPLIT GENERATION ENDPOINTS (parallel style + lyrics)
+# ===========================================================================
+
+
+@router.post("/style", response_model=GenerateStyleResponse)
+async def generate_style_endpoint(
+    body: GenerateStyleRequest,
+    agent: AgentPromptGraph = Depends(get_song_agent),
+):
+    """
+    Style-only generation endpoint (split from /generate/advanced).
+
+    Runs the style branch only: genre disambiguation -> style generation -> validation -> repair.
+    Designed to be called in parallel with /generate/lyrics from the frontend.
+    No DB save — the frontend merges results and calls /generate/save-result.
+    """
+    from fastapi import HTTPException
+
+    settings = get_settings()
+
+    try:
+        result = await agent.generate_style(
+            user_prompt=body.user_prompt,
+            lyrics_about=body.lyrics_about,
+            selected_artists=body.selected_artists,
+            tags=body.tags,
+            prompt_variant=body.prompt_variant,
+            style_model=body.style_model,
+        )
+    except Exception as e:
+        logger.error("Style generation failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return GenerateStyleResponse(
+        suno_prompt=result["suno_prompt"],
+        exclude=result["exclude"],
+        weirdness=result["weirdness"],
+        style_influence=result["style_influence"],
+        auto_tags=result.get("auto_tags", []),
+        style_name=result.get("style_name", ""),
+        instrumental_title=result.get("instrumental_title"),
+        debug_info=result.get("debug_info") if settings.debug else None,
+    )
+
+
+@router.post("/lyrics", response_model=GenerateLyricsResponse)
+async def generate_lyrics_endpoint(
+    body: GenerateLyricsRequest,
+    agent: AgentPromptGraph = Depends(get_song_agent),
+):
+    """
+    Lyrics-only generation endpoint (split from /generate/advanced).
+
+    Runs the lyrics branch only: profile inference -> lyrics generation -> validation -> repair.
+    Designed to be called in parallel with /generate/style from the frontend.
+    No DB save — the frontend merges results and calls /generate/save-result.
+    """
+    from fastapi import HTTPException
+
+    settings = get_settings()
+
+    try:
+        result = await agent.generate_lyrics(
+            user_prompt=body.user_prompt,
+            lyrics_about=body.lyrics_about,
+            selected_artists=body.selected_artists,
+            tags=body.tags,
+            prompt_variant=body.prompt_variant,
+            lyrics_model=body.lyrics_model,
+            lyric_controls=body.lyric_controls,
+        )
+    except Exception as e:
+        logger.error("Lyrics generation failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return GenerateLyricsResponse(
+        song_title=result["song_title"],
+        lyrics=result["lyrics"],
+        debug_info=result.get("debug_info") if settings.debug else None,
+    )
+
+
+@router.post("/save-result", response_model=SaveGenerationResultResponse)
+async def save_generation_result(
+    body: SaveGenerationResultRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    """
+    Save a merged generation result (from parallel style + lyrics) to the database.
+
+    Creates a SunoPrompt record and initial LyricsThread, fires the async
+    classifier, and returns the prompt_id + generation_id.
+    """
+    import asyncio
+    import hashlib
+    import time
+
+    settings = get_settings()
+
+    # Generate unique ID
+    generation_id = hashlib.md5(
+        f"{body.song_title}{body.suno_prompt}{time.time()}".encode()
+    ).hexdigest()[:12]
+
+    # Resolve user (same logic as /generate/advanced)
+    spotify_user_id = get_current_user_id_optional(request)
+    if spotify_user_id:
+        user_id = spotify_user_id
+    else:
+        user, created = get_or_create_device_user(request, db)
+        user_id = user.id
+        if created:
+            response.set_cookie(
+                key="device_token",
+                value=user.device_token,
+                httponly=True,
+                secure=settings.session_cookie_secure,
+                samesite=settings.session_cookie_samesite,
+                max_age=DEVICE_TOKEN_MAX_AGE,
+            )
+
+    # Derive title
+    style_name = body.style_name.strip() if body.style_name else ""
+    prompt_title = style_name or _derive_prompt_title(body.suno_prompt, body.auto_tags)
+
+    # Create SunoPrompt record
+    prompt = SunoPrompt(
+        owner_user_id=user_id,
+        parent_prompt_id=None,
+        source_action="generate",
+        suno_prompt=body.suno_prompt,
+        lyrics=body.lyrics,
+        exclude=body.exclude,
+        weirdness=body.weirdness,
+        style_influence=body.style_influence,
+        title=prompt_title,
+        is_favorite=False,
+        auto_tags=body.auto_tags,
+        generation_id=generation_id,
+    )
+    db.add(prompt)
+    db.flush()
+    prompt_id = prompt.id
+
+    # Create initial LyricsThread
+    song_title = body.song_title or prompt_title
+    thread = LyricsThread(
+        style_prompt_id=prompt.id,
+        parent_thread_id=None,
+        title=song_title,
+        lyrics_text=body.lyrics,
+        source_action="generate_initial",
+    )
+    db.add(thread)
+    db.commit()
+
+    logger.info("Saved split generation: prompt_id=%d, user=%s", prompt_id, user_id)
+
+    # Fire async classifier
+    from app.services.style_classifier import classify_style_prompt
+
+    async def _compute_classifier_weights():
+        try:
+            classify_result = await classify_style_prompt(body.suno_prompt)
+            if classify_result.get("success"):
+                prompt_hash = hashlib.sha256(
+                    body.suno_prompt.encode()
+                ).hexdigest()
+                from app.db.session import SessionLocal
+
+                with SessionLocal() as session:
+                    db_prompt = session.get(SunoPrompt, prompt_id)
+                    if db_prompt:
+                        db_prompt.classifier_traits = classify_result.get(
+                            "traits", {}
+                        )
+                        db_prompt.classifier_bank_sims = classify_result.get(
+                            "bank_similarities", {}
+                        )
+                        db_prompt.classifier_prompt_hash = prompt_hash
+                        session.commit()
+        except Exception as e:
+            logger.warning("Failed to compute classifier weights: %s", e)
+
+    asyncio.create_task(_compute_classifier_weights())
+
+    return SaveGenerationResultResponse(
+        prompt_id=prompt_id,
+        generation_id=generation_id,
+        is_favorite=False,
     )
 
 

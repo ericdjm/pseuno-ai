@@ -2,10 +2,12 @@
 Configuration management
 """
 
+import json
 import logging
 import secrets
+from dataclasses import dataclass
 from functools import lru_cache
-from typing import Optional
+from typing import Dict, Optional
 
 from pydantic import ConfigDict, Field, model_validator
 from pydantic_settings import BaseSettings
@@ -13,6 +15,38 @@ from pydantic_settings import BaseSettings
 from app.prompts import SONG_AGENT_SYSTEM_PROMPT, REPAIR_AGENT_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ModelRoleConfig:
+    """Per-role LLM tuning parameters. All fields are optional overrides."""
+
+    temperature: Optional[float] = None
+    max_output_tokens: Optional[int] = None
+    thinking_budget: Optional[int] = None  # 2.5 models (None = model default)
+    thinking_level: Optional[str] = None  # 3.x models ("minimal"/"low"/"medium"/"high")
+
+
+# Production-tuned defaults per model role, validated via speed benchmarks.
+# Override at runtime via LLM_ROLE_CONFIGS env var (JSON).
+DEFAULT_ROLE_CONFIGS: Dict[str, ModelRoleConfig] = {
+    "style_model": ModelRoleConfig(
+        max_output_tokens=1500,
+        thinking_level="minimal",
+    ),
+    "genre_disambiguation_model": ModelRoleConfig(
+        temperature=0.3,
+        max_output_tokens=2000,
+        thinking_level="minimal",
+    ),
+    "profile_inference_model": ModelRoleConfig(
+        thinking_level="minimal",
+    ),
+    "lyrics_model": ModelRoleConfig(
+        thinking_budget=512,
+        max_output_tokens=3000,
+    ),
+}
 
 
 class Settings(BaseSettings):
@@ -76,7 +110,7 @@ class Settings(BaseSettings):
         description="LLM model for SUNO prompt/style generation (two-step)",
     )
     lyrics_model: str = Field(
-        default="gemini-3-flash-preview",
+        default="gemini-2.5-flash",
         description="LLM model for lyrics generation (two-step)",
     )
     profile_inference_model: str = Field(
@@ -96,6 +130,12 @@ class Settings(BaseSettings):
         description="Model for lyrics refinement (needs to be fast for long lyrics)",
     )
     llm_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    llm_role_configs_json: Optional[str] = Field(
+        default=None,
+        description="JSON override for per-model-role configs. "
+        "Keys are role names (e.g. 'style_model'), values are objects "
+        "with optional temperature, max_output_tokens, thinking_budget, thinking_level.",
+    )
     prompt_variant: Optional[str] = Field(
         default=None,
         description="Prompt variant for A/B testing (e.g., 'v1', 'v2_reddit_tricks')",
@@ -120,6 +160,22 @@ class Settings(BaseSettings):
         le=10,
         description="Maximum repair attempts before falling back (0 = no repairs)",
     )
+
+    @property
+    def role_configs(self) -> Dict[str, ModelRoleConfig]:
+        """Merge DEFAULT_ROLE_CONFIGS with any JSON env var overrides."""
+        configs = dict(DEFAULT_ROLE_CONFIGS)
+        if self.llm_role_configs_json:
+            overrides = json.loads(self.llm_role_configs_json)
+            for role, vals in overrides.items():
+                base = configs.get(role, ModelRoleConfig())
+                configs[role] = ModelRoleConfig(
+                    temperature=vals.get("temperature", base.temperature),
+                    max_output_tokens=vals.get("max_output_tokens", base.max_output_tokens),
+                    thinking_budget=vals.get("thinking_budget", base.thinking_budget),
+                    thinking_level=vals.get("thinking_level", base.thinking_level),
+                )
+        return configs
 
     @model_validator(mode="after")
     def validate_secret_key_in_production(self) -> "Settings":
