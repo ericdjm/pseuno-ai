@@ -10,6 +10,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useMusicalLoadingMessage } from '../hooks';
+import { GlowText } from './GlowText';
 import {
   Box,
   VStack,
@@ -176,10 +177,15 @@ export default function WorkingPromptPanel({
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
 
-  // Cycling musical loading messages
-  const musicalCreateMessage = useMusicalLoadingMessage(isCreatingSong, 10000);
-  const musicalRefineMessage = useMusicalLoadingMessage(isRefiningStyle, 5000);
-  const musicalEditMessage = useMusicalLoadingMessage(isEditingLyrics, 5000);
+  // Step counters for tying loading messages to backend responses
+  const [createStep, setCreateStep] = useState(0);
+  const [refineStep, setRefineStep] = useState(0);
+  const [editStep, setEditStep] = useState(0);
+
+  // Cycling musical loading messages (advance on backend responses)
+  const musicalCreateMessage = useMusicalLoadingMessage(isCreatingSong, 10000, createStep);
+  const musicalRefineMessage = useMusicalLoadingMessage(isRefiningStyle, 5000, refineStep);
+  const musicalEditMessage = useMusicalLoadingMessage(isEditingLyrics, 5000, editStep);
 
   // Keyboard shortcut: Cmd/Ctrl + Enter to create (only when draft is open)
   useEffect(() => {
@@ -695,6 +701,7 @@ export default function WorkingPromptPanel({
         suno_prompt: state.styleFields.suno_prompt,
         lyrics_about: draftLyricsAbout.trim(),
       });
+      setCreateStep(s => s + 1);
 
       const songTitle = lyricsResult.song_title || 'New Song';
       const lyricsText = lyricsResult.lyrics || '';
@@ -704,12 +711,14 @@ export default function WorkingPromptPanel({
         style_prompt_id: state.stylePromptId,
         title: songTitle,
       });
+      setCreateStep(s => s + 1);
 
       // Update the thread with lyrics (if any)
-      await updateLyricsThread(newThread.id, { 
+      await updateLyricsThread(newThread.id, {
         title: songTitle,
         lyrics_text: lyricsText,
       });
+      setCreateStep(s => s + 1);
 
       // Fetch the full thread and select it
       const fullThread = await getLyricsThread(newThread.id);
@@ -765,6 +774,7 @@ export default function WorkingPromptPanel({
       });
     } finally {
       setIsCreatingSong(false);
+      setCreateStep(0);
     }
   };
 
@@ -814,6 +824,7 @@ export default function WorkingPromptPanel({
         change_request: styleRefineText.trim(),
         refine_target: 'style',
       });
+      setRefineStep(s => s + 1);
 
       if (!response.updates_persisted) {
         trackStyleRefineFailed({
@@ -864,6 +875,7 @@ export default function WorkingPromptPanel({
       });
     } finally {
       setIsRefiningStyle(false);
+      setRefineStep(0);
     }
   };
 
@@ -908,6 +920,7 @@ export default function WorkingPromptPanel({
         change_request: lyricsEditText.trim(),
         refine_target: 'lyrics',
       });
+      setEditStep(s => s + 1);
 
       if (!response.updates_persisted) {
         trackLyricsAiEditFailed({
@@ -959,6 +972,7 @@ export default function WorkingPromptPanel({
       });
     } finally {
       setIsEditingLyrics(false);
+      setEditStep(0);
     }
   };
 
@@ -1329,7 +1343,7 @@ export default function WorkingPromptPanel({
                   fontSize="xs"
                   color={musicalRefineMessage ? 'gray.500' : 'transparent'}
                 >
-                  {musicalRefineMessage ?? '\u00A0'}
+                  {musicalRefineMessage ? <GlowText>{musicalRefineMessage}</GlowText> : '\u00A0'}
                 </Text>
               </VStack>
             </Box>
@@ -1510,7 +1524,7 @@ export default function WorkingPromptPanel({
 
                 {/* Keyboard shortcut hint */}
                 <Text fontSize="xs" color="gray.600" textAlign="center">
-                  {musicalCreateMessage ?? '⌘ Enter to create'}
+                  {musicalCreateMessage ? <GlowText>{musicalCreateMessage}</GlowText> : '⌘ Enter to create'}
                 </Text>
               </VStack>
             </Box>
@@ -1699,7 +1713,7 @@ export default function WorkingPromptPanel({
                     </HStack>
                     {musicalEditMessage && (
                       <Text fontSize="xs" color="gray.500">
-                        {musicalEditMessage}
+                        <GlowText>{musicalEditMessage}</GlowText>
                       </Text>
                     )}
                   </VStack>

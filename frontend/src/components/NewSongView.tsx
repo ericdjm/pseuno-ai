@@ -30,6 +30,7 @@ import { ChevronDownIcon, ChevronRightIcon, AddIcon } from '@chakra-ui/icons';
 import { LuDices, LuMusic, LuUser } from 'react-icons/lu';
 // TasteDisplay removed - taste is now used for tag recommendations only
 import AutoGrowTextarea from './AutoGrowTextarea';
+import { GlowText } from './GlowText';
 import {
   generateAdvanced,
   generateStyleSplit,
@@ -148,7 +149,8 @@ export default function NewSongView({
   const [isGeneratingConcept, setIsGeneratingConcept] = useState(false);
   const [isGeneratingLyricsTopic, setIsGeneratingLyricsTopic] = useState(false);
 
-  const musicalLoadingMessage = useMusicalLoadingMessage(isLoading, 10000);
+  const [loadingStep, setLoadingStep] = useState(0);
+  const musicalLoadingMessage = useMusicalLoadingMessage(isLoading, 10000, loadingStep);
   
   // Suno-like collapsible sections
   const [stylesExpanded, setStylesExpanded] = useState(true);
@@ -862,6 +864,7 @@ export default function NewSongView({
         if (isInstrumentalRequest) {
           // Instrumental: only call style endpoint
           const styleResult = await generateStyleSplit(styleRequest);
+          setLoadingStep(s => s + 1);
           const saveResult = await saveGenerationResult({
             suno_prompt: styleResult.suno_prompt,
             exclude: styleResult.exclude,
@@ -872,6 +875,7 @@ export default function NewSongView({
             song_title: styleResult.instrumental_title || '',
             lyrics: '',
           });
+          setLoadingStep(s => s + 1);
           result = {
             concept_title: styleResult.instrumental_title || styleResult.style_name || 'Untitled',
             lyrics: '',
@@ -896,6 +900,7 @@ export default function NewSongView({
             generateStyleSplit(styleRequest),
             generateLyricsSplit(lyricsRequest),
           ]);
+          setLoadingStep(s => s + 1);
 
           const saveResult = await saveGenerationResult({
             suno_prompt: styleResult.suno_prompt,
@@ -907,6 +912,7 @@ export default function NewSongView({
             song_title: lyricsResult.song_title,
             lyrics: lyricsResult.lyrics,
           });
+          setLoadingStep(s => s + 1);
 
           result = {
             concept_title: lyricsResult.song_title,
@@ -929,6 +935,7 @@ export default function NewSongView({
           lyric_controls: hasLyricControls ? lyricControls : undefined,
         };
         result = await generateAdvanced(request);
+        setLoadingStep(s => s + 1);
       }
 
       // Track success
@@ -969,6 +976,7 @@ export default function NewSongView({
       });
     } finally {
       setIsLoading(false);
+      setLoadingStep(0);
     }
   };
 
@@ -1408,7 +1416,7 @@ export default function NewSongView({
 
           {/* Keyboard shortcut hint */}
           <Text fontSize="xs" color="gray.600" textAlign="center" mt={2}>
-            {musicalLoadingMessage ?? '⌘ Enter to create'}
+            {musicalLoadingMessage ? <GlowText>{musicalLoadingMessage}</GlowText> : '⌘ Enter to create'}
           </Text>
         </VStack>
       </Box>
