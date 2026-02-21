@@ -111,9 +111,12 @@ class SpotifyClient:
                     tokens.get("expires_in", 3600),
                 )
 
-                # Update refresh token if new one provided
+                # Persist rotated refresh token (Spotify PKCE revokes the old one)
                 if tokens.get("refresh_token"):
                     self.refresh_token = tokens["refresh_token"]
+                    session_store.update_refresh_token(
+                        self.session_id, tokens["refresh_token"]
+                    )
             else:
                 raise SpotifyAuthError(
                     f"Token refresh failed: {response.status_code}"

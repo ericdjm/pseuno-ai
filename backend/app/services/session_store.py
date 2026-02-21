@@ -115,6 +115,12 @@ class InMemorySessionStore:
                     }
                 )
 
+    def update_refresh_token(self, session_id: str, refresh_token: str):
+        """Persist a rotated refresh token (Spotify PKCE revokes the old one)"""
+        with self._lock:
+            if session_id in self._sessions:
+                self._sessions[session_id]["refresh_token"] = refresh_token
+
     def set_user_data(
         self,
         session_id: str,
@@ -348,6 +354,10 @@ class RedisSessionStore:
                 "token_expires_at": str(token_expires_at),
             },
         )
+
+    def update_refresh_token(self, session_id: str, refresh_token: str):
+        """Persist a rotated refresh token (Spotify PKCE revokes the old one)"""
+        self._redis.hset(self._key(session_id), "refresh_token", refresh_token)
 
     def set_user_data(
         self,
