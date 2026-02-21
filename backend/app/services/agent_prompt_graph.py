@@ -2745,11 +2745,22 @@ class AgentPromptGraph:
             return None
 
     def _parse_lyrics_output(self, raw: str) -> _ParsedLyricsOutput:
-        """Parse the lyrics agent output."""
+        """Parse the lyrics agent output.
+
+        Handles two formats:
+        1. With explicit headers: "SONG TITLE\\n...\\nLYRICS\\n..."
+        2. Without headers (common with thinking models): title on first
+           non-empty line, lyrics starting from first section tag [Intro] etc.
+        """
         _, sections = self._extract_sections(raw)
 
         song_title = self._first_non_empty_line(sections.get("SONG TITLE", ""))
         lyrics_raw = sections.get("LYRICS", "").strip()
+
+        # Fallback: if no headers were found, infer from raw output
+        if not song_title and not lyrics_raw:
+            song_title, lyrics_raw = self._infer_lyrics_from_raw(raw)
+
         # Strip any preamble - only count from first section tag
         lyrics = self._strip_lyrics_preamble(lyrics_raw)
 
@@ -2758,6 +2769,28 @@ class AgentPromptGraph:
             lyrics=lyrics,
             raw=raw,
         )
+
+    def _infer_lyrics_from_raw(self, raw: str) -> tuple:
+        """Infer song title and lyrics when the model omits section headers.
+
+        Heuristic: the title is the text before the first section tag
+        ([Intro], [Verse], etc.), and the lyrics are everything from that
+        first tag onward.
+        """
+        tag_match = re.search(
+            r"\[(?:Intro|Verse|Pre-Chorus|Chorus|Post-Chorus|Bridge|Breakdown|Outro)",
+            raw,
+            re.IGNORECASE,
+        )
+        if not tag_match:
+            return "", raw.strip()
+
+        preamble = raw[: tag_match.start()].strip()
+        lyrics_raw = raw[tag_match.start() :].strip()
+
+        # Title is the first non-empty line of the preamble
+        song_title = self._first_non_empty_line(preamble)
+        return song_title, lyrics_raw
 
     # =========================================================================
     # SINGLE-STEP GRAPH NODES (V1/V2)
@@ -3313,6 +3346,8 @@ Please fix the issues and regenerate the complete output with all 6 sections.
     def _normalize_header(self, line: str) -> Optional[str]:
         normalized = line.strip().upper().rstrip(":")
         normalized = re.sub(r"^[A-F]\)\s*", "", normalized)
+        # Strip markdown formatting (##, **, etc.)
+        normalized = re.sub(r"^[#*\s]+|[*]+$", "", normalized).strip()
         if "SONG TITLE" in normalized or normalized == "TITLE":
             return "SONG TITLE"
         if normalized == "LYRICS":
