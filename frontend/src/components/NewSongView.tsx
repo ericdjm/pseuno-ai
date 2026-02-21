@@ -1099,7 +1099,7 @@ export default function NewSongView({
                   border="none"
                   _focus={{ boxShadow: 'none' }}
                   p={0}
-                  fontSize="sm"
+                  fontSize="md"
                   mb={3}
                 />
 
@@ -1235,7 +1235,7 @@ export default function NewSongView({
                   border="none"
                   _focus={{ boxShadow: 'none' }}
                   p={0}
-                  fontSize="sm"
+                  fontSize="md"
                 />
 
                 {/* Debug panel for lyrics topic (dev only) */}
