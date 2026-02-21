@@ -58,12 +58,11 @@ import {
   LyricsTopicDebugInfo,
 } from '../api';
 import { LyricsTopicDebugPanel } from './LyricsTopicDebugPanel';
-import { useSessionStorageState } from '../hooks';
+import { useSessionStorageState, useMusicalLoadingMessage } from '../hooks';
 import {
   trackGenerateClicked,
   trackGenerateSucceeded,
   trackGenerateFailed,
-  trackGenerateWaitNoticeShown,
   trackRandomizeStyleClicked,
   trackRandomizeStyleSucceeded,
   trackRandomizeLyricsClicked,
@@ -146,25 +145,10 @@ export default function NewSongView({
 
   // UI state
   const [isLoading, setIsLoading] = useState(false);
-  const [showLongWaitMessage, setShowLongWaitMessage] = useState(false);
   const [isGeneratingConcept, setIsGeneratingConcept] = useState(false);
   const [isGeneratingLyricsTopic, setIsGeneratingLyricsTopic] = useState(false);
 
-  // Show "can take up to a minute" message after 10 seconds of loading
-  useEffect(() => {
-    if (!isLoading) {
-      setShowLongWaitMessage(false);
-      return;
-    }
-    const timer = setTimeout(() => {
-      setShowLongWaitMessage(true);
-      trackGenerateWaitNoticeShown({
-        auth_state: isAuthenticated ? 'spotify' : 'guest',
-        wait_seconds: 10,
-      });
-    }, 10000);
-    return () => clearTimeout(timer);
-  }, [isLoading, isAuthenticated]);
+  const musicalLoadingMessage = useMusicalLoadingMessage(isLoading, 10000);
   
   // Suno-like collapsible sections
   const [stylesExpanded, setStylesExpanded] = useState(true);
@@ -1411,9 +1395,7 @@ export default function NewSongView({
 
           {/* Keyboard shortcut hint */}
           <Text fontSize="xs" color="gray.600" textAlign="center" mt={2}>
-            {isLoading && showLongWaitMessage
-              ? 'Generations can take up to a minute...'
-              : '⌘ Enter to create'}
+            {musicalLoadingMessage ?? '⌘ Enter to create'}
           </Text>
         </VStack>
       </Box>

@@ -2,7 +2,7 @@
  * Custom hooks for Pseuno AI
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { UserSettings, DEFAULT_SETTINGS } from './types';
 
 const STORAGE_KEY = 'pseuno-ai-settings';
@@ -62,6 +62,77 @@ export function useClipboard(timeout = 2000) {
   }, [timeout]);
 
   return { copied, copy };
+}
+
+const MUSICAL_LOADING_MESSAGES = [
+  'harmonizing...',
+  'dropping the beat...',
+  'finding the groove...',
+  'layering melodies...',
+  'warming up the amps...',
+  'tickling the ivories...',
+  'strumming along...',
+  'catching the rhythm...',
+  'orchestrating...',
+  'riffing...',
+  'syncopating...',
+  'crescendoing...',
+  'improvising...',
+  'setting the tempo...',
+  'noodling...',
+  'jamming...',
+  'tuning up...',
+  'mixing it down...',
+  'laying down tracks...',
+  'vibing...',
+];
+
+/**
+ * Hook that cycles through fun musical loading messages.
+ * Returns null until the delay has elapsed, then cycles through messages.
+ *
+ * @param isActive - Whether the loading state is active
+ * @param delayMs - How long to wait before showing the first message (default 5000)
+ * @param intervalMs - How often to cycle to the next message (default 2500)
+ */
+export function useMusicalLoadingMessage(
+  isActive: boolean,
+  delayMs = 5000,
+  intervalMs = 2500
+): string | null {
+  const [message, setMessage] = useState<string | null>(null);
+  const indexRef = useRef(0);
+
+  useEffect(() => {
+    if (!isActive) {
+      setMessage(null);
+      // Pick a random starting index for next time so it feels fresh
+      indexRef.current = Math.floor(Math.random() * MUSICAL_LOADING_MESSAGES.length);
+      return;
+    }
+
+    // After the initial delay, show the first message and start cycling
+    const delayTimer = setTimeout(() => {
+      setMessage(MUSICAL_LOADING_MESSAGES[indexRef.current]);
+
+      const interval = setInterval(() => {
+        indexRef.current = (indexRef.current + 1) % MUSICAL_LOADING_MESSAGES.length;
+        setMessage(MUSICAL_LOADING_MESSAGES[indexRef.current]);
+      }, intervalMs);
+
+      // Store interval id for cleanup
+      cleanupInterval = interval;
+    }, delayMs);
+
+    let cleanupInterval: ReturnType<typeof setInterval> | null = null;
+
+    return () => {
+      clearTimeout(delayTimer);
+      if (cleanupInterval) clearInterval(cleanupInterval);
+    };
+  }, [isActive, delayMs, intervalMs]);
+
+  return message;
 }
 
 // Storage key prefix for versioning
