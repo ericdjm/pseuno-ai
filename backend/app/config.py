@@ -43,7 +43,7 @@ DEFAULT_ROLE_CONFIGS: Dict[str, ModelRoleConfig] = {
         thinking_level="minimal",
     ),
     "lyrics_model": ModelRoleConfig(
-        thinking_budget=512,
+        thinking_level="minimal",
         max_output_tokens=3000,
     ),
 }
@@ -110,7 +110,7 @@ class Settings(BaseSettings):
         description="LLM model for SUNO prompt/style generation (two-step)",
     )
     lyrics_model: str = Field(
-        default="gemini-2.5-flash",
+        default="gemini-3-flash-preview",
         description="LLM model for lyrics generation (two-step)",
     )
     profile_inference_model: str = Field(
@@ -126,7 +126,7 @@ class Settings(BaseSettings):
         description="Fast/cheap model for instrumental title generation",
     )
     lyrics_refine_model: str = Field(
-        default="gemini-2.5-flash",
+        default="gemini-3-flash-preview",
         description="Model for lyrics refinement (needs to be fast for long lyrics)",
     )
     llm_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
