@@ -827,6 +827,7 @@ export default function PromptLibrarySidebar({
       bg="gray.800"
       borderRight="1px solid"
       borderColor="gray.700"
+      boxShadow="1px 0 16px rgba(255, 255, 255, 0.03)"
       display="flex"
       flexDirection="column"
       overflow="hidden"
@@ -839,6 +840,9 @@ export default function PromptLibrarySidebar({
           letterSpacing="widest"
           color="gray.500"
           pl={3}
+          textShadow="0 0 12px rgba(255, 255, 255, 0.2)"
+          transition="text-shadow 0.3s ease"
+          _hover={{ textShadow: '0 0 18px rgba(255, 255, 255, 0.35)' }}
         >
           PSEUNO
         </Text>

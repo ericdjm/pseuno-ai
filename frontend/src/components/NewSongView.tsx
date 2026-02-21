@@ -1011,6 +1011,9 @@ export default function NewSongView({
             borderRadius="lg"
             overflow="hidden"
             mb={3}
+            boxShadow="0 0 8px rgba(255, 255, 255, 0.04)"
+            transition="box-shadow 0.3s ease"
+            _hover={{ boxShadow: '0 0 14px rgba(255, 255, 255, 0.08)' }}
           >
             {/* Section header */}
             <HStack
@@ -1177,6 +1180,9 @@ export default function NewSongView({
             borderRadius="lg"
             overflow="hidden"
             mb={3}
+            boxShadow="0 0 8px rgba(255, 255, 255, 0.04)"
+            transition="box-shadow 0.3s ease"
+            _hover={{ boxShadow: '0 0 14px rgba(255, 255, 255, 0.08)' }}
           >
             {/* Section header */}
             <HStack
@@ -1382,7 +1388,14 @@ export default function NewSongView({
           <Button
             colorScheme="gray"
             bg="gray.800"
-            _hover={{ bg: 'gray.700' }}
+            border="1px solid"
+            borderColor="whiteAlpha.100"
+            boxShadow="0 0 12px rgba(255, 255, 255, 0.08), inset 0 1px 0 rgba(255,255,255,0.05)"
+            _hover={{
+              bg: 'gray.700',
+              boxShadow: '0 0 20px rgba(255, 255, 255, 0.15), inset 0 1px 0 rgba(255,255,255,0.08)',
+              borderColor: 'whiteAlpha.200',
+            }}
             size="lg"
             w="100%"
             onClick={handleGenerate}
