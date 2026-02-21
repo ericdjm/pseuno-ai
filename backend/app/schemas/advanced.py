@@ -302,6 +302,109 @@ class AdvancedGenerateResponse(BaseModel):
     debug_info: Optional[dict] = None
 
 
+# ===========================================================================
+# SPLIT GENERATION SCHEMAS (parallel style + lyrics endpoints)
+# ===========================================================================
+
+
+class GenerateStyleRequest(BaseModel):
+    """Request for style-only generation (parallel split endpoint)."""
+
+    user_prompt: str = Field(..., max_length=SUNO_PROMPT_MAX_CHARS)
+    lyrics_about: str = Field(..., max_length=LYRICS_TOPIC_MAX_CHARS)
+    selected_artists: list[str] = Field(
+        default_factory=list, max_length=MAX_ARTISTS_COUNT
+    )
+    tags: list[str] = Field(default_factory=list, max_length=MAX_TAGS_COUNT)
+    prompt_variant: Optional[PromptVariant] = None
+    style_model: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_lists(self):
+        self.selected_artists = [
+            a.strip()[:MAX_ARTIST_NAME_CHARS]
+            for a in self.selected_artists
+            if a and a.strip()
+        ][:MAX_ARTISTS_COUNT]
+        self.tags = [t.strip()[:MAX_TAG_CHARS] for t in self.tags if t and t.strip()][
+            :MAX_TAGS_COUNT
+        ]
+        return self
+
+
+class GenerateStyleResponse(BaseModel):
+    """Response from style-only generation."""
+
+    suno_prompt: str
+    exclude: str
+    weirdness: int = Field(ge=0, le=100)
+    style_influence: int = Field(ge=0, le=100)
+    auto_tags: List[str] = Field(default_factory=list)
+    style_name: str = ""
+    instrumental_title: Optional[str] = Field(
+        default=None,
+        description="Generated title for instrumental requests (only set when lyrics_about is empty/instrumental)",
+    )
+    debug_info: Optional[dict] = None
+
+
+class GenerateLyricsRequest(BaseModel):
+    """Request for lyrics-only generation (parallel split endpoint)."""
+
+    user_prompt: str = Field(..., max_length=SUNO_PROMPT_MAX_CHARS)
+    lyrics_about: str = Field(..., max_length=LYRICS_TOPIC_MAX_CHARS)
+    selected_artists: list[str] = Field(
+        default_factory=list, max_length=MAX_ARTISTS_COUNT
+    )
+    tags: list[str] = Field(default_factory=list, max_length=MAX_TAGS_COUNT)
+    prompt_variant: Optional[PromptVariant] = None
+    lyrics_model: Optional[str] = None
+    lyric_controls: Optional[LyricControls] = None
+
+    @model_validator(mode="after")
+    def validate_lists(self):
+        self.selected_artists = [
+            a.strip()[:MAX_ARTIST_NAME_CHARS]
+            for a in self.selected_artists
+            if a and a.strip()
+        ][:MAX_ARTISTS_COUNT]
+        self.tags = [t.strip()[:MAX_TAG_CHARS] for t in self.tags if t and t.strip()][
+            :MAX_TAGS_COUNT
+        ]
+        return self
+
+
+class GenerateLyricsResponse(BaseModel):
+    """Response from lyrics-only generation."""
+
+    song_title: str
+    lyrics: str
+    debug_info: Optional[dict] = None
+
+
+class SaveGenerationResultRequest(BaseModel):
+    """Request to save a merged generation result to the database."""
+
+    # Style fields
+    suno_prompt: str
+    exclude: str = ""
+    weirdness: int = Field(default=50, ge=0, le=100)
+    style_influence: int = Field(default=50, ge=0, le=100)
+    auto_tags: List[str] = Field(default_factory=list)
+    style_name: str = ""
+    # Lyrics fields
+    song_title: str = ""
+    lyrics: str = ""
+
+
+class SaveGenerationResultResponse(BaseModel):
+    """Response after saving merged generation result."""
+
+    prompt_id: int
+    generation_id: str
+    is_favorite: bool = False
+
+
 class LyricsOnlyRequest(BaseModel):
     """
     Request for lyrics-only generation (reusing a saved Suno prompt).

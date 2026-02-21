@@ -32,6 +32,7 @@ GEMINI_MODELS = frozenset(
         "gemini-3-flash-preview",
         "gemini-3-pro-preview",
         "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
         "gemini-2.5-pro",
         "gemini-2.0-flash",
     }
@@ -293,6 +294,10 @@ class GeminiChatClient:
         model: str,
         temperature: float,
         timeout: int,
+        max_output_tokens: Optional[int] = None,
+        thinking_budget_override: Optional[int] = None,
+        thinking_level_override: Optional[str] = None,
+        use_native_async: bool = False,
     ) -> None:
         if not api_key:
             raise RuntimeError("GEMINI_API_KEY is required to use Gemini models.")
@@ -300,6 +305,10 @@ class GeminiChatClient:
         self.model = model
         self.temperature = temperature
         self.timeout = timeout
+        self.max_output_tokens = max_output_tokens
+        self.thinking_budget_override = thinking_budget_override
+        self.thinking_level_override = thinking_level_override
+        self.use_native_async = use_native_async
         self._client = None
 
     def _get_client(self):
@@ -323,6 +332,10 @@ class GeminiChatClient:
         """
         import asyncio
 
+        if self.use_native_async:
+            response = await self._async_generate(messages, temperature)
+            return _LLMResponse(content=response or "")
+
         # Run synchronous Gemini call in executor to avoid blocking
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
@@ -330,16 +343,12 @@ class GeminiChatClient:
         )
         return _LLMResponse(content=response or "")
 
-    def _sync_generate(
+    def _prepare_request(
         self, messages: List[Dict[str, str]], temperature: Optional[float]
-    ) -> str:
-        """Synchronous generation using the Gemini SDK with retry on 504."""
-        import time as _time
+    ) -> Tuple:
+        """Parse messages and build config. Returns (contents, config)."""
         from google.genai import types
 
-        client = self._get_client()
-
-        # Extract system instruction and user content
         system_instruction = None
         contents = []
 
@@ -350,7 +359,6 @@ class GeminiChatClient:
             if role == "system":
                 system_instruction = content
             else:
-                # Map roles: "user" -> "user", "assistant" -> "model"
                 gemini_role = "model" if role == "assistant" else "user"
                 contents.append(
                     types.Content(
@@ -358,11 +366,37 @@ class GeminiChatClient:
                     )
                 )
 
-        # Build generation config
-        config = types.GenerateContentConfig(
+        # Build thinking config
+        # For 2.5 models: use thinking_budget_override if set, else default 1024
+        # For 3.x models: use thinking_level_override if set, else default (dynamic)
+        thinking_config = None
+        if "2.5" in self.model:
+            budget = self.thinking_budget_override if self.thinking_budget_override is not None else 1024
+            thinking_config = types.ThinkingConfig(thinking_budget=budget)
+        elif self.thinking_level_override:
+            thinking_config = types.ThinkingConfig(
+                thinking_level=self.thinking_level_override
+            )
+
+        config_kwargs = dict(
             temperature=self.temperature if temperature is None else temperature,
             system_instruction=system_instruction,
+            thinking_config=thinking_config,
         )
+        if self.max_output_tokens is not None:
+            config_kwargs["max_output_tokens"] = self.max_output_tokens
+
+        config = types.GenerateContentConfig(**config_kwargs)
+        return contents, config
+
+    def _sync_generate(
+        self, messages: List[Dict[str, str]], temperature: Optional[float]
+    ) -> str:
+        """Synchronous generation using the Gemini SDK with retry on 504."""
+        import time as _time
+
+        client = self._get_client()
+        contents, config = self._prepare_request(messages, temperature)
 
         # Retry once on transient Gemini 504 DEADLINE_EXCEEDED errors
         max_retries = 1
@@ -403,6 +437,51 @@ class GeminiChatClient:
         # Should not reach here, but just in case
         raise last_error  # type: ignore[misc]
 
+    async def _async_generate(
+        self, messages: List[Dict[str, str]], temperature: Optional[float]
+    ) -> str:
+        """Native async generation using the Gemini SDK aio client."""
+        import asyncio as _asyncio
+
+        client = self._get_client()
+        contents, config = self._prepare_request(messages, temperature)
+
+        max_retries = 1
+        last_error = None
+        for attempt in range(max_retries + 1):
+            try:
+                response = await client.aio.models.generate_content(
+                    model=self.model,
+                    contents=contents,
+                    config=config,
+                )
+
+                if response.text:
+                    return response.text
+                return ""
+            except Exception as e:
+                error_str = str(e)
+                is_retryable = (
+                    "DEADLINE_EXCEEDED" in error_str
+                    or "504" in error_str
+                    or "503" in error_str
+                    or "overloaded" in error_str.lower()
+                )
+                if is_retryable and attempt < max_retries:
+                    logger.warning(
+                        "Gemini %s async (attempt %d/%d), retrying in 2s: %s",
+                        self.model,
+                        attempt + 1,
+                        max_retries + 1,
+                        error_str[:200],
+                    )
+                    last_error = e
+                    await _asyncio.sleep(2)
+                    continue
+                raise
+
+        raise last_error  # type: ignore[misc]
+
 
 class _AgentState(TypedDict, total=False):
     request: AdvancedGenerateRequest
@@ -438,11 +517,17 @@ class AgentPromptGraph:
     - V3 (two-step): Separate LLM calls for style and lyrics
     """
 
-    def __init__(self, settings: Settings, llm: Optional[Any] = None):
+    def __init__(
+        self,
+        settings: Settings,
+        llm: Optional[Any] = None,
+        parallel_style_name: bool = True,
+    ):
         self.settings = settings
         self.llm = llm or self._create_llm_client(settings)
         # Track injected LLM for testing (so _get_or_create_llm can reuse it)
         self._injected_llm = llm
+        self._parallel_style_name = parallel_style_name
         # Build single-step graph at init time (two-step uses _generate_parallel_two_step)
         self._graph_single_step = self._build_single_step_graph()
 
@@ -619,45 +704,231 @@ class AgentPromptGraph:
         logger.info("AgentPromptGraph.generate complete (two_step=%s)", ctx.is_two_step)
         return result
 
-    def _get_or_create_llm(self, model: str):
-        """Get or create an LLM client for the specified model."""
+    async def generate_style(
+        self,
+        user_prompt: str,
+        lyrics_about: str,
+        selected_artists: list,
+        tags: list,
+        prompt_variant: str = None,
+        style_model: str = None,
+    ) -> Dict[str, Any]:
+        """
+        Public entry point for style-only generation.
+        Used by the split /generate/style endpoint.
+        """
+        variant_id = prompt_variant or self.settings.prompt_variant or "v5_hybrid"
+        try:
+            variant = get_variant(variant_id)
+        except ValueError:
+            variant = get_variant("v5_hybrid")
+            variant_id = "v5_hybrid"
+
+        if not variant.two_step:
+            raise ValueError(
+                f"Style-only generation requires a two-step variant, got {variant_id}"
+            )
+
+        resolved_style_model = style_model or self.settings.style_model
+
+        ctx = GenerationContext(
+            variant_id=variant_id,
+            is_two_step=True,
+            uses_lyric_profile=variant.uses_lyric_profile,
+            active_model=resolved_style_model,
+            style_model=resolved_style_model,
+            lyrics_model=self.settings.lyrics_model,
+            style_prompt=variant.style_agent,
+            style_repair_prompt=variant.style_repair_agent,
+            lyrics_prompt=variant.lyrics_agent,
+            lyrics_repair_prompt=variant.lyrics_repair_agent,
+            profile_inference_prompt=variant.profile_inference_agent,
+            genre_disambiguation_prompt=variant.genre_disambiguation_agent,
+        )
+
+        # Check instrumental
+        lyrics_text = (lyrics_about or "").strip().lower()
+        is_instrumental = not lyrics_text or any(
+            phrase in lyrics_text
+            for phrase in [
+                "instrumental",
+                "no lyrics",
+                "no vocal",
+                "no vocals",
+                "without lyrics",
+                "without vocals",
+            ]
+        )
+        if not is_instrumental and tags:
+            is_instrumental = any(
+                t.strip().lower() == "instrumental" for t in tags
+            )
+
+        fast_models = []
+        if is_instrumental:
+            fast_models.append(self.settings.title_generation_model)
+        if ctx.genre_disambiguation_prompt:
+            fast_models.append(self.settings.genre_disambiguation_model)
+
+        tracer = DebugTracer(
+            variant=ctx.variant_id,
+            model=resolved_style_model,
+            fast_model=", ".join(fast_models) if fast_models else None,
+            architecture="two_step_split",
+        )
+
+        context_pack = {
+            "selected_artists": selected_artists or [],
+            "user_style_request": user_prompt or "",
+            "lyrics_about": lyrics_about or "",
+            "tags": tags or [],
+        }
+
+        style_result = await self._run_style_branch(context_pack, tracer, ctx)
+        style_result["debug_info"] = tracer.to_dict()
+
+        # For instrumental requests, also generate a title
+        if is_instrumental:
+            try:
+                title = await self._generate_instrumental_title(
+                    user_prompt, tracer, variant_id=ctx.variant_id
+                )
+                style_result["instrumental_title"] = title
+            except Exception:
+                style_result["instrumental_title"] = ""
+
+        logger.info(
+            "generate_style complete in %dms (instrumental=%s)",
+            tracer._elapsed_ms(),
+            is_instrumental,
+        )
+        return style_result
+
+    async def generate_lyrics(
+        self,
+        user_prompt: str,
+        lyrics_about: str,
+        selected_artists: list,
+        tags: list,
+        prompt_variant: str = None,
+        lyrics_model: str = None,
+        lyric_controls: "LyricControls" = None,
+    ) -> Dict[str, Any]:
+        """
+        Public entry point for lyrics-only generation.
+        Used by the split /generate/lyrics endpoint.
+        """
+        variant_id = prompt_variant or self.settings.prompt_variant or "v5_hybrid"
+        try:
+            variant = get_variant(variant_id)
+        except ValueError:
+            variant = get_variant("v5_hybrid")
+            variant_id = "v5_hybrid"
+
+        if not variant.two_step:
+            raise ValueError(
+                f"Lyrics-only generation requires a two-step variant, got {variant_id}"
+            )
+
+        resolved_lyrics_model = lyrics_model or self.settings.lyrics_model
+
+        ctx = GenerationContext(
+            variant_id=variant_id,
+            is_two_step=True,
+            uses_lyric_profile=variant.uses_lyric_profile,
+            active_model=self.settings.style_model,
+            style_model=self.settings.style_model,
+            lyrics_model=resolved_lyrics_model,
+            style_prompt=variant.style_agent,
+            style_repair_prompt=variant.style_repair_agent,
+            lyrics_prompt=variant.lyrics_agent,
+            lyrics_repair_prompt=variant.lyrics_repair_agent,
+            profile_inference_prompt=variant.profile_inference_agent,
+            genre_disambiguation_prompt=variant.genre_disambiguation_agent,
+        )
+
+        tracer = DebugTracer(
+            variant=ctx.variant_id,
+            model=resolved_lyrics_model,
+            fast_model=(
+                self.settings.profile_inference_model
+                if ctx.uses_lyric_profile
+                else None
+            ),
+            architecture="two_step_split",
+        )
+
+        context_pack = {
+            "selected_artists": selected_artists or [],
+            "user_style_request": user_prompt or "",
+            "lyrics_about": lyrics_about or "",
+            "tags": tags or [],
+        }
+
+        user_overrides = self._extract_user_overrides(lyric_controls)
+
+        lyrics_result = await self._run_lyrics_branch(
+            context_pack, user_overrides, tracer, ctx
+        )
+        lyrics_result["debug_info"] = tracer.to_dict()
+
+        logger.info(
+            "generate_lyrics complete in %dms", tracer._elapsed_ms()
+        )
+        return lyrics_result
+
+    def _get_or_create_llm(self, model: str, role: Optional[str] = None):
+        """Get or create an LLM client for the specified model and role.
+
+        When *role* is provided (e.g. "style_model"), the client is cached by
+        role and configured with the matching ModelRoleConfig from settings.
+        This allows the same underlying model to have different configs for
+        different pipeline stages.
+        """
         # If a stub LLM was injected (for testing), always return it
-        # This allows FakeLLM to be used for all model calls in tests
         if hasattr(self, "_injected_llm") and self._injected_llm:
             return self._injected_llm
 
-        # Cache LLM clients by model name
         if not hasattr(self, "_llm_cache"):
             self._llm_cache = {}
 
-        if model not in self._llm_cache:
-            # Create a temporary settings-like object with the new model
-            from dataclasses import dataclass
+        cache_key = role or model
+        if cache_key not in self._llm_cache:
+            role_cfg = self.settings.role_configs.get(role) if role else None
 
-            @dataclass
-            class ModelSettings:
-                llm_model: str
-                openai_api_key: str
-                gemini_api_key: str
-                llm_temperature: float
-                http_timeout: int
+            if model in GEMINI_MODELS or model.startswith("gemini-"):
+                self._llm_cache[cache_key] = GeminiChatClient(
+                    api_key=self.settings.gemini_api_key,
+                    model=model,
+                    temperature=(
+                        role_cfg.temperature
+                        if role_cfg and role_cfg.temperature is not None
+                        else self.settings.llm_temperature
+                    ),
+                    timeout=self.settings.http_timeout,
+                    max_output_tokens=role_cfg.max_output_tokens if role_cfg else None,
+                    thinking_budget_override=role_cfg.thinking_budget if role_cfg else None,
+                    thinking_level_override=role_cfg.thinking_level if role_cfg else None,
+                )
+            else:
+                self._llm_cache[cache_key] = OpenAIChatClient(
+                    api_key=self.settings.openai_api_key,
+                    model=model,
+                    temperature=(
+                        role_cfg.temperature
+                        if role_cfg and role_cfg.temperature is not None
+                        else self.settings.llm_temperature
+                    ),
+                    timeout=self.settings.http_timeout,
+                )
+            logger.info("Created LLM client for model=%s role=%s", model, role)
 
-            temp_settings = ModelSettings(
-                llm_model=model,
-                openai_api_key=self.settings.openai_api_key,
-                gemini_api_key=self.settings.gemini_api_key,
-                llm_temperature=self.settings.llm_temperature,
-                http_timeout=self.settings.http_timeout,
-            )
-            self._llm_cache[model] = self._create_llm_client(temp_settings)
-            logger.info("Created LLM client for model: %s", model)
-
-        return self._llm_cache[model]
+        return self._llm_cache[cache_key]
 
     def _get_fast_llm(self):
         """Get the fast LLM client for profile inference."""
         fast_model = self.settings.profile_inference_model
-        return self._get_or_create_llm(fast_model)
+        return self._get_or_create_llm(fast_model, role="profile_inference_model")
 
     async def _generate_parallel_two_step(
         self, request: AdvancedGenerateRequest, ctx: GenerationContext
@@ -860,6 +1131,7 @@ class AgentPromptGraph:
                     ctx.genre_disambiguation_prompt,
                     user_msg,
                     model=genre_model,
+                    role="genre_disambiguation_model",
                     operation="style.genre_disambiguate",
                     variant_id=ctx.variant_id,
                     architecture="two_step",
@@ -1479,12 +1751,34 @@ class AgentPromptGraph:
 
         style_prompt = ctx.style_prompt
 
+        # Prepare style name inputs early (needed for parallel_style_name)
+        genres_for_name = []
+        artists_for_name = []
+        if genre_data:
+            for artist in genre_data.get("artists", []):
+                if artist.get("genres_to_use"):
+                    genres_for_name.extend(artist["genres_to_use"])
+                if artist.get("name"):
+                    artists_for_name.append(artist["name"])
+        if not genres_for_name:
+            genres_for_name = context_pack.get("tags", [])[:5]
+
+        # Start style name generation in parallel with style generation
+        style_name_task = None
+        if self._parallel_style_name:
+            style_name_task = asyncio.ensure_future(
+                self._generate_style_name(
+                    genres_for_name, artists_for_name, tracer, variant_id=ctx.variant_id
+                )
+            )
+
         # Generate style with span
         with tracer.span("style.generate", "llm_call", model=style_model) as span:
             raw_output = await self._call_llm(
                 style_prompt,
                 style_context,
                 model=style_model,
+                role="style_model",
                 operation="style.generate",
                 variant_id=ctx.variant_id,
                 architecture="two_step",
@@ -1547,6 +1841,7 @@ class AgentPromptGraph:
                         repair_prompt,
                         repair_context,
                         model=style_model,
+                        role="style_model",
                         operation="style.repair",
                         variant_id=ctx.variant_id,
                         architecture="two_step",
@@ -1581,26 +1876,21 @@ class AgentPromptGraph:
             len(style_output.suno_prompt),
         )
 
-        # Generate style name from genre disambiguation data (runs after style complete)
-        genres_for_name = []
-        artists_for_name = []
-        if genre_data:
-            for artist in genre_data.get("artists", []):
-                if artist.get("genres_to_use"):
-                    genres_for_name.extend(artist["genres_to_use"])
-                if artist.get("name"):
-                    artists_for_name.append(artist["name"])
-        # Fallback to tags from context_pack if no genre_data
-        if not genres_for_name:
-            genres_for_name = context_pack.get("tags", [])[:5]
-
-        try:
-            style_name = await self._generate_style_name(
-                genres_for_name, artists_for_name, tracer, variant_id=ctx.variant_id
-            )
-        except Exception as e:
-            logger.warning("Style name generation failed: %s", e)
-            style_name = ""
+        # Await or generate style name
+        if style_name_task:
+            try:
+                style_name = await style_name_task
+            except Exception as e:
+                logger.warning("Style name generation (parallel) failed: %s", e)
+                style_name = ""
+        else:
+            try:
+                style_name = await self._generate_style_name(
+                    genres_for_name, artists_for_name, tracer, variant_id=ctx.variant_id
+                )
+            except Exception as e:
+                logger.warning("Style name generation failed: %s", e)
+                style_name = ""
 
         logger.info("Style branch: style_name=%r", style_name)
 
@@ -1697,6 +1987,7 @@ class AgentPromptGraph:
                 lyrics_prompt,
                 lyrics_context,
                 model=lyrics_model,
+                role="lyrics_model",
                 operation="lyrics.generate",
                 variant_id=ctx.variant_id,
                 architecture="two_step",
@@ -1757,6 +2048,7 @@ class AgentPromptGraph:
                         repair_prompt,
                         repair_context,
                         model=lyrics_model,
+                        role="lyrics_model",
                         operation="lyrics.repair",
                         variant_id=ctx.variant_id,
                         architecture="two_step",
@@ -2717,6 +3009,7 @@ Please fix the issues and regenerate the complete output with all 6 sections.
         user_prompt: str,
         temperature: Optional[float] = None,
         model: Optional[str] = None,
+        role: Optional[str] = None,
         operation: str = "llm_call",
         variant_id: Optional[str] = None,
         architecture: Optional[str] = None,
@@ -2733,7 +3026,7 @@ Please fix the issues and regenerate the complete output with all 6 sections.
 
         # Use specified model, active LLM, or fall back to default
         if model:
-            llm = self._get_or_create_llm(model)
+            llm = self._get_or_create_llm(model, role=role)
         else:
             llm = getattr(self, "_active_llm", self.llm)
 
@@ -3099,6 +3392,7 @@ Output ONLY the title, nothing else."""
                     system_content,
                     title_prompt,
                     model=title_model,
+                    role="title_generation_model",
                     operation="title.generate",
                     variant_id=variant_id,
                     architecture="two_step",
@@ -3183,6 +3477,7 @@ Output ONLY the style name, nothing else."""
                     system_content,
                     name_prompt,
                     model=name_model,
+                    role="title_generation_model",
                     operation="style.name_generate",
                     variant_id=variant_id,
                     architecture="two_step",

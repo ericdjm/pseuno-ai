@@ -218,6 +218,61 @@ export interface AdvancedGenerateResponse {
   debug_info?: DebugTrace;
 }
 
+// === Split Generation Types (parallel style + lyrics) ===
+
+export interface GenerateStyleRequest {
+  user_prompt: string;
+  lyrics_about: string;
+  selected_artists?: string[];
+  tags?: string[];
+  prompt_variant?: PromptVariant;
+  style_model?: string;
+}
+
+export interface GenerateStyleResponse {
+  suno_prompt: string;
+  exclude: string;
+  weirdness: number;
+  style_influence: number;
+  auto_tags: string[];
+  style_name: string;
+  instrumental_title?: string;
+  debug_info?: DebugTrace;
+}
+
+export interface GenerateLyricsRequest {
+  user_prompt: string;
+  lyrics_about: string;
+  selected_artists?: string[];
+  tags?: string[];
+  prompt_variant?: PromptVariant;
+  lyrics_model?: string;
+  lyric_controls?: LyricControls;
+}
+
+export interface GenerateLyricsResponse {
+  song_title: string;
+  lyrics: string;
+  debug_info?: DebugTrace;
+}
+
+export interface SaveGenerationResultRequest {
+  suno_prompt: string;
+  exclude: string;
+  weirdness: number;
+  style_influence: number;
+  auto_tags: string[];
+  style_name: string;
+  song_title: string;
+  lyrics: string;
+}
+
+export interface SaveGenerationResultResponse {
+  prompt_id: number;
+  generation_id: string;
+  is_favorite: boolean;
+}
+
 export interface LyricsOnlyRequest {
   suno_prompt: string;
   lyrics_about: string;
@@ -539,6 +594,54 @@ export async function generateAdvanced(
     body: JSON.stringify(payload),
   });
   return handleResponse<AdvancedGenerateResponse>(response);
+}
+
+/**
+ * Generate style only (parallel split endpoint).
+ * Call in parallel with generateLyricsSplit().
+ */
+export async function generateStyleSplit(
+  payload: GenerateStyleRequest
+): Promise<GenerateStyleResponse> {
+  const response = await fetch(`${API_BASE}/generate/style`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return handleResponse<GenerateStyleResponse>(response);
+}
+
+/**
+ * Generate lyrics only (parallel split endpoint).
+ * Call in parallel with generateStyleSplit().
+ */
+export async function generateLyricsSplit(
+  payload: GenerateLyricsRequest
+): Promise<GenerateLyricsResponse> {
+  const response = await fetch(`${API_BASE}/generate/lyrics`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return handleResponse<GenerateLyricsResponse>(response);
+}
+
+/**
+ * Save a merged generation result to the database.
+ * Called after parallel style + lyrics generation completes.
+ */
+export async function saveGenerationResult(
+  payload: SaveGenerationResultRequest
+): Promise<SaveGenerationResultResponse> {
+  const response = await fetch(`${API_BASE}/generate/save-result`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return handleResponse<SaveGenerationResultResponse>(response);
 }
 
 /**

@@ -32,6 +32,9 @@ import { LuDices, LuMusic, LuUser } from 'react-icons/lu';
 import AutoGrowTextarea from './AutoGrowTextarea';
 import {
   generateAdvanced,
+  generateStyleSplit,
+  generateLyricsSplit,
+  saveGenerationResult,
   generateInputConcept,
   generateLyricsTopic,
   classifyStyle,
@@ -40,6 +43,8 @@ import {
   getProfile,
   AdvancedGenerateRequest,
   AdvancedGenerateResponse,
+  GenerateStyleRequest,
+  GenerateLyricsRequest,
   SpotifyProfileResponse,
   PromptVariantInfo,
   PromptVariant,
@@ -846,18 +851,101 @@ export default function NewSongView({
 
       const isTwoStep = selectedVariant && TWO_STEP_VARIANTS.includes(selectedVariant as PromptVariant);
 
-      const request: AdvancedGenerateRequest = {
+      // Common fields shared by both split endpoints
+      const commonFields = {
         user_prompt: songPrompt.trim(),
         lyrics_about: lyricsAbout.trim(),
         tags: selectedTags.length > 0 ? selectedTags.slice(0, 25) : undefined,
         prompt_variant: selectedVariant || undefined,
-        model: isTwoStep ? undefined : (selectedModel || undefined),
-        style_model: isTwoStep ? (selectedStyleModel || undefined) : undefined,
-        lyrics_model: isTwoStep ? (selectedLyricsModel || undefined) : undefined,
-        lyric_controls: hasLyricControls ? lyricControls : undefined,
       };
 
-      const result = await generateAdvanced(request);
+      let result: AdvancedGenerateResponse;
+
+      if (isTwoStep) {
+        // Split flow: call style + lyrics in parallel, then save
+        const styleRequest: GenerateStyleRequest = {
+          ...commonFields,
+          style_model: selectedStyleModel || undefined,
+        };
+
+        // Detect instrumental (mirror backend logic)
+        const lyricsText = lyricsAbout.trim().toLowerCase();
+        const instrumentalPhrases = ['instrumental', 'no lyrics', 'no vocal', 'no vocals', 'without lyrics', 'without vocals'];
+        const isInstrumentalRequest = !lyricsText
+          || instrumentalPhrases.some(p => lyricsText.includes(p))
+          || selectedTags.some(t => t.trim().toLowerCase() === 'instrumental');
+
+        if (isInstrumentalRequest) {
+          // Instrumental: only call style endpoint
+          const styleResult = await generateStyleSplit(styleRequest);
+          const saveResult = await saveGenerationResult({
+            suno_prompt: styleResult.suno_prompt,
+            exclude: styleResult.exclude,
+            weirdness: styleResult.weirdness,
+            style_influence: styleResult.style_influence,
+            auto_tags: styleResult.auto_tags,
+            style_name: styleResult.style_name,
+            song_title: styleResult.instrumental_title || '',
+            lyrics: '',
+          });
+          result = {
+            concept_title: styleResult.instrumental_title || styleResult.style_name || 'Untitled',
+            lyrics: '',
+            suno_prompt: styleResult.suno_prompt,
+            exclude: styleResult.exclude,
+            weirdness: styleResult.weirdness,
+            style_influence: styleResult.style_influence,
+            generation_id: saveResult.generation_id,
+            prompt_id: saveResult.prompt_id,
+            is_favorite: saveResult.is_favorite,
+            auto_tags: styleResult.auto_tags,
+          };
+        } else {
+          // Standard: call both in parallel
+          const lyricsRequest: GenerateLyricsRequest = {
+            ...commonFields,
+            lyrics_model: selectedLyricsModel || undefined,
+            lyric_controls: hasLyricControls ? lyricControls : undefined,
+          };
+
+          const [styleResult, lyricsResult] = await Promise.all([
+            generateStyleSplit(styleRequest),
+            generateLyricsSplit(lyricsRequest),
+          ]);
+
+          const saveResult = await saveGenerationResult({
+            suno_prompt: styleResult.suno_prompt,
+            exclude: styleResult.exclude,
+            weirdness: styleResult.weirdness,
+            style_influence: styleResult.style_influence,
+            auto_tags: styleResult.auto_tags,
+            style_name: styleResult.style_name,
+            song_title: lyricsResult.song_title,
+            lyrics: lyricsResult.lyrics,
+          });
+
+          result = {
+            concept_title: lyricsResult.song_title,
+            lyrics: lyricsResult.lyrics,
+            suno_prompt: styleResult.suno_prompt,
+            exclude: styleResult.exclude,
+            weirdness: styleResult.weirdness,
+            style_influence: styleResult.style_influence,
+            generation_id: saveResult.generation_id,
+            prompt_id: saveResult.prompt_id,
+            is_favorite: saveResult.is_favorite,
+            auto_tags: styleResult.auto_tags,
+          };
+        }
+      } else {
+        // Single-step: use the original monolithic endpoint
+        const request: AdvancedGenerateRequest = {
+          ...commonFields,
+          model: selectedModel || undefined,
+          lyric_controls: hasLyricControls ? lyricControls : undefined,
+        };
+        result = await generateAdvanced(request);
+      }
 
       // Track success
       trackGenerateSucceeded({
