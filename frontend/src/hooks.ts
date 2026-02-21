@@ -89,48 +89,91 @@ const MUSICAL_LOADING_MESSAGES = [
 
 /**
  * Hook that cycles through fun musical loading messages.
- * Returns null until the delay has elapsed, then cycles through messages.
+ * Returns null until the delay has elapsed, then advances to the next
+ * message when `step` changes or after `maxDisplayMs` — but never
+ * faster than `minDisplayMs` (responses within that window are ignored).
  *
- * @param isActive - Whether the loading state is active
- * @param delayMs - How long to wait before showing the first message (default 5000)
- * @param intervalMs - How often to cycle to the next message (default 2500)
+ * @param isActive      - Whether the loading state is active
+ * @param delayMs       - How long to wait before showing the first message (default 5000)
+ * @param step          - Increment this (e.g. after each backend response) to advance the message
+ * @param minDisplayMs  - Minimum time each message stays on screen (default 3000)
+ * @param maxDisplayMs  - Auto-advance if no step arrives within this time (default 10000)
  */
 export function useMusicalLoadingMessage(
   isActive: boolean,
   delayMs = 5000,
-  intervalMs = 2500
+  step = 0,
+  minDisplayMs = 3000,
+  maxDisplayMs = 10000,
 ): string | null {
   const [message, setMessage] = useState<string | null>(null);
   const indexRef = useRef(0);
+  const shownAtRef = useRef(0);
+  const delayElapsedRef = useRef(false);
+  const autoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const maxDisplayRef = useRef(maxDisplayMs);
+  maxDisplayRef.current = maxDisplayMs;
+  const minDisplayRef = useRef(minDisplayMs);
+  minDisplayRef.current = minDisplayMs;
 
+  // Stable helpers — only touch refs, never go stale
+  const advanceRef = useRef(() => {});
+  const scheduleRef = useRef(() => {});
+
+  advanceRef.current = () => {
+    indexRef.current = (indexRef.current + 1) % MUSICAL_LOADING_MESSAGES.length;
+    shownAtRef.current = Date.now();
+    setMessage(MUSICAL_LOADING_MESSAGES[indexRef.current]);
+  };
+
+  const clearAutoTimer = useCallback(() => {
+    if (autoTimerRef.current) {
+      clearTimeout(autoTimerRef.current);
+      autoTimerRef.current = null;
+    }
+  }, []);
+
+  scheduleRef.current = () => {
+    clearAutoTimer();
+    autoTimerRef.current = setTimeout(() => {
+      advanceRef.current();
+      scheduleRef.current();
+    }, maxDisplayRef.current);
+  };
+
+  // Handle activation / deactivation
   useEffect(() => {
     if (!isActive) {
       setMessage(null);
-      // Pick a random starting index for next time so it feels fresh
+      delayElapsedRef.current = false;
       indexRef.current = Math.floor(Math.random() * MUSICAL_LOADING_MESSAGES.length);
+      clearAutoTimer();
       return;
     }
 
-    // After the initial delay, show the first message and start cycling
     const delayTimer = setTimeout(() => {
+      delayElapsedRef.current = true;
+      shownAtRef.current = Date.now();
       setMessage(MUSICAL_LOADING_MESSAGES[indexRef.current]);
-
-      const interval = setInterval(() => {
-        indexRef.current = (indexRef.current + 1) % MUSICAL_LOADING_MESSAGES.length;
-        setMessage(MUSICAL_LOADING_MESSAGES[indexRef.current]);
-      }, intervalMs);
-
-      // Store interval id for cleanup
-      cleanupInterval = interval;
+      scheduleRef.current();
     }, delayMs);
-
-    let cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
     return () => {
       clearTimeout(delayTimer);
-      if (cleanupInterval) clearInterval(cleanupInterval);
+      clearAutoTimer();
     };
-  }, [isActive, delayMs, intervalMs]);
+  }, [isActive, delayMs, clearAutoTimer]);
+
+  // Advance message when step changes (only if >= minDisplayMs has passed)
+  useEffect(() => {
+    if (!isActive || !delayElapsedRef.current || step === 0) return;
+
+    const elapsed = Date.now() - shownAtRef.current;
+    if (elapsed >= minDisplayRef.current) {
+      advanceRef.current();
+      scheduleRef.current();
+    }
+  }, [isActive, step]);
 
   return message;
 }
