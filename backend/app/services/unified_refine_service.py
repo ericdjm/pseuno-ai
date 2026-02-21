@@ -65,16 +65,44 @@ async def refine_all(
         architecture="unified_refine",
     )
 
-    # Step 1: Call planner to decide what to change
+    # Step 1: Call planner to decide what to change.
+    # For targeted requests, build a guaranteed fallback so a planner
+    # timeout/failure still produces the correct primary edit.
+    fallback_plan: Optional[PlannerOutput] = None
+    if request.refine_target == "lyrics":
+        fallback_plan = PlannerOutput(
+            edit_lyrics=True,
+            lyrics_change_request=request.change_request,
+            edit_style=False,
+        )
+    elif request.refine_target == "style":
+        fallback_plan = PlannerOutput(
+            edit_style=True,
+            style_change_request=request.change_request,
+            edit_lyrics=False,
+        )
+
     with tracer.span("refine.planner", "llm_call", model=settings.llm_model) as span:
-        plan = await _call_planner(request, settings)
+        try:
+            plan = await _call_planner(request, settings)
+        except Exception as e:
+            if fallback_plan:
+                logger.warning(
+                    f"Planner failed for targeted refine ({request.refine_target}), "
+                    f"using fallback: {e}"
+                )
+                span.set_meta("fallback_used", True)
+                span.set_meta("planner_error", str(e)[:200])
+                plan = fallback_plan
+            else:
+                raise
+
         span.set_meta("edit_style", plan.edit_style)
         span.set_meta("edit_lyrics", plan.edit_lyrics)
         span.set_meta("has_exclude_update", plan.exclude_update is not None)
         span.set_meta("has_title_update", plan.title_update is not None)
         span.set_meta("has_weirdness_update", plan.weirdness_update is not None)
         span.set_artifact("change_request", request.change_request)
-        # Show the planner's decisions
         if plan.style_change_request:
             span.set_artifact("style_instruction", plan.style_change_request)
         if plan.lyrics_change_request:

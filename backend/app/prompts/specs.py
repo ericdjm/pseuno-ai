@@ -146,7 +146,7 @@ LYRICS constraints:
 - Section tags: [Intro], [Verse], [Pre-Chorus], [Chorus], [Post-Chorus], [Bridge], [Breakdown], [Outro]
 - Tag modifiers allowed: [Verse, soft, introspective, breathy vocals]
 - Follow lines_per_section from LYRIC PROFILE (2_lines, 4_lines, 6_lines, or 8_lines).
-- Reuse chorus lyrics across repetitions (same words).
+- Each chorus should contain the same lyrics as the other chorus. But within one chorus, every line must be distinct — never repeat the same line consecutively.
 - [Intro], [Breakdown], [Outro] have no lyrics (tag only).
 
 RHYME SCHEME adaptation (match pattern to section length):
@@ -342,8 +342,13 @@ Content rules:
 - Lyrics inspired by lyrics_about; style_request influences phrasing and genre tropes only.
 - style_request sounds/production must not appear in lyrics.
 - Choruses: 0 or 2+. Never exactly 1 chorus (awkward structure).
-- Reuse chorus lyrics across repetitions.
+- Each chorus should contain the same lyrics as the other chorus. However, within a single chorus, each line must be DIFFERENT — do NOT repeat the same line consecutively. A 4-line chorus needs 4 distinct lines.
 - Prioritize punchy, impactful lines over filler. Each line should earn its place.
+
+Vocabulary rules:
+- Avoid overusing generic "poetic" words like "silver", "velvet", "neon", "shattered", "whisper", "shadows", "echoes", "crimson", "golden", "embers". These are fine occasionally but should not appear in every song.
+- Derive vocabulary from the genre and era context. Each genre has its own linguistic register — think about what words and imagery belong to that genre's world. A country song and a punk song should not share the same adjectives.
+- Each song must have its own unique vocabulary palette drawn from the genre and topic.
 
 Rhyme scheme adaptation (match pattern to section length):
 - 2 lines: AA (all schemes collapse to couplet)
@@ -750,6 +755,7 @@ LYRICS rules:
 - Choruses: 0 or 2+. Never exactly 1 chorus.
 - Tag modifiers allowed: [Verse, soft, introspective]
 - Preserve the lines_per_section setting from the original (do NOT change line counts unless fixing other issues).
+- If a chorus contains the same line repeated multiple times, rewrite it with varied lines. Each line in a chorus must be distinct.
 """
 
 STYLE_REPAIR_AGENT_PROSE = f"""\
