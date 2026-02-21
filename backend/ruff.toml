@@ -1,0 +1,8 @@
+[lint.per-file-ignores]
+# Template file has intentional unused imports as documentation
+"app/prompts/variants/_template.py" = ["F401"]
+# Test files commonly import for side effects or use inside methods
+"tests/*" = ["F401", "F541"]
+# Pre-existing issues in app code (not introduced by this PR)
+"app/routes/generate_input_concept.py" = ["F401"]
+"app/schemas/advanced.py" = ["E402"]

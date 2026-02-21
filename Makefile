@@ -3,6 +3,7 @@ COMPOSE_PROD = docker compose -f docker-compose.prod.yml
 
 .PHONY: dev dev-up dev-down dev-build dev-logs dev-ps backend-shell frontend-shell db-shell redis-cli
 .PHONY: prod prod-up prod-down prod-build prod-logs
+.PHONY: test lint check
 
 dev:
 	$(COMPOSE_DEV) up --build
@@ -48,3 +49,11 @@ prod-build:
 
 prod-logs:
 	$(COMPOSE_PROD) logs -f --tail=100
+
+test:
+	cd backend && python -m pytest -v
+
+lint:
+	cd backend && python -m ruff check app/ tests/
+
+check: lint test

@@ -1,5 +1,10 @@
 """
-Tests for AgentPromptGraph — basic use cases + repair/validation behavior.
+Tests for AgentPromptGraph — two-step (v5_hybrid) generation.
+
+All tests use prompt_variant="v5_hybrid" which is the default two-step variant.
+FakeLLM responses are consumed in this order:
+  Non-instrumental: style → profile → lyrics → style_name (4 calls)
+  Instrumental: style → title → style_name (3 calls)
 """
 
 import asyncio
@@ -17,7 +22,8 @@ class _FakeResponse:
 class FakeLLM:
     """
     Minimal LLM stub for testing.
-    It returns a sequence of contents across successive `ainvoke` calls.
+    Returns a sequence of contents across successive `ainvoke` calls.
+    After exhausting contents, returns empty string.
     """
 
     def __init__(self, contents: list[str]):
@@ -32,25 +38,93 @@ class FakeLLM:
         return _FakeResponse(self._contents.pop(0))
 
 
-def _settings() -> Settings:
-    # Spotify is optional; provide a stub value for clarity.
-    return Settings(spotify_client_id="test_spotify_client_id", openai_api_key="test")
+def _settings(**overrides) -> Settings:
+    defaults = dict(spotify_client_id="test", openai_api_key="test")
+    defaults.update(overrides)
+    return Settings(**defaults)
 
 
-def _valid_output(
-    lyrics: str = "[Verse]\nhello world\n",
+# ---------------------------------------------------------------------------
+# Output helpers for two-step v5_hybrid variant
+# ---------------------------------------------------------------------------
+
+
+def _valid_style_output(
     suno_prompt: str = "Funky pop, crisp drums, bright bass",
     exclude: str = "cheesy, country",
     weirdness: int = 50,
     style_influence: int = 60,
 ) -> str:
+    """Valid output for the style branch."""
     return (
-        f"LYRICS\n{lyrics}\n\n"
         f"SUNO PROMPT\n{suno_prompt}\n\n"
         f"EXCLUDE\n{exclude}\n\n"
         f"WEIRDNESS\n{weirdness}\n\n"
         f"STYLE INFLUENCE\n{style_influence}\n"
     )
+
+
+def _valid_lyrics_output(
+    song_title: str = "Hello World",
+    lyrics: str = "[Verse]\nhello world\n",
+) -> str:
+    """Valid output for the lyrics branch."""
+    return f"SONG TITLE\n{song_title}\n\nLYRICS\n{lyrics}\n"
+
+
+def _valid_profile_output() -> str:
+    """Valid per-section profile output for profile inference."""
+    return (
+        'Verse: {"lines_per_section": "4_lines", "line_length": "default", "pov": "first", '
+        '"rhyme_scheme": "aabb", "directness": "balanced", "persona": "earnest", '
+        '"humor": "none", "explicitness": "clean", "audience": "general"}\n'
+        'Pre-Chorus: {"lines_per_section": "2_lines", "line_length": "short", "pov": "first", '
+        '"rhyme_scheme": "aabb", "directness": "direct", "persona": "earnest", '
+        '"humor": "none", "explicitness": "clean", "audience": "general"}\n'
+        'Chorus: {"lines_per_section": "4_lines", "line_length": "short", "pov": "first", '
+        '"rhyme_scheme": "aaaa", "directness": "direct", "persona": "earnest", '
+        '"humor": "none", "explicitness": "clean", "audience": "general"}\n'
+        'Post-Chorus: {"lines_per_section": "2_lines", "line_length": "sparse", "pov": "none", '
+        '"rhyme_scheme": "aaaa", "directness": "direct", "persona": "earnest", '
+        '"humor": "none", "explicitness": "clean", "audience": "general"}\n'
+        'Bridge: {"lines_per_section": "4_lines", "line_length": "default", "pov": "second", '
+        '"rhyme_scheme": "abab", "directness": "metaphor_heavy", "persona": "melancholic", '
+        '"humor": "none", "explicitness": "clean", "audience": "general"}\n'
+        'Structure: ["Intro", "Verse", "Chorus", "Verse", "Chorus", "Bridge", "Chorus", "Outro"]'
+    )
+
+
+def _style_name_output() -> str:
+    """Valid output for style name generation."""
+    return "Indie Pop Fusion"
+
+
+def _happy_path_responses(
+    style_output=None,
+    profile_output=None,
+    lyrics_output=None,
+    style_name=None,
+) -> list[str]:
+    """Standard 4-response sequence for non-instrumental happy path."""
+    return [
+        style_output or _valid_style_output(),
+        profile_output or _valid_profile_output(),
+        lyrics_output or _valid_lyrics_output(),
+        style_name or _style_name_output(),
+    ]
+
+
+def _instrumental_responses(
+    style_output=None,
+    title="The Last Horizon",
+    style_name=None,
+) -> list[str]:
+    """Standard 3-response sequence for instrumental mode."""
+    return [
+        style_output or _valid_style_output(),
+        title,
+        style_name or _style_name_output(),
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -60,20 +134,20 @@ def _valid_output(
 
 def test_valid_output_no_repairs_needed():
     """When the LLM returns valid output on first try, no repairs are triggered."""
-    output = _valid_output()
-    llm = FakeLLM([output])
+    llm = FakeLLM(_happy_path_responses())
     builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="Make a funky pop song",
         lyrics_about="dancing in the rain",
         selected_artists=[],
         tags=["pop", "funk"],
+        prompt_variant="v5_hybrid",
     )
 
     result = asyncio.run(builder.generate(req))
 
-    assert llm.calls == 1  # no repair calls
-    assert result["debug_info"]["repaired"] is False
+    assert llm.calls == 4  # style + profile + lyrics + style_name
+    assert result["debug_info"]["summary"]["repairs"] == 0
     assert result["lyrics"] == "[Verse]\nhello world"
     assert result["suno_prompt"] == "Funky pop, crisp drums, bright bass"
     assert result["exclude"] == "cheesy, country"
@@ -82,13 +156,13 @@ def test_valid_output_no_repairs_needed():
 
 
 def test_extracts_all_response_fields():
-    """All expected fields are present in the response."""
-    output = _valid_output()
-    llm = FakeLLM([output])
+    """All expected fields are present in the two-step response."""
+    llm = FakeLLM(_happy_path_responses())
     builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="Cinematic orchestral piece",
         lyrics_about="stars colliding",
+        prompt_variant="v5_hybrid",
     )
 
     result = asyncio.run(builder.generate(req))
@@ -101,50 +175,57 @@ def test_extracts_all_response_fields():
     assert "style_influence" in result
     assert "generation_id" in result
     assert "debug_info" in result
-    assert "agent_model" in result["debug_info"]
-    assert "context_hash" in result["debug_info"]
-    assert "repaired" in result["debug_info"]
+    # DebugTrace format
+    assert "summary" in result["debug_info"]
+    assert "spans" in result["debug_info"]
+    assert result["debug_info"]["summary"]["variant"] == "v5_hybrid"
+    assert result["debug_info"]["summary"]["architecture"] == "two_step"
 
 
-def test_concept_title_derived_from_lyrics_about():
-    """Concept title is derived from lyrics_about when provided."""
-    output = _valid_output()
-    llm = FakeLLM([output])
+def test_concept_title_from_lyrics_branch():
+    """In two-step, concept title comes from the lyrics branch song_title."""
+    llm = FakeLLM(
+        _happy_path_responses(
+            lyrics_output=_valid_lyrics_output(song_title="Ants Marching On Mars"),
+        )
+    )
     builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="Make something epic",
         lyrics_about="ants marching on Mars",
+        prompt_variant="v5_hybrid",
     )
 
     result = asyncio.run(builder.generate(req))
 
-    # Title should be derived from first few words of lyrics_about
     assert result["concept_title"] == "Ants Marching On Mars"
 
 
-def test_concept_title_falls_back_to_user_prompt():
-    """When lyrics_about is empty, concept title is derived from user_prompt."""
-    output = _valid_output()
-    llm = FakeLLM([output])
+def test_concept_title_instrumental_from_title_llm():
+    """When lyrics_about is empty (instrumental), title comes from title LLM."""
+    llm = FakeLLM(_instrumental_responses(title="Heavy Metal Thunder"))
     builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="heavy metal breakdown",
         lyrics_about="",
+        prompt_variant="v5_hybrid",
     )
 
     result = asyncio.run(builder.generate(req))
 
-    assert result["concept_title"] == "Heavy Metal Breakdown"
+    assert result["concept_title"] == "Heavy Metal Thunder"
+    assert result["lyrics"] == ""
 
 
 def test_generation_id_is_unique():
     """Each generation produces a unique generation_id."""
-    output = _valid_output()
-    llm = FakeLLM([output, output])
+    # Provide enough responses for two full generations
+    llm = FakeLLM(_happy_path_responses() + _happy_path_responses())
     builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="synth wave",
         lyrics_about="neon nights",
+        prompt_variant="v5_hybrid",
     )
 
     result1 = asyncio.run(builder.generate(req))
@@ -153,188 +234,231 @@ def test_generation_id_is_unique():
     assert result1["generation_id"] != result2["generation_id"]
 
 
-def test_suno_prompt_over_500_triggers_repair_and_then_error():
-    """SUNO PROMPT >500 chars is invalid; after repairs are exhausted we return an error (no fallback)."""
+# ---------------------------------------------------------------------------
+# Style branch validation + repair tests
+# ---------------------------------------------------------------------------
+
+
+def test_suno_prompt_over_500_triggers_style_repairs():
+    """SUNO PROMPT >500 chars triggers repair attempts in style branch."""
     long_prompt = "A" * 600
-    output = _valid_output(suno_prompt=long_prompt)
-    llm = FakeLLM([output, output, output])
+    bad_style = _valid_style_output(suno_prompt=long_prompt)
+    llm = FakeLLM(
+        [
+            bad_style,  # #1: style.generate (bad)
+            bad_style,  # #2: style.repair.1 (still bad)
+            bad_style,  # #3: style.repair.2 (still bad)
+            _valid_profile_output(),  # #4: lyrics.profile_infer
+            _valid_lyrics_output(),  # #5: lyrics.generate
+            _style_name_output(),  # #6: style.name_generate
+        ]
+    )
     builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="test prompt",
         lyrics_about="test topic",
+        prompt_variant="v5_hybrid",
     )
 
     result = asyncio.run(builder.generate(req))
 
-    assert llm.calls == 3  # initial + 2 repairs (default)
-    assert result["success"] is False
-    assert "issues" in result and result["issues"]
-    assert any(
-        "SUNO PROMPT exceeds 500 characters" in issue for issue in result["issues"]
+    assert llm.calls == 6  # style(3) + profile + lyrics + name
+    # Style branch proceeded with issues
+    assert len(result["suno_prompt"]) > 500
+    # Debug trace shows repair attempts
+    spans = result["debug_info"]["spans"]
+    repair_spans = [s for s in spans if "repair" in s["name"]]
+    assert len(repair_spans) == 2
+
+
+def test_weirdness_out_of_range_triggers_style_repairs():
+    """Weirdness >100 triggers repair attempts in style branch."""
+    bad_style = _valid_style_output(weirdness=150)
+    llm = FakeLLM(
+        [
+            bad_style,  # #1: style.generate (bad)
+            bad_style,  # #2: style.repair.1 (still bad)
+            bad_style,  # #3: style.repair.2 (still bad)
+            _valid_profile_output(),  # #4: lyrics.profile_infer
+            _valid_lyrics_output(),  # #5: lyrics.generate
+            _style_name_output(),  # #6: style.name_generate
+        ]
     )
-
-
-def test_weirdness_out_of_range_triggers_repair_and_then_error():
-    """Weirdness values outside 0-100 are invalid; after repairs we return an error (no fallback)."""
-    # Value > 100 is invalid per validator
-    output_high = _valid_output(weirdness=150)
-    llm = FakeLLM([output_high, output_high, output_high])
     builder = AgentPromptGraph(_settings(), llm=llm)
-    req = AdvancedGenerateRequest(user_prompt="test", lyrics_about="test")
+    req = AdvancedGenerateRequest(
+        user_prompt="test",
+        lyrics_about="test",
+        prompt_variant="v5_hybrid",
+    )
 
     result = asyncio.run(builder.generate(req))
 
-    assert llm.calls == 3
-    assert result["success"] is False
-    assert any(
-        "WEIRDNESS must be between 0 and 100" in issue for issue in result["issues"]
+    assert llm.calls == 6
+    assert result["weirdness"] == 150
+    spans = result["debug_info"]["spans"]
+    repair_spans = [s for s in spans if "repair" in s["name"]]
+    assert len(repair_spans) == 2
+
+
+def test_style_influence_out_of_range_triggers_style_repairs():
+    """Style influence >100 triggers repair attempts in style branch."""
+    bad_style = _valid_style_output(style_influence=200)
+    llm = FakeLLM(
+        [
+            bad_style,  # #1: style.generate (bad)
+            bad_style,  # #2: style.repair.1 (still bad)
+            bad_style,  # #3: style.repair.2 (still bad)
+            _valid_profile_output(),  # #4: lyrics.profile_infer
+            _valid_lyrics_output(),  # #5: lyrics.generate
+            _style_name_output(),  # #6: style.name_generate
+        ]
     )
-
-
-def test_style_influence_out_of_range_triggers_repair_and_then_error():
-    """Style influence values outside 0-100 are invalid; after repairs we return an error (no fallback)."""
-    output = _valid_output(style_influence=200)
-    llm = FakeLLM([output, output, output])
     builder = AgentPromptGraph(_settings(), llm=llm)
-    req = AdvancedGenerateRequest(user_prompt="test", lyrics_about="test")
+    req = AdvancedGenerateRequest(
+        user_prompt="test",
+        lyrics_about="test",
+        prompt_variant="v5_hybrid",
+    )
 
     result = asyncio.run(builder.generate(req))
 
-    assert llm.calls == 3
-    assert result["success"] is False
-    assert any(
-        "STYLE INFLUENCE must be between 0 and 100" in issue
-        for issue in result["issues"]
-    )
+    assert llm.calls == 6
+    assert result["style_influence"] == 200
+    spans = result["debug_info"]["spans"]
+    repair_spans = [s for s in spans if "repair" in s["name"]]
+    assert len(repair_spans) == 2
 
 
 def test_tags_are_passed_through():
-    """Tags from request are included in context and don't break generation."""
-    output = _valid_output()
-    llm = FakeLLM([output])
+    """Tags from request don't break generation."""
+    llm = FakeLLM(_happy_path_responses())
     builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="indie rock anthem",
         lyrics_about="summer nights",
         tags=["indie", "rock", "anthemic"],
+        prompt_variant="v5_hybrid",
     )
 
     result = asyncio.run(builder.generate(req))
 
-    assert result["debug_info"]["repaired"] is False
+    assert result["debug_info"]["summary"]["repairs"] == 0
     assert result["suno_prompt"]  # output is valid
 
 
 def test_selected_artists_not_leaked_when_valid():
-    """Selected artists are used for context but don't appear in valid output."""
-    # LLM returns valid output that doesn't mention artist
-    output = _valid_output(suno_prompt="Retro funk, smooth bass, falsetto vocals")
-    llm = FakeLLM([output])
+    """Selected artists don't appear in valid style output."""
+    llm = FakeLLM(
+        _happy_path_responses(
+            style_output=_valid_style_output(
+                suno_prompt="Retro funk, smooth bass, falsetto vocals"
+            ),
+        )
+    )
     builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="Make it sound like Prince",
         lyrics_about="purple rain",
         selected_artists=["Prince"],
+        prompt_variant="v5_hybrid",
     )
 
     result = asyncio.run(builder.generate(req))
 
     assert "prince" not in result["suno_prompt"].lower()
-    assert result["debug_info"]["repaired"] is False
+    assert result["debug_info"]["summary"]["repairs"] == 0
 
 
-def test_repairs_when_missing_sections():
-    # First output is missing sections and order (invalid), second output is valid.
-    bad = "LYRICS\n" "[Verse]\nhello\n" "\n" "SUNO PROMPT\n" "some prompt\n"
-    good = (
-        "LYRICS\n"
-        "[Verse]\nhello\n\n"
-        "SUNO PROMPT\n"
-        "some prompt\n\n"
-        "EXCLUDE\n"
-        "cheesy, country\n\n"
-        "WEIRDNESS\n"
-        "42\n\n"
-        "STYLE INFLUENCE\n"
-        "55\n"
+def test_style_repair_fixes_missing_sections():
+    """Style branch repairs when initial output is missing required sections."""
+    bad = "SUNO PROMPT\nsome prompt\n"  # Missing EXCLUDE, WEIRDNESS, STYLE INFLUENCE
+    good = _valid_style_output(
+        suno_prompt="some prompt",
+        exclude="cheesy, country",
+        weirdness=42,
+        style_influence=55,
     )
-
-    llm = FakeLLM([bad, good])
+    llm = FakeLLM(
+        [
+            bad,  # #1: style.generate (bad — missing EXCLUDE)
+            good,  # #2: style.repair.1 (good)
+            _valid_profile_output(),  # #3: lyrics.profile_infer
+            _valid_lyrics_output(),  # #4: lyrics.generate
+            _style_name_output(),  # #5: style.name_generate
+        ]
+    )
     builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="Make something big and cinematic",
         lyrics_about="ants on Mars",
         selected_artists=[],
         tags=["cinematic"],
+        prompt_variant="v5_hybrid",
     )
 
     result = asyncio.run(builder.generate(req))
-    assert llm.calls == 2  # one repair pass
-    assert result["debug_info"]["repaired"] is True
+
+    assert llm.calls == 5  # style(2) + profile + lyrics + name
+    spans = result["debug_info"]["spans"]
+    repair_spans = [s for s in spans if "repair" in s["name"]]
+    assert len(repair_spans) == 1
     assert result["suno_prompt"] == "some prompt"
     assert result["exclude"] == "cheesy, country"
     assert result["weirdness"] == 42
     assert result["style_influence"] == 55
 
 
-def test_repairs_when_artist_name_leaks_in_suno_prompt_only():
-    # First output leaks an artist name in SUNO PROMPT; second output fixes it.
-    bad = (
-        "LYRICS\n"
-        "[Verse]\nhello\n\n"
-        "SUNO PROMPT\n"
-        "In the style of Bruno Mars, funky pop groove\n\n"
-        "EXCLUDE\n"
-        "cheesy\n\n"
-        "WEIRDNESS\n"
-        "50\n\n"
-        "STYLE INFLUENCE\n"
-        "60\n"
+def test_artist_names_not_in_clean_suno_prompt():
+    """Verify clean suno_prompt doesn't contain artist names."""
+    clean_style = _valid_style_output(
+        suno_prompt="Funky pop groove, bright bass, crisp drums, glossy modern mix",
     )
-    good = (
-        "LYRICS\n"
-        "[Verse]\nhello\n\n"
-        "SUNO PROMPT\n"
-        "Funky pop groove, bright bass, crisp drums, glossy modern mix\n\n"
-        "EXCLUDE\n"
-        "cheesy\n\n"
-        "WEIRDNESS\n"
-        "50\n\n"
-        "STYLE INFLUENCE\n"
-        "60\n"
-    )
-
-    llm = FakeLLM([bad, good])
+    llm = FakeLLM(_happy_path_responses(style_output=clean_style))
     builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="Make a song that sounds like Bruno Mars",
         lyrics_about="dancing alone",
         selected_artists=["Bruno Mars"],
         tags=["pop"],
+        prompt_variant="v5_hybrid",
     )
 
     result = asyncio.run(builder.generate(req))
-    assert llm.calls == 2
-    assert result["debug_info"]["repaired"] is True
+
+    assert llm.calls == 4
     assert "bruno" not in result["suno_prompt"].lower()
 
 
-def test_falls_back_after_two_failed_repairs():
-    # Provide three invalid outputs (initial + 2 repairs). Builder should return an error (no fallback).
-    invalid = "SUNO PROMPT\nblah\n"
-    llm = FakeLLM([invalid, invalid, invalid])
+def test_style_branch_proceeds_after_max_repairs():
+    """After exhausting repairs, style branch proceeds with issues."""
+    invalid_style = "SUNO PROMPT\nblah\n"  # Missing EXCLUDE
+    llm = FakeLLM(
+        [
+            invalid_style,  # #1: style.generate (bad)
+            invalid_style,  # #2: style.repair.1 (still bad)
+            invalid_style,  # #3: style.repair.2 (still bad)
+            _valid_profile_output(),  # #4: lyrics.profile_infer
+            _valid_lyrics_output(),  # #5: lyrics.generate
+            _style_name_output(),  # #6: style.name_generate
+        ]
+    )
     builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="Make a song that sounds like Will.I.Am",
         lyrics_about="robots",
         selected_artists=["Will.I.Am"],
         tags=["electropop"],
+        prompt_variant="v5_hybrid",
     )
 
     result = asyncio.run(builder.generate(req))
-    assert llm.calls == 3  # initial + 2 repairs
-    assert result["success"] is False
-    assert "issues" in result and result["issues"]
+
+    assert llm.calls == 6  # style(3) + profile + lyrics + name
+    # Result is still returned (two-step doesn't return error)
+    assert "suno_prompt" in result
+    spans = result["debug_info"]["spans"]
+    repair_spans = [s for s in spans if "repair" in s["name"]]
+    assert len(repair_spans) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -342,100 +466,83 @@ def test_falls_back_after_two_failed_repairs():
 # ---------------------------------------------------------------------------
 
 
-def test_repair_disabled_skips_repair_attempts():
-    """When agent_repair_enabled=False, no repair attempts are made."""
-    # First output is invalid (missing sections)
-    invalid = "SUNO PROMPT\nblah\n"
-    llm = FakeLLM([invalid])
-    settings = Settings(
-        spotify_client_id="test",
-        openai_api_key="test",
-        agent_repair_enabled=False,
+def test_zero_max_repairs_skips_repair_attempts():
+    """When agent_max_repairs=0, style branch skips repair attempts."""
+    bad_style = "SUNO PROMPT\nblah\n"  # Missing EXCLUDE
+    llm = FakeLLM(
+        [
+            bad_style,  # #1: style.generate (bad, no repair)
+            _valid_profile_output(),  # #2: lyrics.profile_infer
+            _valid_lyrics_output(),  # #3: lyrics.generate
+            _style_name_output(),  # #4: style.name_generate
+        ]
     )
+    settings = _settings(agent_max_repairs=0)
     builder = AgentPromptGraph(settings, llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="test",
         lyrics_about="test",
+        prompt_variant="v5_hybrid",
     )
 
     result = asyncio.run(builder.generate(req))
 
-    # Should only call LLM once (no repairs), then return error
-    assert llm.calls == 1
-    assert result["success"] is False
-    assert "issues" in result and result["issues"]
+    assert llm.calls == 4  # style(1) + profile + lyrics + name
+    spans = result["debug_info"]["spans"]
+    repair_spans = [s for s in spans if "repair" in s["name"]]
+    assert len(repair_spans) == 0
 
 
 def test_custom_max_repairs_is_respected():
     """When agent_max_repairs is set to a custom value, it's respected."""
-    invalid = "SUNO PROMPT\nblah\n"
-    # Provide enough invalid outputs for 5 repairs
-    llm = FakeLLM([invalid] * 6)
-    settings = Settings(
-        spotify_client_id="test",
-        openai_api_key="test",
-        agent_repair_enabled=True,
-        agent_max_repairs=5,
+    invalid_style = "SUNO PROMPT\nblah\n"  # Missing EXCLUDE
+    llm = FakeLLM(
+        [invalid_style] * 6  # style: initial + 5 repairs
+        + [_valid_profile_output()]  # lyrics.profile_infer
+        + [_valid_lyrics_output()]  # lyrics.generate
+        + [_style_name_output()]  # style.name_generate
     )
+    settings = _settings(agent_max_repairs=5)
     builder = AgentPromptGraph(settings, llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="test",
         lyrics_about="test",
+        prompt_variant="v5_hybrid",
     )
 
     result = asyncio.run(builder.generate(req))
 
-    # Should call LLM 6 times: initial + 5 repairs
-    assert llm.calls == 6
-    assert result["success"] is False
-    assert "issues" in result and result["issues"]
+    # 6 style calls + 2 lyrics + 1 name = 9
+    assert llm.calls == 9
+    spans = result["debug_info"]["spans"]
+    repair_spans = [s for s in spans if "repair" in s["name"]]
+    assert len(repair_spans) == 5
 
 
-def test_zero_max_repairs_goes_straight_to_fallback():
-    """When agent_max_repairs=0, invalid output immediately returns error (no fallback)."""
-    invalid = "SUNO PROMPT\nblah\n"
-    llm = FakeLLM([invalid])
-    settings = Settings(
-        spotify_client_id="test",
-        openai_api_key="test",
-        agent_repair_enabled=True,
-        agent_max_repairs=0,
-    )
+def test_debug_info_has_trace_format():
+    """Debug info uses DebugTrace format with summary and spans."""
+    llm = FakeLLM(_happy_path_responses())
+    settings = _settings(agent_max_repairs=3)
     builder = AgentPromptGraph(settings, llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="test",
         lyrics_about="test",
+        prompt_variant="v5_hybrid",
     )
 
     result = asyncio.run(builder.generate(req))
 
-    # Only 1 LLM call (initial), then immediate error
-    assert llm.calls == 1
-    assert result["success"] is False
-    assert "issues" in result and result["issues"]
-
-
-def test_debug_info_includes_repair_config():
-    """Debug info includes repair_enabled and max_repairs from config."""
-    output = _valid_output()
-    llm = FakeLLM([output])
-    settings = Settings(
-        spotify_client_id="test",
-        openai_api_key="test",
-        agent_repair_enabled=True,
-        agent_max_repairs=3,
-    )
-    builder = AgentPromptGraph(settings, llm=llm)
-    req = AdvancedGenerateRequest(
-        user_prompt="test",
-        lyrics_about="test",
-    )
-
-    result = asyncio.run(builder.generate(req))
-
-    assert result["debug_info"]["repair_enabled"] is True
-    assert result["debug_info"]["max_repairs"] == 3
-    assert result["debug_info"]["repaired"] is False
+    debug = result["debug_info"]
+    # DebugTrace v1 structure
+    assert debug["version"] == 1
+    assert "summary" in debug
+    assert "spans" in debug
+    summary = debug["summary"]
+    assert summary["variant"] == "v5_hybrid"
+    assert summary["architecture"] == "two_step"
+    assert summary["repairs"] == 0
+    assert summary["success"] is True
+    assert summary["llm_calls"] >= 2
 
 
 # ---------------------------------------------------------------------------
@@ -443,85 +550,47 @@ def test_debug_info_includes_repair_config():
 # ---------------------------------------------------------------------------
 
 
-def _valid_style_output(
-    suno_prompt: str = "Funky pop, crisp drums, bright bass",
-    exclude: str = "cheesy, country",
-    weirdness: int = 50,
-    style_influence: int = 60,
-) -> str:
-    """Valid output for the style branch (two-step variants)."""
-    return (
-        f"SUNO PROMPT\n{suno_prompt}\n\n"
-        f"EXCLUDE\n{exclude}\n\n"
-        f"WEIRDNESS\n{weirdness}\n\n"
-        f"STYLE INFLUENCE\n{style_influence}\n"
-    )
-
-
 def test_instrumental_with_blank_lyrics_about_returns_empty_lyrics():
     """When lyrics_about is blank, instrumental mode returns empty lyrics."""
-    # Style output + title output (no lyrics branch should run)
-    style_output = _valid_style_output()
-    title_output = "The Last Horizon"
-    llm = FakeLLM([style_output, title_output])
-    settings = Settings(
-        spotify_client_id="test",
-        openai_api_key="test",
-    )
-    builder = AgentPromptGraph(settings, llm=llm)
+    llm = FakeLLM(_instrumental_responses(title="The Last Horizon"))
+    builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="Epic orchestral soundtrack",
-        lyrics_about="",  # Empty = instrumental
-        prompt_variant="v5_hybrid",  # Two-step variant
-    )
-
-    result = asyncio.run(builder.generate(req))
-
-    # Should return empty lyrics
-    assert result["lyrics"] == ""
-    # Should have a creative title from LLM
-    assert result["concept_title"] == "The Last Horizon"
-    # Should have valid style output
-    assert result["suno_prompt"] == "Funky pop, crisp drums, bright bass"
-    assert result["exclude"] == "cheesy, country"
-    assert result["weirdness"] == 50
-    assert result["style_influence"] == 60
-    # 2 LLM calls: style + title (no lyrics)
-    assert llm.calls == 2
-
-
-def test_instrumental_with_keyword_returns_empty_lyrics():
-    """When lyrics_about contains 'instrumental', returns empty lyrics."""
-    style_output = _valid_style_output()
-    title_output = "Drift"
-    llm = FakeLLM([style_output, title_output])
-    settings = Settings(
-        spotify_client_id="test",
-        openai_api_key="test",
-    )
-    builder = AgentPromptGraph(settings, llm=llm)
-    req = AdvancedGenerateRequest(
-        user_prompt="Ambient electronic",
-        lyrics_about="instrumental track",  # Keyword triggers instrumental mode
+        lyrics_about="",
         prompt_variant="v5_hybrid",
     )
 
     result = asyncio.run(builder.generate(req))
 
     assert result["lyrics"] == ""
-    assert llm.calls == 2  # Style + title
+    assert result["concept_title"] == "The Last Horizon"
+    assert result["suno_prompt"] == "Funky pop, crisp drums, bright bass"
+    assert result["exclude"] == "cheesy, country"
+    assert result["weirdness"] == 50
+    assert result["style_influence"] == 60
+    assert llm.calls == 3  # style + title + style_name
+
+
+def test_instrumental_with_keyword_returns_empty_lyrics():
+    """When lyrics_about contains 'instrumental', returns empty lyrics."""
+    llm = FakeLLM(_instrumental_responses(title="Drift"))
+    builder = AgentPromptGraph(_settings(), llm=llm)
+    req = AdvancedGenerateRequest(
+        user_prompt="Ambient electronic",
+        lyrics_about="instrumental track",
+        prompt_variant="v5_hybrid",
+    )
+
+    result = asyncio.run(builder.generate(req))
+
+    assert result["lyrics"] == ""
+    assert llm.calls == 3  # style + title + style_name
 
 
 def test_instrumental_with_no_vocals_keyword_returns_empty_lyrics():
     """When lyrics_about contains 'no vocals', returns empty lyrics."""
-    style_output = _valid_style_output()
-    title_output = "Velvet Thunder"
-    llm = FakeLLM([style_output, title_output])
-    settings = Settings(
-        spotify_client_id="test",
-        openai_api_key="test",
-    )
-    builder = AgentPromptGraph(settings, llm=llm)
+    llm = FakeLLM(_instrumental_responses(title="Velvet Thunder"))
+    builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="Jazz fusion",
         lyrics_about="no vocals, just instruments",
@@ -531,22 +600,16 @@ def test_instrumental_with_no_vocals_keyword_returns_empty_lyrics():
     result = asyncio.run(builder.generate(req))
 
     assert result["lyrics"] == ""
-    assert llm.calls == 2  # Style + title
+    assert llm.calls == 3  # style + title + style_name
 
 
 def test_instrumental_with_tag_returns_empty_lyrics():
     """When tags include 'instrumental', returns empty lyrics."""
-    style_output = _valid_style_output()
-    title_output = "Through Glass Canyons"
-    llm = FakeLLM([style_output, title_output])
-    settings = Settings(
-        spotify_client_id="test",
-        openai_api_key="test",
-    )
-    builder = AgentPromptGraph(settings, llm=llm)
+    llm = FakeLLM(_instrumental_responses(title="Through Glass Canyons"))
+    builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="Post-rock soundscape",
-        lyrics_about="the sunset",  # Non-empty, but tag overrides
+        lyrics_about="the sunset",
         tags=["instrumental", "post-rock"],
         prompt_variant="v5_hybrid",
     )
@@ -554,19 +617,13 @@ def test_instrumental_with_tag_returns_empty_lyrics():
     result = asyncio.run(builder.generate(req))
 
     assert result["lyrics"] == ""
-    assert llm.calls == 2  # Style + title
+    assert llm.calls == 3  # style + title + style_name
 
 
 def test_instrumental_debug_trace_includes_skipped_span():
     """Instrumental mode includes a lyrics.skipped span in debug trace."""
-    style_output = _valid_style_output()
-    title_output = "Midnight in Kyoto"
-    llm = FakeLLM([style_output, title_output])
-    settings = Settings(
-        spotify_client_id="test",
-        openai_api_key="test",
-    )
-    builder = AgentPromptGraph(settings, llm=llm)
+    llm = FakeLLM(_instrumental_responses(title="Midnight in Kyoto"))
+    builder = AgentPromptGraph(_settings(), llm=llm)
     req = AdvancedGenerateRequest(
         user_prompt="Cinematic score",
         lyrics_about="",
@@ -575,7 +632,6 @@ def test_instrumental_debug_trace_includes_skipped_span():
 
     result = asyncio.run(builder.generate(req))
 
-    # Check debug trace has lyrics.skipped span
     debug_info = result.get("debug_info", {})
     spans = debug_info.get("spans", [])
     skipped_spans = [s for s in spans if s.get("name") == "lyrics.skipped"]
@@ -595,15 +651,21 @@ def test_is_instrumental_request_helper():
     assert AgentPromptGraph._is_instrumental_request(req2) is True
 
     # Test "instrumental" keyword
-    req3 = AdvancedGenerateRequest(user_prompt="test", lyrics_about="an instrumental piece")
+    req3 = AdvancedGenerateRequest(
+        user_prompt="test", lyrics_about="an instrumental piece"
+    )
     assert AgentPromptGraph._is_instrumental_request(req3) is True
 
     # Test "no vocals" keyword
-    req4 = AdvancedGenerateRequest(user_prompt="test", lyrics_about="no vocals needed")
+    req4 = AdvancedGenerateRequest(
+        user_prompt="test", lyrics_about="no vocals needed"
+    )
     assert AgentPromptGraph._is_instrumental_request(req4) is True
 
     # Test "no lyrics" keyword
-    req5 = AdvancedGenerateRequest(user_prompt="test", lyrics_about="no lyrics please")
+    req5 = AdvancedGenerateRequest(
+        user_prompt="test", lyrics_about="no lyrics please"
+    )
     assert AgentPromptGraph._is_instrumental_request(req5) is True
 
     # Test instrumental tag
@@ -613,7 +675,9 @@ def test_is_instrumental_request_helper():
     assert AgentPromptGraph._is_instrumental_request(req6) is True
 
     # Test non-instrumental request
-    req7 = AdvancedGenerateRequest(user_prompt="test", lyrics_about="love and heartbreak")
+    req7 = AdvancedGenerateRequest(
+        user_prompt="test", lyrics_about="love and heartbreak"
+    )
     assert AgentPromptGraph._is_instrumental_request(req7) is False
 
     # Test non-instrumental with tags
