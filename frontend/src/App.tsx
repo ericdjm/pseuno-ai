@@ -532,7 +532,20 @@ function App() {
       )}
 
       {/* Two-panel layout */}
-      <Flex flex={1} overflow="hidden">
+      <Flex flex={1} overflow="hidden" position="relative">
+        {/* Mobile backdrop overlay */}
+        {sidebarOpen && !isLargeScreen && (
+          <Box
+            position="absolute"
+            top={0}
+            left={0}
+            w="100%"
+            h="100%"
+            bg="blackAlpha.600"
+            zIndex={15}
+            onClick={() => handleToggleSidebar(false)}
+          />
+        )}
         {/* Left: Prompt Library Sidebar */}
         {sidebarOpen && (
           <PromptLibrarySidebar
@@ -625,7 +638,7 @@ function App() {
         <Box
           position="fixed"
           bottom={0}
-          left={sidebarOpen ? '280px' : 0}
+          left={sidebarOpen && isLargeScreen ? '280px' : 0}
           right={0}
           bg="rgba(60, 28, 28, 0.7)"
           backdropFilter="blur(8px)"

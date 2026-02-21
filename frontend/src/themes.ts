@@ -25,18 +25,18 @@ const theme = extendTheme({
       800: '#0d7633',
       900: '#085f28',
     },
-    // Lifted gray scale — slightly brighter across the board
+    // Lifted gray scale — brighter for better readability
     gray: {
       50: '#f7fafc',
       100: '#edf2f7',
       200: '#e2e8f0',
-      300: '#cbd5e0',
-      400: '#a0aec0',
-      500: '#718096',
-      600: '#4a5568',
-      700: '#323b4a',
-      800: '#222a38',
-      900: '#191f2b',
+      300: '#d0d7e2',
+      400: '#a8b2c1',
+      500: '#7f8da0',
+      600: '#556070',
+      700: '#3a4556',
+      800: '#283242',
+      900: '#1e2533',
     },
     spotify: {
       green: '#1DB954',
@@ -52,6 +52,10 @@ const theme = extendTheme({
         bg: 'gray.900',
         color: 'white',
         letterSpacing: '0.01em',
+      },
+      // Prevent iOS Safari auto-zoom on input focus (requires >= 16px)
+      'input, textarea, select': {
+        fontSize: '16px !important',
       },
       // Subtle glow on focus for all interactive elements
       '*:focus-visible': {

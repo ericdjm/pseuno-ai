@@ -819,8 +819,9 @@ export default function PromptLibrarySidebar({
 
   return (
     <Box
-      w="280px"
-      minW="280px"
+      w={{ base: '100%', md: '280px' }}
+      minW={{ base: '100%', md: '280px' }}
+      maxW={{ base: '100%', md: '280px' }}
       flexShrink={0}
       h="100%"
       maxH="100%"
@@ -831,6 +832,10 @@ export default function PromptLibrarySidebar({
       display="flex"
       flexDirection="column"
       overflow="hidden"
+      position={{ base: 'absolute', md: 'relative' }}
+      top={0}
+      left={0}
+      zIndex={20}
     >
       {/* Top: Logo + Close button */}
       <HStack py={2} px={2} justify="space-between">
