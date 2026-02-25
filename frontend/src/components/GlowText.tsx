@@ -2,8 +2,8 @@ import { Text, type TextProps } from '@chakra-ui/react';
 import { keyframes } from '@emotion/react';
 
 const glowSweep = keyframes`
-  0% { background-position: -150% center; }
-  100% { background-position: 250% center; }
+  0% { background-position: 250% center; }
+  100% { background-position: -150% center; }
 `;
 
 /**
@@ -17,12 +17,12 @@ export function GlowText({ children, ...props }: TextProps) {
       as="span"
       sx={{
         background:
-          'linear-gradient(90deg, currentColor 0%, currentColor 35%, rgba(255,255,255,0.95) 50%, currentColor 65%, currentColor 100%)',
-        backgroundSize: '200% 100%',
+          'linear-gradient(90deg, currentColor 0%, currentColor 20%, rgba(255,255,255,0.95) 45%, rgba(255,255,255,0.95) 55%, currentColor 80%, currentColor 100%)',
+        backgroundSize: '400% 100%',
         WebkitBackgroundClip: 'text',
         backgroundClip: 'text',
         WebkitTextFillColor: 'transparent',
-        animation: `${glowSweep} 2s ease-in-out infinite`,
+        animation: `${glowSweep} 4s ease-in-out infinite`,
       }}
     >
       {children}
